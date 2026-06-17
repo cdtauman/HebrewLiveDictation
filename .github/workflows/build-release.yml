@@ -89,4 +89,4 @@ jobs:
             dist\HebrewLiveDictation_Setup_${{ github.ref_name }}.exe `
             --title "${{ github.ref_name }}" `
             --prerelease `
-            --generate-notes
+            --notes-file release_notes.md

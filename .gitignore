@@ -1,0 +1,71 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+
+# C extensions
+*.so
+
+# Distribution / packaging (PyInstaller outputs)
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller temp files
+*.manifest
+*.spec.tmp
+
+# Local environments and dependency directories
+.venv/
+venv/
+ENV/
+env/
+.runenv/
+
+# Local runtime state and private configurations
+settings.json
+*.log
+hebrew_live_dictation.log
+VoiceType.log
+
+# Secrets, API Keys and Credentials
+*credentials*.json
+*.service-account.json
+secrets.json
+.env
+.env.local
+.env.*
+*.env
+!settings.example.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Packaging archives (avoid committing release builds)
+*.zip
+*.tar.gz

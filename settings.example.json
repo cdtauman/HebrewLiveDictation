@@ -1,0 +1,75 @@
+{
+  "schema_version": 4,
+  "app": {
+    "ui_language": "he",
+    "theme": "light",
+    "startup_minimized": false,
+    "show_overlay": true,
+    "minimize_on_close": true,
+    "start_with_windows": false,
+    "first_run_completed": false
+  },
+  "hotkeys": {
+    "hotkey": "f8",
+    "mode": "toggle"
+  },
+  "google": {
+    "api_version": "v2",
+    "project_id": "your-google-cloud-project-id",
+    "location": "eu",
+    "fallback_location": "us",
+    "recognizer_id": "_",
+    "model": "chirp_3",
+    "fallback_model": "chirp_3",
+    "credential_mode": "service_account_json",
+    "credentials_path": "",
+    "automatic_punctuation": true,
+    "interim_results": true,
+    "enable_spoken_punctuation": false,
+    "enable_spoken_emoji": false,
+    "phrase_boost": 15.0,
+    "advanced_options": false
+  },
+  "languages": {
+    "primary": "iw-IL",
+    "alternatives": [],
+    "custom_code": "",
+    "custom_phrases": [],
+    "command_pack": "he"
+  },
+  "dictation": {
+    "input_backend": "v1",
+    "live_typing_mode": "final_only",
+    "paste_method": "unicode",
+    "restore_clipboard": true,
+    "editing_strategy": "auto",
+    "show_internal_preview": false,
+    "debug_log_transcripts": false
+  },
+  "audio": {
+    "microphone_device": null,
+    "sample_rate": 16000,
+    "block_size": 1600
+  },
+  "speech": {
+    "frame_ms": 100,
+    "endpointing": true,
+    "auto_stop_on_silence": false,
+    "speech_start_timeout_seconds": 5.0,
+    "speech_end_timeout_seconds": 1.0,
+    "max_stream_seconds": 285,
+    "vad_enabled": false,
+    "vad_threshold": 0.5,
+    "vad_padding_ms": 240,
+    "vad_min_silence_ms": 500
+  },
+  "tsf": {
+    "handshake_timeout_ms": 100,
+    "experimental_transport_enabled": false,
+    "allow_low_integrity_label": false
+  },
+  "release": {
+    "channel": "beta",
+    "tsf_ime_target": "v2"
+  }
+}

@@ -35,12 +35,20 @@ def main():
     if os.path.isdir(src_dir) and src_dir not in sys.path:
         sys.path.insert(0, src_dir)
 
+    try:
+        from hebrew_live_dictation.crash_handler import install_crash_handlers
+
+        install_crash_handlers()
+    except Exception:
+        # A failure to install diagnostics must never block startup.
+        pass
+
     appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
     config_dir = os.path.join(appdata, "VoiceType")
-    
+
     if not os.path.exists(config_dir):
         os.makedirs(config_dir, exist_ok=True)
-        
+
     try:
         from hebrew_live_dictation.qt_app import QtDictationApp
     except ModuleNotFoundError as e:

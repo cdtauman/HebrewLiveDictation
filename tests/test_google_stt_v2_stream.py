@@ -52,6 +52,82 @@ class GoogleSTTV2RuntimeTests(unittest.TestCase):
             self.assertTrue(any(event.get("type") == "error" for event in events))
             self.assertIn("returned no recognition responses", events[0]["message"])
 
+    def test_google_stream_is_speech_client_base_with_capabilities(self):
+        from hebrew_live_dictation.stt.base import SpeechClientBase
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            stream = GoogleSTTV2Stream(config)
+            self.assertIsInstance(stream, SpeechClientBase)
+            self.assertEqual(stream.capabilities.name, "google_v2")
+            self.assertTrue(stream.capabilities.streaming)
+            self.assertTrue(stream.capabilities.interim)
+            self.assertFalse(stream.capabilities.offline)
+
+    def test_cancel_invokes_stop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            stream = GoogleSTTV2Stream(config)
+            stopped = []
+            stream.stop = lambda: stopped.append(True)
+            stream.cancel()
+            self.assertEqual(stopped, [True])
+
+    def test_stream_once_emits_speech_interim_and_final_events(self):
+        """Behavioural-parity guard for Phase B: response->event mapping is
+        unchanged after subclassing SpeechClientBase."""
+
+        class FakeEventType:
+            def __init__(self, name):
+                self.name = name
+
+        class FakeAlt:
+            def __init__(self, transcript, confidence):
+                self.transcript = transcript
+                self.confidence = confidence
+
+        class FakeResult:
+            def __init__(self, transcript, is_final):
+                self.alternatives = [FakeAlt(transcript, 0.9 if is_final else 0.0)]
+                self.is_final = is_final
+
+        class FakeResponse:
+            def __init__(self, results, event_name=None):
+                self.results = results
+                self.speech_event_type = FakeEventType(event_name) if event_name else None
+
+        class FakeClient:
+            def streaming_recognize(self, requests=None):
+                # Do not iterate `requests` so the recognizer/credentials path
+                # is never exercised; just hand back canned responses.
+                return iter(
+                    [
+                        FakeResponse([], event_name="SPEECH_ACTIVITY_BEGIN"),
+                        FakeResponse([FakeResult("שלום", False)]),
+                        FakeResponse([FakeResult("שלום עולם", True)]),
+                        FakeResponse([], event_name="SPEECH_ACTIVITY_END"),
+                    ]
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            events = []
+            stream = GoogleSTTV2Stream(config, on_event_callback=events.append)
+            stream.active = True
+            stream.client = FakeClient()
+
+            count = stream._stream_once()
+
+            self.assertEqual(count, 4)
+            self.assertEqual(
+                [event["type"] for event in events],
+                ["speech_start", "interim", "final", "speech_end"],
+            )
+            final_event = next(event for event in events if event["type"] == "final")
+            interim_event = next(event for event in events if event["type"] == "interim")
+            self.assertEqual(final_event["text"], "שלום עולם")
+            self.assertIn("שלום", interim_event["text"])
+
 
 @unittest.skipIf(cloud_speech is None, "google-cloud-speech v2 is not installed")
 class GoogleSTTV2StreamTests(unittest.TestCase):

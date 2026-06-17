@@ -10,6 +10,7 @@ from google.api_core.exceptions import GoogleAPICallError
 from google.protobuf.duration_pb2 import Duration
 
 from .language_packs import merge_transcript_segments
+from .stt.base import ProviderCapabilities, SpeechClientBase
 
 
 logger = logging.getLogger("GoogleSTTV2Stream")
@@ -51,12 +52,20 @@ def infer_project_id_from_credentials(config):
         return ""
 
 
-class GoogleSTTV2Stream:
+class GoogleSTTV2Stream(SpeechClientBase):
+    capabilities = ProviderCapabilities(
+        name="google_v2",
+        streaming=True,
+        batch=False,
+        interim=True,
+        offline=False,
+        fallback_target=False,
+        needs_credentials=True,
+    )
+
     def __init__(self, config, on_event_callback=None):
-        self.config = config
-        self.on_event_callback = on_event_callback
+        super().__init__(config, on_event_callback)
         self.client = None
-        self.active = False
         self.thread = None
         self.audio_queue = None
         self._using_fallback = False
@@ -446,10 +455,3 @@ class GoogleSTTV2Stream:
                 self._using_fallback,
             )
             logger.info("Google STT V2 streaming thread exiting.")
-
-    def _emit_event(self, event):
-        if self.on_event_callback:
-            try:
-                self.on_event_callback(event)
-            except Exception as e:
-                logger.error(f"Error in V2 event callback: {e}")

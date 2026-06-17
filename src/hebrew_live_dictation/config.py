@@ -25,6 +25,10 @@ DEFAULT_SETTINGS = {
         "hotkey": "f8",
         "mode": "toggle",
     },
+    "stt": {
+        "provider": "google_v2",
+        "mode": "api",
+    },
     "google": {
         "api_version": "v2",
         "project_id": "",
@@ -367,6 +371,13 @@ class Config:
         speech["max_stream_seconds"] = max(30, min(295, int(speech.get("max_stream_seconds", 285))))
         speech["vad_padding_ms"] = max(0, int(speech.get("vad_padding_ms", 240)))
         speech["vad_min_silence_ms"] = max(100, int(speech.get("vad_min_silence_ms", 500)))
+
+        stt = self.settings.setdefault("stt", {})
+        provider = stt.get("provider")
+        if not isinstance(provider, str) or not provider.strip():
+            stt["provider"] = DEFAULT_SETTINGS["stt"]["provider"]
+        if stt.get("mode") not in {"api", "local", "auto_fallback"}:
+            stt["mode"] = DEFAULT_SETTINGS["stt"]["mode"]
 
         tsf = self.settings.setdefault("tsf", {})
         tsf["handshake_timeout_ms"] = max(50, min(150, int(tsf.get("handshake_timeout_ms", 100))))

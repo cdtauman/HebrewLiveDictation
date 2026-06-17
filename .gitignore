@@ -30,6 +30,7 @@ MANIFEST
 
 # PyInstaller temp files
 *.manifest
+!app.manifest
 *.spec.tmp
 
 # Local environments and dependency directories

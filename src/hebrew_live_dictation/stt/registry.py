@@ -50,6 +50,13 @@ def _google_v2_factory(config, on_event_callback):
     return GoogleSTTV2Stream(config, on_event_callback=on_event_callback)
 
 
+def _whisper_local_factory(config, on_event_callback):
+    # Lazy import keeps faster-whisper/numpy out of module-import time.
+    from .whisper_local import WhisperLocalStream
+
+    return WhisperLocalStream(config, on_event_callback=on_event_callback)
+
+
 # App-wide registry. Providers register here as they are added in later phases.
 REGISTRY = ProviderRegistry()
 REGISTRY.register(
@@ -63,5 +70,18 @@ REGISTRY.register(
         offline=False,
         fallback_target=False,
         needs_credentials=True,
+    ),
+)
+REGISTRY.register(
+    "whisper_local",
+    _whisper_local_factory,
+    ProviderCapabilities(
+        name="whisper_local",
+        streaming=False,
+        batch=True,
+        interim=False,
+        offline=True,
+        fallback_target=True,
+        needs_credentials=False,
     ),
 )

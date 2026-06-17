@@ -79,6 +79,18 @@ DEFAULT_SETTINGS = {
         "vad_padding_ms": 240,
         "vad_min_silence_ms": 500,
     },
+    "providers": {
+        "whisper": {
+            "enabled": False,
+            "model": "small",
+            "device": "cpu",
+            "compute_type": "int8",
+            "segment_silence_ms": 700,
+        },
+    },
+    "models": {
+        "storage_dir": "",
+    },
     "tsf": {
         "handshake_timeout_ms": 100,
         "experimental_transport_enabled": False,
@@ -378,6 +390,23 @@ class Config:
             stt["provider"] = DEFAULT_SETTINGS["stt"]["provider"]
         if stt.get("mode") not in {"api", "local", "auto_fallback"}:
             stt["mode"] = DEFAULT_SETTINGS["stt"]["mode"]
+
+        providers = self.settings.setdefault("providers", {})
+        whisper = providers.setdefault("whisper", {})
+        whisper["enabled"] = bool(whisper.get("enabled", False))
+        if not isinstance(whisper.get("model"), str) or not whisper.get("model", "").strip():
+            whisper["model"] = DEFAULT_SETTINGS["providers"]["whisper"]["model"]
+        if whisper.get("device") not in {"cpu", "cuda", "auto"}:
+            whisper["device"] = DEFAULT_SETTINGS["providers"]["whisper"]["device"]
+        if whisper.get("compute_type") not in {"int8", "int8_float16", "float16", "float32"}:
+            whisper["compute_type"] = DEFAULT_SETTINGS["providers"]["whisper"]["compute_type"]
+        whisper["segment_silence_ms"] = max(
+            200, int(whisper.get("segment_silence_ms") or DEFAULT_SETTINGS["providers"]["whisper"]["segment_silence_ms"])
+        )
+
+        models = self.settings.setdefault("models", {})
+        if not isinstance(models.get("storage_dir"), str):
+            models["storage_dir"] = ""
 
         tsf = self.settings.setdefault("tsf", {})
         tsf["handshake_timeout_ms"] = max(50, min(150, int(tsf.get("handshake_timeout_ms", 100))))

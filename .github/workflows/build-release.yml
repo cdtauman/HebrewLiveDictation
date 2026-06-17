@@ -1,0 +1,92 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Run Unit Tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Tests
+        env:
+          PYTHONPATH: src
+        run: |
+          python -m unittest discover -s tests
+
+  release:
+    name: Build & Package Release
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
+
+      - name: Run Build Script (Compile TSF Peer and package PyInstaller)
+        shell: pwsh
+        run: |
+          ./build_app.ps1
+
+      - name: Create Portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\HebrewLiveDictation -DestinationPath HebrewLiveDictation_${{ github.ref_name }}.zip -Force
+
+      - name: Compile Setup Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          ISCC.exe /DAppVersion="${{ github.ref_name }}" setup_script.iss
+
+      - name: Create GitHub Release and Upload Assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} `
+            HebrewLiveDictation_${{ github.ref_name }}.zip `
+            dist\HebrewLiveDictation_Setup_${{ github.ref_name }}.exe `
+            --title "${{ github.ref_name }}" `
+            --prerelease `
+            --generate-notes

@@ -103,6 +103,11 @@ DEFAULT_SETTINGS = {
         "enabled": True,
         "max_entries": 500,
     },
+    "toolbar": {
+        "enabled": False,
+        "idle_button": False,
+        "position": None,
+    },
     "tsf": {
         "handshake_timeout_ms": 100,
         "experimental_transport_enabled": False,
@@ -431,6 +436,13 @@ class Config:
         models = self.settings.setdefault("models", {})
         if not isinstance(models.get("storage_dir"), str):
             models["storage_dir"] = ""
+
+        toolbar = self.settings.setdefault("toolbar", {})
+        toolbar["enabled"] = bool(toolbar.get("enabled", False))
+        toolbar["idle_button"] = bool(toolbar.get("idle_button", False))
+        pos = toolbar.get("position")
+        if not (isinstance(pos, dict) and "x" in pos and "y" in pos):
+            toolbar["position"] = None
 
         history = self.settings.setdefault("history", {})
         history["enabled"] = bool(history.get("enabled", True))

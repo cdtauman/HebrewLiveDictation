@@ -133,6 +133,110 @@ class AppBridge(QObject):
     quit_requested = Signal()
 
 
+def clamp_position(x, y, w, h, screen):
+    """Keep an (x, y, w, h) window inside a screen rect (sx, sy, sw, sh)."""
+    sx, sy, sw, sh = screen
+    x = max(sx, min(int(x), sx + sw - w))
+    y = max(sy, min(int(y), sy + sh - h))
+    return x, y
+
+
+class FloatingToolbar(QWidget):
+    """Draggable, always-on-top, no-focus-steal toolbar.
+
+    Two modes: 'recording' (shows a Stop control while dictating) and 'idle' (a
+    quick-start button shown when the main window is hidden). Position persists
+    in config toolbar.position.
+    """
+
+    def __init__(self, config, on_start, on_stop):
+        super().__init__()
+        self.config = config
+        self._on_start = on_start
+        self._on_stop = on_stop
+        self._drag_offset = None
+        self._mode = "hidden"
+
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+
+        self._frame = QFrame(self)
+        self._frame.setObjectName("floatToolbar")
+        inner = QHBoxLayout(self._frame)
+        inner.setContentsMargins(12, 8, 12, 8)
+        inner.setSpacing(10)
+        self._label = QLabel("")
+        self._label.setObjectName("floatLabel")
+        self._action = QPushButton("")
+        self._action.setObjectName("floatButton")
+        self._action.setCursor(Qt.PointingHandCursor)
+        self._action.clicked.connect(self._on_action)
+        inner.addWidget(self._label)
+        inner.addWidget(self._action)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(self._frame)
+        self.setStyleSheet(
+            "#floatToolbar { background: rgba(15,23,42,238); border-radius: 14px; }"
+            "#floatLabel { color: #f8fafc; font: 700 13px 'Segoe UI'; }"
+            "#floatButton { color: #fff; background: #2563eb; border: none;"
+            " border-radius: 8px; padding: 5px 12px; font: 700 12px 'Segoe UI'; }"
+        )
+
+    def set_mode(self, mode):
+        self._mode = mode
+        if mode == "hidden":
+            self.hide()
+            return
+        if mode == "recording":
+            self._label.setText("● " + tr(self.config, "recording"))
+            self._action.setText(tr(self.config, "stop_dictation"))
+        else:
+            self._label.setText("🎙")
+            self._action.setText(tr(self.config, "start_dictation"))
+        self._show_positioned()
+
+    def _show_positioned(self):
+        self.adjustSize()
+        geo = QApplication.primaryScreen().availableGeometry()
+        pos = self.config.get("toolbar.position")
+        if isinstance(pos, dict) and "x" in pos and "y" in pos:
+            x, y = pos["x"], pos["y"]
+        else:
+            x = geo.x() + geo.width() - self.width() - 24
+            y = geo.y() + geo.height() - self.height() - 96
+        x, y = clamp_position(x, y, self.width(), self.height(), (geo.x(), geo.y(), geo.width(), geo.height()))
+        self.move(x, y)
+        self.show()
+
+    def _on_action(self):
+        if self._mode == "recording":
+            self._on_stop()
+        else:
+            self._on_start()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_offset is not None and (event.buttons() & Qt.LeftButton):
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if self._drag_offset is not None:
+            self._drag_offset = None
+            try:
+                self.config.set("toolbar.position", {"x": self.x(), "y": self.y()})
+            except Exception:
+                pass
+            event.accept()
+
+
 class DictationOverlay(QWidget):
     def __init__(self, config):
         super().__init__()
@@ -954,6 +1058,8 @@ class MainWindow(QMainWindow):
         form = self._form()
         self._checkbox("app.minimize_on_close", form, "minimize_on_close")
         self._checkbox("app.start_with_windows", form, "start_with_windows")
+        self._checkbox("toolbar.enabled", form, "toolbar_enabled")
+        self._checkbox("toolbar.idle_button", form, "toolbar_idle_button")
         self._checkbox("dictation.debug_log_transcripts", form, "debug_transcript_logging")
         card_layout.addLayout(form)
         layout.addWidget(card)
@@ -1642,6 +1748,11 @@ class QtDictationApp:
             self.qt_app.setWindowIcon(QIcon(icon_path))
         self.bridge = AppBridge()
         self.overlay = DictationOverlay(self.config)
+        self.toolbar = FloatingToolbar(
+            self.config,
+            on_start=self.bridge.start_requested.emit,
+            on_stop=self.bridge.stop_requested.emit,
+        )
         self.controller = DictationController(
             self.config,
             on_status=self.bridge.status_changed.emit,
@@ -1744,6 +1855,7 @@ class QtDictationApp:
             self.overlay.set_text("")
             self.tray.setIcon(self._icon("#ef4444"))
             self._play_feedback("start")
+            self._update_floating_toolbar("listening")
             if self.config.get("app.show_overlay", True):
                 self.overlay.set_status(message)
                 self.overlay.show_overlay()
@@ -1755,7 +1867,23 @@ class QtDictationApp:
             self.overlay.hide()
             if state == "idle":
                 self._play_feedback("stop")
+            self._update_floating_toolbar("idle")
             self._flush_session_history()
+
+    def _update_floating_toolbar(self, state):
+        try:
+            if state == "listening":
+                if self.config.get("toolbar.enabled", False):
+                    self.toolbar.set_mode("recording")
+                else:
+                    self.toolbar.set_mode("hidden")
+            else:  # idle
+                if self.config.get("toolbar.idle_button", False) and self.window.isHidden():
+                    self.toolbar.set_mode("idle")
+                else:
+                    self.toolbar.set_mode("hidden")
+        except Exception:
+            pass
 
     def _play_feedback(self, kind):
         if not self.config.get("audio.feedback_enabled", False):

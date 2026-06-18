@@ -1,0 +1,186 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Windows.Graphics;
+
+namespace VoiceType.Shell;
+
+/// <summary>
+/// Automated runtime verification of the Phase-1 migration-critical behaviors that
+/// can be checked without a human watching the screen: the C#-side bridge, the
+/// no-activate / always-on-top overlay windows (focus-safety), window styles, DPI
+/// awareness, and multi-monitor info. Writes a report file and exits.
+/// </summary>
+internal static class RuntimeSelfTest
+{
+    private static readonly List<(string name, bool ok, string detail)> Results = new();
+    private static void Check(string name, bool ok, string detail = "")
+        => Results.Add((name, ok, detail));
+
+    public static async Task RunAsync()
+    {
+        Process? bridge = null;
+        var events = new List<JsonElement>();
+        string repoRoot = RepoPaths.FindRoot();
+        string reportPath = Path.Combine(repoRoot, "winui", "phase1_runtime_report.txt");
+
+        try
+        {
+            // 1) Spawn the Python engine bridge (self-contained test).
+            bridge = StartBridge(repoRoot);
+            Check("bridge.spawn", bridge != null && !bridge.HasExited,
+                  bridge != null ? $"pid={bridge.Id}" : "failed to start");
+
+            // 2) Connect the C# client and exercise the contract from the WinUI side.
+            using var client = new BridgeClient();
+            client.EventReceived += e => { lock (events) events.Add(e.Clone()); };
+            try
+            {
+                await client.ConnectAsync(20000);
+                Check("bridge.connect", true, "NamedPipeClientStream (overlapped)");
+
+                var ping = await client.RpcAsync("ping");
+                Check("bridge.ping", ping.TryGetProperty("ok", out var ok) && ok.GetBoolean(), ping.ToString());
+
+                var st = await client.RpcAsync("getStatus");
+                Check("bridge.getStatus", st.TryGetProperty("state", out var s) && s.GetString() == "idle",
+                      "state=" + st.GetProperty("state").GetString());
+
+                var theme = (await client.RpcAsync("getConfig", new { key = "app.theme" }))
+                            .GetProperty("value").GetString();
+                var wrote = await client.RpcAsync("setConfig", new { key = "app.theme", value = theme });
+                Check("bridge.settings.boundary",
+                      wrote.TryGetProperty("saved", out var sv) && sv.GetBoolean(),
+                      $"app.theme round-trip = {theme}");
+
+                await client.RpcAsync("startDictation", new { mode = "external" });
+                await Task.Delay(2500);
+                await client.RpcAsync("stopDictation");
+                await Task.Delay(1500);
+                lock (events)
+                {
+                    var kinds = events.Select(e => e.TryGetProperty("kind", out var k) ? k.GetString() : null)
+                                      .Where(k => k != null).ToList();
+                    Check("bridge.event.stream", kinds.Contains("status") || kinds.Contains("heartbeat"),
+                          "event kinds: " + string.Join(",", kinds.Distinct()));
+                }
+            }
+            catch (Exception ex)
+            {
+                Check("bridge.client", false, ex.Message);
+            }
+
+            // 3) No-activate / always-on-top overlay windows + FOCUS-SAFETY proof.
+            IntPtr fgBefore = Native.GetForegroundWindow();
+
+            var (hud, hudHwnd) = MakeOverlayWindow("VoiceType HUD — חיווי קולי", clickThrough: true,
+                                                   x: 200, y: 900, w: 720, h: 120);
+            var (remote, remoteHwnd) = MakeOverlayWindow("שלט", clickThrough: false,
+                                                         x: 1200, y: 820, w: 240, h: 80);
+            await Task.Delay(400); // let the window manager settle
+
+            IntPtr fgAfter = Native.GetForegroundWindow();
+            bool noSteal = fgAfter == fgBefore && fgAfter != hudHwnd && fgAfter != remoteHwnd;
+            Check("focus.no_steal", noSteal,
+                  $"fgBefore=0x{fgBefore.ToInt64():X} fgAfter=0x{fgAfter.ToInt64():X} " +
+                  $"('{Native.GetWindowTitle(fgAfter)}'); hud=0x{hudHwnd.ToInt64():X}");
+
+            long hudEx = Native.GetExStyle(hudHwnd);
+            long remoteEx = Native.GetExStyle(remoteHwnd);
+            Check("hud.style.noactivate", (hudEx & Native.WS_EX_NOACTIVATE) != 0, $"exStyle=0x{hudEx:X}");
+            Check("hud.style.clickthrough", (hudEx & Native.WS_EX_TRANSPARENT) != 0, "WS_EX_TRANSPARENT");
+            Check("remote.style.noactivate", (remoteEx & Native.WS_EX_NOACTIVATE) != 0, $"exStyle=0x{remoteEx:X}");
+            Check("remote.not.clickthrough", (remoteEx & Native.WS_EX_TRANSPARENT) == 0,
+                  "Remote stays interactive (has buttons)");
+
+            // 4) DPI awareness (PerMonitorV2 expected from app.manifest).
+            IntPtr ctx = Native.GetThreadDpiAwarenessContext();
+            int awareness = Native.GetAwarenessFromDpiAwarenessContext(ctx); // 2 = PerMonitor
+            uint hudDpi = Native.GetDpiForWindow(hudHwnd);
+            Check("dpi.permonitor", awareness == 2, $"awareness={awareness} hudDpi={hudDpi} (scale {hudDpi / 96.0:0.00}x)");
+
+            // 5) Multi-monitor info.
+            int monitors = Native.GetSystemMetrics(Native.SM_CMONITORS);
+            int vw = Native.GetSystemMetrics(Native.SM_CXVIRTUALSCREEN);
+            int vh = Native.GetSystemMetrics(Native.SM_CYVIRTUALSCREEN);
+            Check("monitors.enumerate", monitors >= 1, $"count={monitors} virtual={vw}x{vh}");
+
+            // 6) Tray icon can be created in this WinUI process (Shell_NotifyIcon NIM_ADD).
+            var nid = new Native.NOTIFYICONDATA
+            {
+                cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Native.NOTIFYICONDATA>(),
+                hWnd = hudHwnd,
+                uID = 1,
+                uFlags = Native.NIF_ICON | Native.NIF_TIP,
+                hIcon = Native.LoadIcon(IntPtr.Zero, Native.IDI_APPLICATION),
+                szTip = "VoiceType",
+            };
+            bool added = Native.Shell_NotifyIcon(Native.NIM_ADD, ref nid);
+            if (added) Native.Shell_NotifyIcon(Native.NIM_DELETE, ref nid);
+            Check("tray.shell_notifyicon", added, "NIM_ADD succeeded (full click handling = interactive build)");
+
+            try { await client.RpcAsync("shutdown"); } catch { }
+            hud.Close(); remote.Close();
+        }
+        catch (Exception ex)
+        {
+            Check("selftest.fatal", false, ex.ToString());
+        }
+        finally
+        {
+            WriteReport(reportPath);
+            try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }
+            Application.Current.Exit();
+        }
+    }
+
+    private static (Window window, IntPtr hwnd) MakeOverlayWindow(string title, bool clickThrough,
+                                                                 int x, int y, int w, int h)
+    {
+        var window = new Window { Title = title };
+        window.Content = new Grid
+        {
+            FlowDirection = FlowDirection.RightToLeft,
+            Children = { new TextBlock { Text = title, Margin = new Thickness(16) } }
+        };
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+
+        var presenter = OverlappedPresenter.CreateForToolWindow();
+        presenter.IsAlwaysOnTop = true;
+        presenter.IsResizable = false;
+        presenter.SetBorderAndTitleBar(false, false);
+        window.AppWindow.SetPresenter(presenter);
+        window.AppWindow.MoveAndResize(new RectInt32(x, y, w, h));
+
+        Native.MakeOverlay(hwnd, clickThrough);   // WS_EX_NOACTIVATE | TOPMOST | (TRANSPARENT)
+        window.AppWindow.Show(activateWindow: false);  // show WITHOUT stealing focus
+        return (window, hwnd);
+    }
+
+    private static Process? StartBridge(string repoRoot)
+    {
+        try { return Process.Start(RepoPaths.SidecarStartInfo(repoRoot)); }
+        catch { return null; }
+    }
+
+    private static void WriteReport(string path)
+    {
+        int pass = Results.Count(r => r.ok);
+        var sb = new StringBuilder();
+        sb.AppendLine("VoiceType Phase-1 WinUI RUNTIME self-test");
+        sb.AppendLine($"timestamp: {DateTime.Now:O}");
+        sb.AppendLine($"result: {pass}/{Results.Count} passed");
+        sb.AppendLine(new string('-', 60));
+        foreach (var (name, ok, detail) in Results)
+            sb.AppendLine($"[{(ok ? "PASS" : "FAIL")}] {name}{(detail.Length > 0 ? " — " + detail : "")}");
+        try { File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true)); } catch { }
+    }
+}

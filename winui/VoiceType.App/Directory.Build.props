@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Phase-1 blocker B1 resolution.
+    WinUI's Appx/PRI MSBuild tasks (Microsoft.Build.Packaging.Pri.Tasks.dll and
+    Microsoft.Build.AppxPackage.dll) ship with VS Build Tools' AppxPackage component.
+    When building via the dotnet CLI, MSBuildExtensionsPath points at the .NET SDK
+    (which does NOT include them), so we point AppxMSBuildToolsPath at the installed
+    VS Build Tools 18 folder. With this, plain `dotnet build` / `dotnet publish` work.
+    (When building inside Visual Studio / VS MSBuild this is auto-resolved and ignored.)
+  -->
+  <PropertyGroup>
+    <_VtBuildToolsAppx>C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\MSBuild\Microsoft\VisualStudio\v18.0\AppxPackage\</_VtBuildToolsAppx>
+    <AppxMSBuildToolsPath Condition="'$(AppxMSBuildToolsPath)' == '' and Exists('$(_VtBuildToolsAppx)')">$(_VtBuildToolsAppx)</AppxMSBuildToolsPath>
+  </PropertyGroup>
+</Project>

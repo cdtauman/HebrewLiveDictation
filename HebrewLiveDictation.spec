@@ -2,6 +2,8 @@
 
 import os
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
 
 native_release = os.path.join("native", "tsf_hello_peer", "build", "Release", "VoiceTypeTsfHelloPeer.exe")
@@ -12,27 +14,52 @@ if os.path.exists(native_release):
 if os.path.exists(native_dll):
     native_binaries.append((native_dll, "native/tsf"))
 
+datas = [
+    ("assets/app_icon.png", "assets"),
+    ("assets/app_icon.ico", "assets"),
+    ("native/tsf_hello_peer/README.md", "native/tsf_hello_peer"),
+    ("native/tsf_hello_peer/build_local.ps1", "native/tsf_hello_peer"),
+]
+binaries = list(native_binaries)
+hiddenimports = [
+    "google.cloud.speech_v2",
+    "google.cloud.speech_v2.types.cloud_speech",
+    "google.protobuf.duration_pb2",
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "PySide6.QtMultimedia",
+    "comtypes",
+    "comtypes.client",
+    "uiautomation",
+    # Parity-upgrade dependencies (engine, credentials, updater, export):
+    "keyring.backends.Windows",
+    "keyring.backends.chainer",
+    "cryptography.hazmat.primitives.asymmetric.ed25519",
+    "requests",
+    "websockets",
+    "websockets.sync.client",
+    "docx",
+    "psutil",
+]
+
+# Data-/binary-heavy ML deps (local Whisper) need their native libs + data files
+# collected. Guarded so a missing optional package never breaks the build.
+for _pkg in ("faster_whisper", "ctranslate2", "av", "tokenizers", "huggingface_hub", "onnxruntime"):
+    try:
+        _d, _b, _h = collect_all(_pkg)
+        datas += _d
+        binaries += _b
+        hiddenimports += _h
+    except Exception:
+        pass
+
 a = Analysis(
     ["main.py"],
     pathex=["src"],
-    binaries=native_binaries,
-    datas=[
-        ("assets/app_icon.png", "assets"),
-        ("assets/app_icon.ico", "assets"),
-        ("native/tsf_hello_peer/README.md", "native/tsf_hello_peer"),
-        ("native/tsf_hello_peer/build_local.ps1", "native/tsf_hello_peer"),
-    ],
-    hiddenimports=[
-        "google.cloud.speech_v2",
-        "google.cloud.speech_v2.types.cloud_speech",
-        "google.protobuf.duration_pb2",
-        "PySide6.QtCore",
-        "PySide6.QtGui",
-        "PySide6.QtWidgets",
-        "comtypes",
-        "comtypes.client",
-        "uiautomation",
-    ],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

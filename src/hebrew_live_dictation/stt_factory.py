@@ -22,13 +22,24 @@ def create_stt_stream(config, on_event_callback):
 
     from .stt.registry import REGISTRY
 
+    mode = config.get("stt.mode", "api") or "api"
     provider = config.get("stt.provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER
+
+    # stt.mode selects the strategy:
+    #   api           -> use stt.provider as configured
+    #   local         -> force the offline local provider
+    #   auto_fallback -> primary = stt.provider, fall back to local on failure
+    if mode == "local":
+        provider = "whisper_local"
+
+    whisper_enabled = bool(config.get("providers.whisper.enabled", False))
 
     # Local Whisper is gated by an explicit enable flag (the rollback lever):
     # if selected but disabled, fall back to the default cloud provider.
-    if provider == "whisper_local" and not config.get("providers.whisper.enabled", False):
+    if provider == "whisper_local" and not whisper_enabled:
         logger.warning(
-            "stt.provider=whisper_local but providers.whisper.enabled is false; falling back to %r.",
+            "Local Whisper selected (mode=%r) but providers.whisper.enabled is false; falling back to %r.",
+            mode,
             DEFAULT_PROVIDER,
         )
         provider = DEFAULT_PROVIDER
@@ -42,5 +53,13 @@ def create_stt_stream(config, on_event_callback):
         )
         provider = DEFAULT_PROVIDER
 
-    logger.info("Creating STT stream via provider %r.", provider)
+    if mode == "auto_fallback" and provider != "whisper_local" and whisper_enabled:
+        from .stt.fallback import FallbackSpeechClient
+
+        logger.info("Creating AutoFallback STT stream: primary=%r -> local=whisper_local.", provider)
+        return FallbackSpeechClient(
+            config, on_event_callback, primary_name=provider, local_name="whisper_local"
+        )
+
+    logger.info("Creating STT stream via provider %r (mode=%r).", provider, mode)
     return REGISTRY.create(provider, config, on_event_callback)

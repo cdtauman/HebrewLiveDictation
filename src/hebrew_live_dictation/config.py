@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
     "hotkeys": {
         "hotkey": "f8",
         "mode": "toggle",
+        "pause_hotkey": "",
     },
     "stt": {
         "provider": "google_v2",

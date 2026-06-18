@@ -116,19 +116,23 @@ def check_hotkey_conflict(hotkey_str: str) -> bool:
     return True
 
 class HotkeyListener:
-    def __init__(self, config, on_start_requested, on_stop_requested):
+    def __init__(self, config, on_start_requested, on_stop_requested, on_pause_requested=None):
         self.config = config
         self.on_start_requested = on_start_requested
         self.on_stop_requested = on_stop_requested
-        
+        self.on_pause_requested = on_pause_requested
+
         self.hotkey_str = self.config.get("hotkey", "<ctrl>+<alt>+space")
         self.mode = self.config.get("mode", "push_to_talk")
-        
+        self.pause_hotkey_str = str(self.config.get("hotkeys.pause_hotkey", "") or "")
+
         self.target_keys = parse_hotkey_string(self.hotkey_str)
+        self.pause_keys = parse_hotkey_string(self.pause_hotkey_str)
         logger.info(f"Target hotkey set: {self.target_keys} (Mode: {self.mode})")
-        
+
         self.current_pressed = set()
         self.hotkey_active = False
+        self.pause_active = False
         self.listener = None
         self.listening_state = False  # Track if app thinks it's recording (for toggle mode)
 
@@ -136,9 +140,12 @@ class HotkeyListener:
         """Re-loads settings in case the hotkey or mode changed."""
         self.hotkey_str = self.config.get("hotkey", "<ctrl>+<alt>+space")
         self.mode = self.config.get("mode", "push_to_talk")
+        self.pause_hotkey_str = str(self.config.get("hotkeys.pause_hotkey", "") or "")
         self.target_keys = parse_hotkey_string(self.hotkey_str)
+        self.pause_keys = parse_hotkey_string(self.pause_hotkey_str)
         self.current_pressed.clear()
         self.hotkey_active = False
+        self.pause_active = False
         logger.info(f"Updated hotkey set: {self.target_keys} (Mode: {self.mode})")
 
     def _win32_event_filter(self, msg, data):
@@ -215,20 +222,31 @@ class HotkeyListener:
             self._activate_if_needed()
 
     def _activate_if_needed(self):
-        if not self.target_keys:
-            return
-        if self.target_keys.issubset(self.current_pressed):
+        if self.target_keys and self.target_keys.issubset(self.current_pressed):
             if not self.hotkey_active:
                 self.hotkey_active = True
                 logger.info(f"Hotkey combination {self.target_keys} pressed down.")
                 logger.debug(f"Hotkey combination {self.target_keys} pressed down.")
                 self._handle_hotkey_down()
+        # Pause hotkey (separate combo). Acts as a toggle: each press finalizes
+        # an active session or starts a fresh one. No-op when not configured.
+        if self.pause_keys and self.pause_keys.issubset(self.current_pressed):
+            if not self.pause_active:
+                self.pause_active = True
+                logger.info(f"Pause hotkey {self.pause_keys} pressed.")
+                self._handle_pause()
 
     def _deactivate_if_needed(self):
         if self.hotkey_active and not self.target_keys.issubset(self.current_pressed):
             self.hotkey_active = False
             logger.debug(f"Hotkey combination {self.target_keys} released.")
             self._handle_hotkey_up()
+        if self.pause_active and not self.pause_keys.issubset(self.current_pressed):
+            self.pause_active = False
+
+    def _handle_pause(self):
+        if self.on_pause_requested:
+            self.on_pause_requested()
 
     def start(self):
         self.listener = keyboard.Listener(

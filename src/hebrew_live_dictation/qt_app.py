@@ -130,6 +130,7 @@ class AppBridge(QObject):
     command_executed = Signal(str, object)
     start_requested = Signal()
     stop_requested = Signal()
+    pause_requested = Signal()
     quit_requested = Signal()
 
 
@@ -1025,6 +1026,10 @@ class MainWindow(QMainWindow):
         hotkey_row.addWidget(copilot)
         form.addRow(tr(self.config, "hotkey"), hotkey_row)
         self._combo("hotkeys.mode", [("toggle", tr(self.config, "mode_toggle")), ("push_to_talk", tr(self.config, "mode_push_to_talk"))], form, "mode")
+
+        pause_edit = QKeySequenceEdit()
+        self.fields["hotkeys.pause_hotkey"] = pause_edit
+        form.addRow(tr(self.config, "pause_hotkey"), pause_edit)
         card_layout.addLayout(form)
         layout.addWidget(card)
         layout.addStretch()
@@ -1764,6 +1769,7 @@ class QtDictationApp:
             self.config,
             on_start_requested=self.bridge.start_requested.emit,
             on_stop_requested=self.bridge.stop_requested.emit,
+            on_pause_requested=self.bridge.pause_requested.emit,
         )
         self.window = MainWindow(
             app_dir,
@@ -1781,6 +1787,8 @@ class QtDictationApp:
     def _connect_signals(self):
         self.bridge.start_requested.connect(self.controller.start_listening)
         self.bridge.stop_requested.connect(self.controller.stop_listening)
+        # Pause hotkey toggles: finalize an active session or start a fresh one.
+        self.bridge.pause_requested.connect(self.controller.toggle_listening)
         self.bridge.status_changed.connect(self._on_status)
         self.bridge.text_changed.connect(self._on_text)
         self.bridge.error_occurred.connect(self._on_error)

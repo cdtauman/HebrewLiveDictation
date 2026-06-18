@@ -178,5 +178,69 @@ class HotkeyTests(unittest.TestCase):
         self.assertEqual(events, ["start"])
 
 
+    def test_pause_hotkey_toggles_via_normal_press_path(self):
+        class Config:
+            def get(self, key, default=None):
+                return {"hotkey": "f8", "mode": "toggle", "hotkeys.pause_hotkey": "f9"}.get(key, default)
+
+        class F9:
+            char = None
+            vk = 120  # F9
+
+        events = []
+        listener = HotkeyListener(
+            Config(),
+            on_start_requested=lambda: events.append("start"),
+            on_stop_requested=lambda: events.append("stop"),
+            on_pause_requested=lambda: events.append("pause"),
+        )
+
+        listener._on_press(F9())
+        listener._on_release(F9())
+        listener._on_press(F9())
+
+        self.assertEqual(events, ["pause", "pause"])
+
+    def test_no_pause_hotkey_means_no_pause_events(self):
+        class Config:
+            def get(self, key, default=None):
+                return {"hotkey": "f8", "mode": "toggle"}.get(key, default)
+
+        class F9:
+            char = None
+            vk = 120
+
+        events = []
+        listener = HotkeyListener(
+            Config(),
+            on_start_requested=lambda: events.append("start"),
+            on_stop_requested=lambda: events.append("stop"),
+            on_pause_requested=lambda: events.append("pause"),
+        )
+
+        listener._on_press(F9())
+        self.assertEqual(events, [])  # f9 is not the main hotkey and no pause hotkey set
+
+    def test_main_hotkey_still_works_alongside_pause_hotkey(self):
+        class Config:
+            def get(self, key, default=None):
+                return {"hotkey": "f8", "mode": "toggle", "hotkeys.pause_hotkey": "f9"}.get(key, default)
+
+        class F8:
+            char = None
+            vk = 119  # F8
+
+        events = []
+        listener = HotkeyListener(
+            Config(),
+            on_start_requested=lambda: events.append("start"),
+            on_stop_requested=lambda: events.append("stop"),
+            on_pause_requested=lambda: events.append("pause"),
+        )
+
+        listener._on_press(F8())
+        self.assertEqual(events, ["start"])
+
+
 if __name__ == "__main__":
     unittest.main()

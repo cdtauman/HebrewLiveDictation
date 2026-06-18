@@ -93,6 +93,30 @@ def _matches(entry: str, name: str) -> bool:
     return flat in entry or name in entry
 
 
+def download_model(config, name=None, downloader=None):
+    """Download a model into the storage dir without loading it into RAM.
+
+    Uses faster-whisper's downloader (Hugging Face); ``downloader`` is injectable
+    for tests. Returns the local model path.
+    """
+    name = name or config.get("providers.whisper.model", DEFAULT_MODEL)
+    storage_dir = default_storage_dir(config)
+    try:
+        os.makedirs(storage_dir, exist_ok=True)
+    except Exception:
+        pass
+    if downloader is None:
+        from faster_whisper import download_model as downloader  # type: ignore
+    return downloader(name, cache_dir=storage_dir, revision=model_revision(name))
+
+
+def model_status(config, name=None):
+    """Return {name, downloaded, path} for the UI."""
+    name = name or config.get("providers.whisper.model", DEFAULT_MODEL)
+    storage_dir = default_storage_dir(config)
+    return {"name": name, "downloaded": is_downloaded(name, storage_dir), "path": storage_dir}
+
+
 def is_downloaded(name, storage_dir) -> bool:
     if not storage_dir or not os.path.isdir(storage_dir):
         return False

@@ -54,6 +54,32 @@ class ModelsTests(unittest.TestCase):
         finally:
             models._available_ram_mb = original
 
+    def test_download_model_uses_injected_downloader(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.update({"providers.whisper.model": "small"})
+            calls = {}
+
+            def fake_downloader(name, cache_dir=None, revision=None):
+                calls["name"] = name
+                calls["cache_dir"] = cache_dir
+                return os.path.join(cache_dir, f"models--{name}")
+
+            path = models.download_model(config, downloader=fake_downloader)
+            self.assertEqual(calls["name"], "small")
+            self.assertEqual(calls["cache_dir"], os.path.join(tmp, "models"))
+            self.assertIn("small", path)
+
+    def test_model_status_reports_downloaded_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            status = models.model_status(config, "small")
+            self.assertEqual(status["name"], "small")
+            self.assertFalse(status["downloaded"])
+            self.assertEqual(status["path"], os.path.join(tmp, "models"))
+            os.makedirs(os.path.join(tmp, "models", "models--small"))
+            self.assertTrue(models.model_status(config, "small")["downloaded"])
+
     def test_is_downloaded_and_delete(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertFalse(models.is_downloaded("small", tmp))

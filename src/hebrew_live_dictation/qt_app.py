@@ -2,7 +2,7 @@ import ctypes
 import os
 import sys
 
-from PySide6.QtCore import QObject, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -101,6 +101,26 @@ def set_startup(enabled: bool):
         winreg.CloseKey(key)
     except Exception as e:
         print(f"Failed to update Windows startup registry: {e}")
+
+
+class WhisperDownloader(QObject):
+    """Runs a local-model download off the GUI thread; emits (ok, message)."""
+
+    finished = Signal(bool, str)
+
+    def __init__(self, config, name):
+        super().__init__()
+        self.config = config
+        self.name = name
+
+    def run(self):
+        try:
+            from . import models
+
+            path = models.download_model(self.config, self.name)
+            self.finished.emit(True, str(path))
+        except Exception as e:
+            self.finished.emit(False, str(e))
 
 
 class AppBridge(QObject):
@@ -653,12 +673,13 @@ class MainWindow(QMainWindow):
             "engine_provider",
         )
         self._checkbox("providers.whisper.enabled", form, "engine_whisper_enabled")
-        self._combo(
+        whisper_model_combo = self._combo(
             "providers.whisper.model",
             ["tiny", "base", "small", "medium", "large-v3", "distil-large-v3"],
             form,
             "engine_whisper_model",
         )
+        whisper_model_combo.currentIndexChanged.connect(self._refresh_whisper_status)
         self._combo("providers.deepgram.model", ["nova-2", "nova-3"], form, "engine_deepgram_model")
         self._combo(
             "providers.groq.model",
@@ -668,11 +689,75 @@ class MainWindow(QMainWindow):
         )
 
         card_layout.addLayout(form)
+
+        # Local model status + on-demand download.
+        self._whisper_status_label = QLabel("")
+        self._whisper_status_label.setObjectName("helperLabel")
+        self._whisper_status_label.setWordWrap(True)
+        download_row = QHBoxLayout()
+        self._whisper_download_btn = QPushButton(tr(self.config, "engine_download_model"))
+        self._whisper_download_btn.setObjectName("secondaryButton")
+        self._whisper_download_btn.clicked.connect(self._download_whisper_model)
+        download_row.addWidget(self._whisper_status_label, 1)
+        download_row.addWidget(self._whisper_download_btn)
+        card_layout.addLayout(download_row)
+        self._refresh_whisper_status()
+
         card_layout.addWidget(self._provider_key_row("deepgram", "engine_deepgram_key"))
         card_layout.addWidget(self._provider_key_row("groq", "engine_groq_key"))
         layout.addWidget(card)
         layout.addStretch()
         return page
+
+    def _refresh_whisper_status(self, *args):
+        label = getattr(self, "_whisper_status_label", None)
+        if label is None:
+            return
+        from . import models
+
+        status = models.model_status(self.config)
+        state = tr(self.config, "engine_whisper_downloaded") if status["downloaded"] else tr(
+            self.config, "engine_whisper_not_downloaded"
+        )
+        label.setText(
+            f"{status['name']}: {state}\n{tr(self.config, 'engine_model_path')}: {status['path']}"
+        )
+
+    def _download_whisper_model(self):
+        if getattr(self, "_whisper_downloading", False):
+            return
+        name = self.config.get("providers.whisper.model", "small")
+        from . import models
+
+        ok, message = models.ram_preflight(name)
+        if not ok:
+            QMessageBox.warning(self, tr(self.config, "engine"), message)
+            return
+        self._whisper_downloading = True
+        if getattr(self, "_whisper_download_btn", None) is not None:
+            self._whisper_download_btn.setEnabled(False)
+        if getattr(self, "_whisper_status_label", None) is not None:
+            self._whisper_status_label.setText(f"{name}: {tr(self.config, 'engine_downloading')}")
+
+        self._whisper_thread = QThread()
+        self._whisper_worker = WhisperDownloader(self.config, name)
+        self._whisper_worker.moveToThread(self._whisper_thread)
+        self._whisper_thread.started.connect(self._whisper_worker.run)
+        self._whisper_worker.finished.connect(self._on_whisper_downloaded)
+        self._whisper_worker.finished.connect(self._whisper_thread.quit)
+        self._whisper_thread.start()
+
+    def _on_whisper_downloaded(self, ok, message):
+        self._whisper_downloading = False
+        if getattr(self, "_whisper_download_btn", None) is not None:
+            self._whisper_download_btn.setEnabled(True)
+        if ok:
+            self._refresh_whisper_status()
+            QMessageBox.information(self, tr(self.config, "engine"), tr(self.config, "engine_download_done"))
+        else:
+            if getattr(self, "_whisper_status_label", None) is not None:
+                self._whisper_status_label.setText(f"{tr(self.config, 'engine_download_failed')}: {message}")
+            QMessageBox.warning(self, tr(self.config, "engine"), f"{tr(self.config, 'engine_download_failed')}\n{message}")
 
     def _provider_key_row(self, provider, label_key):
         from . import secrets_store

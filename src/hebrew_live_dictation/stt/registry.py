@@ -57,6 +57,18 @@ def _whisper_local_factory(config, on_event_callback):
     return WhisperLocalStream(config, on_event_callback=on_event_callback)
 
 
+def _deepgram_factory(config, on_event_callback):
+    from .deepgram import DeepgramStream
+
+    return DeepgramStream(config, on_event_callback=on_event_callback)
+
+
+def _groq_factory(config, on_event_callback):
+    from .groq import GroqStream
+
+    return GroqStream(config, on_event_callback=on_event_callback)
+
+
 # App-wide registry. Providers register here as they are added in later phases.
 REGISTRY = ProviderRegistry()
 REGISTRY.register(
@@ -83,5 +95,31 @@ REGISTRY.register(
         offline=True,
         fallback_target=True,
         needs_credentials=False,
+    ),
+)
+REGISTRY.register(
+    "deepgram",
+    _deepgram_factory,
+    ProviderCapabilities(
+        name="deepgram",
+        streaming=True,
+        batch=False,
+        interim=True,
+        offline=False,
+        fallback_target=False,
+        needs_credentials=True,
+    ),
+)
+REGISTRY.register(
+    "groq",
+    _groq_factory,
+    ProviderCapabilities(
+        name="groq",
+        streaming=False,
+        batch=True,
+        interim=False,
+        offline=False,
+        fallback_target=False,
+        needs_credentials=True,
     ),
 )

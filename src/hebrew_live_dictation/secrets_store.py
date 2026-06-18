@@ -95,6 +95,19 @@ def delete_secret(name: str, *, keyring_module=None) -> bool:
         return False
 
 
+def provider_api_key(config, provider: str, *, keyring_module=None) -> str:
+    """Resolve a provider's API key: keyring first, then any legacy plaintext
+    value in config. Returns "" if none is configured."""
+    name = _entry_name(f"providers.{provider}.api_key")
+    key = get_secret(name, keyring_module=keyring_module)
+    if key:
+        return key
+    try:
+        return (config.get(f"providers.{provider}.api_key", "") or "").strip()
+    except Exception:
+        return ""
+
+
 def migrate_plaintext_secrets(config, *, keyring_module=None):
     """Move any plaintext secrets from config into the keyring.
 

@@ -15,11 +15,11 @@ last partial segment (the controller resets pending text on stop-completion).
 faster-whisper's trailing punctuation usually avoids this.
 """
 
-import audioop
 import logging
 import threading
 
 from .base import ProviderCapabilities, SpeechClientBase
+from .segmenter import SilenceSegmenter, is_speech
 
 
 logger = logging.getLogger("WhisperLocalStream")
@@ -78,11 +78,7 @@ class WhisperLocalStream(SpeechClientBase):
         return "he" if code == "iw" else code
 
     def _is_speech(self, chunk: bytes) -> bool:
-        try:
-            rms = audioop.rms(chunk, 2)
-        except Exception:
-            return False
-        return min(1.0, rms / 1200.0) >= self._silence_threshold
+        return is_speech(chunk, self._silence_threshold)
 
     def _transcribe(self, pcm16: bytes) -> str:
         import numpy as np
@@ -117,35 +113,25 @@ class WhisperLocalStream(SpeechClientBase):
             self._model = self._load_model()
             self._emit_event({"type": "status", "message": "Local model ready."})
 
-            buffer = bytearray()
-            silence_ms = 0
-            speech_ms = 0
-            have_speech = False
-
+            segmenter = SilenceSegmenter(
+                frame_ms=self._frame_ms,
+                silence_threshold=self._silence_threshold,
+                segment_silence_ms=self._segment_silence_ms,
+                min_speech_ms=self._min_speech_ms,
+            )
             while self.active:
                 chunk = self.audio_queue.get()
                 if chunk is None:
                     break
                 if chunk == b"":
                     continue
+                segment = segmenter.add(chunk)
+                if segment is not None:
+                    self._emit_final(segment)
 
-                if self._is_speech(chunk):
-                    buffer.extend(chunk)
-                    have_speech = True
-                    speech_ms += self._frame_ms
-                    silence_ms = 0
-                elif have_speech:
-                    buffer.extend(chunk)  # keep trailing silence for context
-                    silence_ms += self._frame_ms
-                    if silence_ms >= self._segment_silence_ms and speech_ms >= self._min_speech_ms:
-                        self._emit_final(buffer)
-                        buffer = bytearray()
-                        silence_ms = 0
-                        speech_ms = 0
-                        have_speech = False
-
-            if have_speech and buffer:
-                self._emit_final(buffer)
+            segment = segmenter.flush()
+            if segment is not None:
+                self._emit_final(segment)
         except Exception as e:
             logger.error("Local transcription error: %s", e)
             self._emit_event({"type": "error", "message": f"Local transcription error: {e}"})

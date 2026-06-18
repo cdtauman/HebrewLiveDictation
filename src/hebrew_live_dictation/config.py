@@ -87,6 +87,12 @@ DEFAULT_SETTINGS = {
             "compute_type": "int8",
             "segment_silence_ms": 700,
         },
+        "deepgram": {
+            "model": "nova-2",
+        },
+        "groq": {
+            "model": "whisper-large-v3",
+        },
     },
     "models": {
         "storage_dir": "",
@@ -403,6 +409,13 @@ class Config:
         whisper["segment_silence_ms"] = max(
             200, int(whisper.get("segment_silence_ms") or DEFAULT_SETTINGS["providers"]["whisper"]["segment_silence_ms"])
         )
+
+        deepgram = providers.setdefault("deepgram", {})
+        if not isinstance(deepgram.get("model"), str) or not deepgram.get("model", "").strip():
+            deepgram["model"] = DEFAULT_SETTINGS["providers"]["deepgram"]["model"]
+        groq = providers.setdefault("groq", {})
+        if not isinstance(groq.get("model"), str) or not groq.get("model", "").strip():
+            groq["model"] = DEFAULT_SETTINGS["providers"]["groq"]["model"]
 
         models = self.settings.setdefault("models", {})
         if not isinstance(models.get("storage_dir"), str):

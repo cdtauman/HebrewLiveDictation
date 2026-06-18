@@ -29,8 +29,14 @@ def create_stt_stream(config, on_event_callback):
     #   api           -> use stt.provider as configured
     #   local         -> force the offline local provider
     #   auto_fallback -> primary = stt.provider, fall back to local on failure
+    #   smart_auto    -> pick the best available provider, then fall back to local
     if mode == "local":
         provider = "whisper_local"
+    elif mode == "smart_auto":
+        from .stt.auto_select import select_provider
+
+        provider = select_provider(config)
+        logger.info("Smart Auto selected provider %r.", provider)
 
     whisper_enabled = bool(config.get("providers.whisper.enabled", False))
 
@@ -53,10 +59,10 @@ def create_stt_stream(config, on_event_callback):
         )
         provider = DEFAULT_PROVIDER
 
-    if mode == "auto_fallback" and provider != "whisper_local" and whisper_enabled:
+    if mode in ("auto_fallback", "smart_auto") and provider != "whisper_local" and whisper_enabled:
         from .stt.fallback import FallbackSpeechClient
 
-        logger.info("Creating AutoFallback STT stream: primary=%r -> local=whisper_local.", provider)
+        logger.info("Creating AutoFallback STT stream (mode=%r): primary=%r -> local=whisper_local.", mode, provider)
         return FallbackSpeechClient(
             config, on_event_callback, primary_name=provider, local_name="whisper_local"
         )

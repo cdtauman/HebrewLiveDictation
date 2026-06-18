@@ -394,7 +394,7 @@ class Config:
         provider = stt.get("provider")
         if not isinstance(provider, str) or not provider.strip():
             stt["provider"] = DEFAULT_SETTINGS["stt"]["provider"]
-        if stt.get("mode") not in {"api", "local", "auto_fallback"}:
+        if stt.get("mode") not in {"api", "local", "auto_fallback", "smart_auto"}:
             stt["mode"] = DEFAULT_SETTINGS["stt"]["mode"]
 
         providers = self.settings.setdefault("providers", {})

@@ -70,3 +70,7 @@ Thumbs.db
 # Packaging archives (avoid committing release builds)
 *.zip
 *.tar.gz
+
+# Benchmark samples may contain personal audio/transcripts
+benchmark/samples/*
+!benchmark/samples/README.md

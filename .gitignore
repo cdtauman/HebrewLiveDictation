@@ -74,3 +74,8 @@ Thumbs.db
 # Benchmark samples may contain personal audio/transcripts
 benchmark/samples/*
 !benchmark/samples/README.md
+
+# Updater signing keys must never be committed
+.keys/
+*.pem
+updater_private*

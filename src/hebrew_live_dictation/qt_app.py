@@ -1150,9 +1150,31 @@ class MainWindow(QMainWindow):
         export_row.addWidget(clear_history)
         card_layout.addLayout(export_row)
 
+        check_updates = QPushButton(tr(self.config, "check_updates"))
+        check_updates.setObjectName("secondaryButton")
+        check_updates.clicked.connect(self._check_for_updates)
+        card_layout.addWidget(check_updates)
+
         layout.addWidget(card)
         layout.addStretch()
         return page
+
+    def _check_for_updates(self):
+        from . import updater
+
+        result = updater.check_for_update(self.config)
+        title = tr(self.config, "update_title")
+        status = result.get("status")
+        if status == "update_available":
+            manifest = result.get("manifest", {})
+            body = f"{tr(self.config, 'update_available')} {manifest.get('version', '')}\n\n{manifest.get('notes', '')}"
+            answer = QMessageBox.question(self, title, body, QMessageBox.Open | QMessageBox.Cancel)
+            if answer == QMessageBox.Open and manifest.get("url"):
+                QDesktopServices.openUrl(QUrl(manifest["url"]))
+        elif status == "up_to_date":
+            QMessageBox.information(self, title, tr(self.config, "update_up_to_date"))
+        else:
+            QMessageBox.information(self, title, result.get("message", ""))
 
     def _export_history(self, fmt):
         from . import export, history

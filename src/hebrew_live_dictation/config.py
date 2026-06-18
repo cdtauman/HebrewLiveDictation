@@ -104,6 +104,12 @@ DEFAULT_SETTINGS = {
         "enabled": True,
         "max_entries": 500,
     },
+    "updater": {
+        "enabled": False,
+        "check_on_start": False,
+        "endpoint": "",
+        "public_key": "",
+    },
     "toolbar": {
         "enabled": False,
         "idle_button": False,
@@ -444,6 +450,12 @@ class Config:
         pos = toolbar.get("position")
         if not (isinstance(pos, dict) and "x" in pos and "y" in pos):
             toolbar["position"] = None
+
+        updater = self.settings.setdefault("updater", {})
+        updater["enabled"] = bool(updater.get("enabled", False))
+        updater["check_on_start"] = bool(updater.get("check_on_start", False))
+        updater["endpoint"] = str(updater.get("endpoint", "") or "")
+        updater["public_key"] = str(updater.get("public_key", "") or "")
 
         history = self.settings.setdefault("history", {})
         history["enabled"] = bool(history.get("enabled", True))

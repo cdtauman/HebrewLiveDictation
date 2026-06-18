@@ -32,7 +32,7 @@ def app_version():
 
         return version("hebrew-live-dictation")
     except Exception:
-        return "1.0.0b1"
+        return "1.1.0"
 
 
 def public_key_b64(config):

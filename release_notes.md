@@ -1,14 +1,19 @@
 <div dir="rtl">
 
-# 🚀 שחרור בטא רשמי: Hebrew Live Dictation (v1.0.0-beta.2)
+# 🚀 Hebrew Live Dictation v1.1.0
 
-ברוכים הבאים לגרסת הבטא הרשמית הראשונה של **Hebrew Live Dictation** המיוצרת באופן אוטומטי לחלוטין על ידי מערכת ה-CI/CD שלנו!
+שדרוג גדול שהופך את המנוע ל**אגנוסטי לספק** ומבוסס‑בנצ'מארק, עם שמירה מלאה על השילוב העמוק עם Windows. ברירת המחדל נשארת Google STT V2 / Chirp 3, וכל היכולות החדשות כבויות כברירת מחדל ונשלטות מההגדרות.
 
-### ✨ מה חדש בגרסה זו?
-* **צינור תקשורת (IPC) מאובטח וממוסגר:** מעבר מלא לתשתית v2 יציבה מול רכיב ה-Native ב-C++.
-* **חסינות מפני קפיאות ממשק (Responsiveness Guard):** מנגנון אקטיבי המונע מאפליקציות חיצוניות (כמו Word או Chrome) לתקוע את התוכנה.
-* **אתחול COM STA הרמטי:** פתרון מלא לתקלות קריסה בחוטי הרקע של הפייתון.
-* **אשף התקנה רשמי (Setup Wizard):** קובץ התקנה חלק ברמת המשתמש ללא צורך בהרשאות מנהל (UAC Bypass).
+### ✨ מה חדש
+* **חמישה מצבי מנוע:** Smart Auto (בחירה אוטומטית), עברית מיטבית בזמן אמת (Deepgram), מצב לא‑מקוון/פרטי (Whisper מקומי), ענן הזול ביותר (Groq), ו‑AutoFallback מענן למקומי.
+* **תמלול לא‑מקוון:** Whisper מקומי (faster‑whisper) עם הורדת מודל לפי דרישה, בדיקת זיכרון, ואינדיקציית מצב/נתיב בעמוד "מנוע".
+* **אחסון מאובטח של מפתחות:** מפתחות Deepgram/Groq נשמרים ב‑Windows Credential Manager (לא בקובץ הגדרות), עם כפתור "בדיקה".
+* **היסטוריה וייצוא:** שמירת תמלולים וייצוא ל‑TXT ול‑Word (DOCX) עם כיווניות RTL נכונה.
+* **חוויית משתמש:** צלילי התחלה/סיום, סרגל צף וכפתור הפעלה מהירה (ללא גניבת פוקוס), ומקש השהיה/חידוש.
+* **עדכון אוטומטי חתום:** בדיקת מניפסט חתום (Ed25519) מ‑GitHub עם אימות חתימה לפני כל עדכון.
+* **בנצ'מארק WER** להשוואת ספקים, ובדיקות אוטומטיות מורחבות (206 בדיקות).
+
+נשמר ללא פגיעה: הזרקת טקסט (Word COM, UI Automation, SendInput, לוח גזירה), מעקב יעד, חבילות פקודות, עריכת הכתבה, פרטיות בלוגים, ו‑CI. רכיב ה‑TSF/IME נשאר ניסיוני וכבוי.
 
 ---
 
@@ -16,14 +21,19 @@
 
 <div dir="ltr">
 
-# 🚀 Official Beta Release: Hebrew Live Dictation (v1.0.0-beta.2)
+# 🚀 Hebrew Live Dictation v1.1.0
 
-Welcome to the first official beta release of **Hebrew Live Dictation**, fully built and deployed via our automated CI/CD pipeline!
+A major upgrade that makes the engine **provider-agnostic** and benchmark-driven while fully preserving the deep Windows integration. Google STT V2 / Chirp 3 stays the default; everything new is off by default and controlled from Settings.
 
-### ✨ Key Features & Improvements
-* **Framed IPC Architecture:** Full migration to a production-ready v2 infrastructure communicating with the Native C++ TSF peer.
-* **Responsiveness Guard:** Active Win32 checks preventing target application hangs (e.g., Word, Chrome) from freezing the GUI.
-* **Thread-Safe COM Implementation:** Complete migration of text injection to the main thread's Single-Threaded Apartment (STA).
-* **User-Level Installer (Setup EXE):** A seamless Inno Setup wizard that requires no administrator privileges.
+### ✨ What's new
+* **Five engine modes:** Smart Auto (automatic provider selection), Best Hebrew realtime (Deepgram), Offline/private (local Whisper), Cheapest cloud (Groq), and AutoFallback (cloud → local on failure).
+* **Offline transcription:** local Whisper (faster-whisper) with on-demand model download, RAM preflight, and status/path indicators on the new **Engine** page.
+* **Secure credentials:** Deepgram/Groq API keys are stored in the Windows Credential Manager (never in settings), with a "Test" button.
+* **History & export:** transcript history with TXT and RTL-correct **DOCX** export.
+* **UX:** start/stop audio tones, a draggable floating toolbar + idle quick-start button (no focus stealing), and a pause/resume hotkey.
+* **Signed auto-updater:** verifies an Ed25519 signature over the GitHub release manifest before trusting any update.
+* **WER benchmark** harness for provider comparison and an expanded test suite (206 tests).
+
+Preserved intact: text injection (Word COM, UI Automation, Unicode SendInput, clipboard), target tracking, command packs, session editing, privacy logging, and CI. TSF/IME remains experimental and disabled by default.
 
 </div>

@@ -412,6 +412,7 @@ class MainWindow(QMainWindow):
         self.nav.setFixedWidth(220)
         self.pages = [
             ("dashboard", self._dashboard_page),
+            ("engine", self._engine_page),
             ("google", self._google_page),
             ("languages", self._languages_page),
             ("hotkeys", self._hotkeys_page),
@@ -623,6 +624,117 @@ class MainWindow(QMainWindow):
         layout.addWidget(cmd_card)
         layout.addStretch()
         return page
+
+    def _engine_page(self):
+        page, layout = self._page("engine_title", "engine_subtitle")
+        card, card_layout = self._card()
+        form = self._form()
+
+        self._combo(
+            "stt.mode",
+            [
+                ("smart_auto", "Smart Auto"),
+                ("api", "Manual provider"),
+                ("local", "Offline / Local Whisper"),
+                ("auto_fallback", "Cloud + AutoFallback to local"),
+            ],
+            form,
+            "engine_mode",
+        )
+        self._combo(
+            "stt.provider",
+            [
+                ("google_v2", "Google STT V2 / Chirp 3"),
+                ("deepgram", "Deepgram (best Hebrew realtime)"),
+                ("groq", "Groq (cheapest cloud)"),
+                ("whisper_local", "Local Whisper (offline)"),
+            ],
+            form,
+            "engine_provider",
+        )
+        self._checkbox("providers.whisper.enabled", form, "engine_whisper_enabled")
+        self._combo(
+            "providers.whisper.model",
+            ["tiny", "base", "small", "medium", "large-v3", "distil-large-v3"],
+            form,
+            "engine_whisper_model",
+        )
+        self._combo("providers.deepgram.model", ["nova-2", "nova-3"], form, "engine_deepgram_model")
+        self._combo(
+            "providers.groq.model",
+            ["whisper-large-v3", "whisper-large-v3-turbo"],
+            form,
+            "engine_groq_model",
+        )
+
+        card_layout.addLayout(form)
+        card_layout.addWidget(self._provider_key_row("deepgram", "engine_deepgram_key"))
+        card_layout.addWidget(self._provider_key_row("groq", "engine_groq_key"))
+        layout.addWidget(card)
+        layout.addStretch()
+        return page
+
+    def _provider_key_row(self, provider, label_key):
+        from . import secrets_store
+
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        label = QLabel(tr(self.config, label_key))
+        field = QLineEdit()
+        field.setEchoMode(QLineEdit.Password)
+        if secrets_store.has_secret(f"providers_{provider}_api_key"):
+            field.setPlaceholderText(tr(self.config, "engine_key_placeholder_saved"))
+
+        save_btn = QPushButton(tr(self.config, "engine_save_key"))
+        save_btn.setObjectName("secondaryButton")
+        save_btn.clicked.connect(lambda: self._save_provider_key(provider, field))
+        test_btn = QPushButton(tr(self.config, "engine_test"))
+        test_btn.setObjectName("secondaryButton")
+        test_btn.clicked.connect(lambda: self._test_provider(provider))
+        clear_btn = QPushButton(tr(self.config, "engine_clear_key"))
+        clear_btn.setObjectName("secondaryButton")
+        clear_btn.clicked.connect(lambda: self._clear_provider_key(provider, field))
+
+        row.addWidget(label)
+        row.addWidget(field, 1)
+        row.addWidget(save_btn)
+        row.addWidget(test_btn)
+        row.addWidget(clear_btn)
+        return container
+
+    def _save_provider_key(self, provider, field):
+        from . import secrets_store
+
+        key = field.text().strip()
+        if not key:
+            return
+        if secrets_store.set_secret(f"providers_{provider}_api_key", key):
+            field.clear()
+            field.setPlaceholderText(tr(self.config, "engine_key_placeholder_saved"))
+            QMessageBox.information(self, tr(self.config, "engine"), tr(self.config, "engine_key_saved"))
+        else:
+            QMessageBox.warning(self, tr(self.config, "engine"), "Keyring unavailable.")
+
+    def _clear_provider_key(self, provider, field):
+        from . import secrets_store
+
+        secrets_store.delete_secret(f"providers_{provider}_api_key")
+        field.clear()
+        field.setPlaceholderText("")
+        QMessageBox.information(self, tr(self.config, "engine"), tr(self.config, "engine_key_cleared"))
+
+    def _test_provider(self, provider):
+        from .stt.verify import verify
+
+        ok, message = verify(self.config, provider)
+        title = tr(self.config, "engine")
+        if ok:
+            QMessageBox.information(self, title, f"{tr(self.config, 'engine_test_ok')}\n{message}")
+        else:
+            QMessageBox.warning(self, title, f"{tr(self.config, 'engine_test_failed')}\n{message}")
 
     def _google_page(self):
         page, layout = self._page("google_title", "google_subtitle")

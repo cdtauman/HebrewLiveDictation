@@ -97,6 +97,10 @@ DEFAULT_SETTINGS = {
     "models": {
         "storage_dir": "",
     },
+    "history": {
+        "enabled": True,
+        "max_entries": 500,
+    },
     "tsf": {
         "handshake_timeout_ms": 100,
         "experimental_transport_enabled": False,
@@ -420,6 +424,13 @@ class Config:
         models = self.settings.setdefault("models", {})
         if not isinstance(models.get("storage_dir"), str):
             models["storage_dir"] = ""
+
+        history = self.settings.setdefault("history", {})
+        history["enabled"] = bool(history.get("enabled", True))
+        try:
+            history["max_entries"] = max(1, int(history.get("max_entries", 500)))
+        except (TypeError, ValueError):
+            history["max_entries"] = DEFAULT_SETTINGS["history"]["max_entries"]
 
         tsf = self.settings.setdefault("tsf", {})
         tsf["handshake_timeout_ms"] = max(50, min(150, int(tsf.get("handshake_timeout_ms", 100))))

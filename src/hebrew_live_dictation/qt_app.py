@@ -936,9 +936,53 @@ class MainWindow(QMainWindow):
         open_logs.setObjectName("secondaryButton")
         open_logs.clicked.connect(self._open_logs_folder)
         card_layout.addWidget(open_logs)
+
+        export_row = QHBoxLayout()
+        export_txt = QPushButton(tr(self.config, "export_txt"))
+        export_txt.setObjectName("secondaryButton")
+        export_txt.clicked.connect(lambda: self._export_history("txt"))
+        export_docx = QPushButton(tr(self.config, "export_docx"))
+        export_docx.setObjectName("secondaryButton")
+        export_docx.clicked.connect(lambda: self._export_history("docx"))
+        clear_history = QPushButton(tr(self.config, "history_clear"))
+        clear_history.setObjectName("secondaryButton")
+        clear_history.clicked.connect(self._clear_history)
+        export_row.addWidget(export_txt)
+        export_row.addWidget(export_docx)
+        export_row.addWidget(clear_history)
+        card_layout.addLayout(export_row)
+
         layout.addWidget(card)
         layout.addStretch()
         return page
+
+    def _export_history(self, fmt):
+        from . import export, history
+
+        entries = history.load(self.config)
+        if not entries:
+            QMessageBox.information(self, tr(self.config, "logs_about"), tr(self.config, "history_empty"))
+            return
+        text = export.entries_to_text(entries)
+        default_name = "transcript.docx" if fmt == "docx" else "transcript.txt"
+        file_filter = "Word Document (*.docx)" if fmt == "docx" else "Text File (*.txt)"
+        path, _ = QFileDialog.getSaveFileName(self, tr(self.config, "export_title"), default_name, file_filter)
+        if not path:
+            return
+        try:
+            if fmt == "docx":
+                export.write_docx(path, text)
+            else:
+                export.write_txt(path, text)
+            QMessageBox.information(self, tr(self.config, "logs_about"), tr(self.config, "export_done"))
+        except Exception as e:
+            QMessageBox.warning(self, tr(self.config, "error_title"), str(e))
+
+    def _clear_history(self):
+        from . import history
+
+        history.clear(self.config)
+        QMessageBox.information(self, tr(self.config, "logs_about"), tr(self.config, "history_cleared"))
 
     def _open_logs_folder(self):
         try:
@@ -1502,6 +1546,7 @@ class QtDictationApp:
         self.config_dir = config_dir
         self.config = Config(config_dir)
         setup_logging(config_dir, self.config.get("debug_log_transcripts", False))
+        self._session_finals = []
 
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setQuitOnLastWindowClosed(False)
@@ -1620,11 +1665,26 @@ class QtDictationApp:
         else:
             self.tray.setIcon(self._icon("#22c55e"))
             self.overlay.hide()
+            self._flush_session_history()
 
     def _on_text(self, text, final, output_mode="external"):
         if output_mode == "preview":
             self.window.set_transcript(text, final)
         self.overlay.set_text(text)
+        if final and text and text.strip():
+            self._session_finals.append(text.strip())
+
+    def _flush_session_history(self):
+        if not self._session_finals:
+            return
+        transcript = " ".join(self._session_finals).strip()
+        self._session_finals = []
+        try:
+            from . import history
+
+            history.append(self.config, transcript)
+        except Exception:
+            pass
 
     def _on_error(self, message):
         friendly = self.window.show_error(message)

@@ -66,6 +66,8 @@ DEFAULT_SETTINGS = {
         "microphone_device": None,
         "sample_rate": 16000,
         "block_size": 1600,
+        "feedback_enabled": False,
+        "feedback_volume": 50,
     },
     "speech": {
         "frame_ms": 100,
@@ -373,6 +375,11 @@ class Config:
         audio = self.settings.setdefault("audio", {})
         audio["sample_rate"] = int(audio.get("sample_rate") or DEFAULT_SETTINGS["audio"]["sample_rate"])
         audio["block_size"] = int(audio.get("block_size") or DEFAULT_SETTINGS["audio"]["block_size"])
+        audio["feedback_enabled"] = bool(audio.get("feedback_enabled", False))
+        try:
+            audio["feedback_volume"] = max(0, min(100, int(audio.get("feedback_volume", 50))))
+        except (TypeError, ValueError):
+            audio["feedback_volume"] = DEFAULT_SETTINGS["audio"]["feedback_volume"]
 
         speech = self.settings.setdefault("speech", {})
         speech["frame_ms"] = int(speech.get("frame_ms") or DEFAULT_SETTINGS["speech"]["frame_ms"])

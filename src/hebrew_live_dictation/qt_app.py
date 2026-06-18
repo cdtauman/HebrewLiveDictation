@@ -977,6 +977,8 @@ class MainWindow(QMainWindow):
         self._checkbox("speech.endpointing", form, "endpointing")
         self._checkbox("speech.auto_stop_on_silence", form, "auto_stop_on_silence")
         self._checkbox("speech.vad_enabled", form, "vad_enabled")
+        self._checkbox("audio.feedback_enabled", form, "audio_feedback")
+        self._spin("audio.feedback_volume", 0, 100, form, "audio_feedback_volume")
         card_layout.addLayout(form)
         layout.addWidget(card)
         layout.addStretch()
@@ -1741,6 +1743,7 @@ class QtDictationApp:
             self.window.set_transcript("", False)
             self.overlay.set_text("")
             self.tray.setIcon(self._icon("#ef4444"))
+            self._play_feedback("start")
             if self.config.get("app.show_overlay", True):
                 self.overlay.set_status(message)
                 self.overlay.show_overlay()
@@ -1750,7 +1753,36 @@ class QtDictationApp:
         else:
             self.tray.setIcon(self._icon("#22c55e"))
             self.overlay.hide()
+            if state == "idle":
+                self._play_feedback("stop")
             self._flush_session_history()
+
+    def _play_feedback(self, kind):
+        if not self.config.get("audio.feedback_enabled", False):
+            return
+        try:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtMultimedia import QSoundEffect
+
+            from . import audio_feedback
+
+            volume = self.config.get("audio.feedback_volume", 50)
+            path = audio_feedback.tone_path(self.config_dir, kind, volume)
+            if not path:
+                return
+            effects = getattr(self, "_feedback_effects", None)
+            if effects is None:
+                effects = self._feedback_effects = {}
+            effect = effects.get(kind)
+            if effect is None:
+                effect = QSoundEffect()
+                effects[kind] = effect
+            effect.setSource(QUrl.fromLocalFile(path))
+            effect.setVolume(max(0.0, min(1.0, float(volume) / 100.0)))
+            effect.play()
+        except Exception:
+            # Audio feedback is best-effort; never let it disrupt dictation.
+            pass
 
     def _on_text(self, text, final, output_mode="external"):
         if output_mode == "preview":

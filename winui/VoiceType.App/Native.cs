@@ -82,6 +82,7 @@ internal static class Native
     }
 
     public const int NIM_ADD = 0x0;
+    public const int NIM_MODIFY = 0x1;
     public const int NIM_DELETE = 0x2;
     public const int NIF_ICON = 0x2;
     public const int NIF_MESSAGE = 0x1;
@@ -93,6 +94,86 @@ internal static class Native
     [DllImport("user32.dll")]
     public static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
     public static readonly IntPtr IDI_APPLICATION = new IntPtr(32512);
+
+    /// <summary>Sent by the shell to every top-level window when Explorer (re)starts;
+    /// our tray must re-add its icon in response or it vanishes after an Explorer crash.</summary>
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint RegisterWindowMessageW(string lpString);
+
+    // ---- Health-orb tray icon (GDI) ----------------------------------------
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ICONINFO
+    {
+        public bool fIcon;
+        public int xHotspot;
+        public int yHotspot;
+        public IntPtr hbmMask;
+        public IntPtr hbmColor;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAPINFOHEADER
+    {
+        public uint biSize;
+        public int biWidth;
+        public int biHeight;
+        public ushort biPlanes;
+        public ushort biBitCount;
+        public uint biCompression;
+        public uint biSizeImage;
+        public int biXPelsPerMeter;
+        public int biYPelsPerMeter;
+        public uint biClrUsed;
+        public uint biClrImportant;
+    }
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFOHEADER bmi, uint usage,
+                                                  out IntPtr ppvBits, IntPtr hSection, uint offset);
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateBitmap(int w, int h, uint planes, uint bpp, IntPtr bits);
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr ho);
+    [DllImport("user32.dll")]
+    private static extern IntPtr CreateIconIndirect(ref ICONINFO icon);
+    [DllImport("user32.dll")]
+    public static extern bool DestroyIcon(IntPtr hIcon);
+
+    /// <summary>Render a small anti-aliased filled circle (32bpp premultiplied alpha)
+    /// as an HICON in the given color — the brand status orb, for the tray. The caller
+    /// owns the returned handle and must <see cref="DestroyIcon"/> it. Returns Zero on failure.</summary>
+    public static IntPtr CreateDotIcon(byte r, byte g, byte b)
+    {
+        const int S = 32;
+        var px = new int[S * S];
+        double c = (S - 1) / 2.0, rad = S / 2.0 - 3.0;
+        for (int y = 0; y < S; y++)
+            for (int x = 0; x < S; x++)
+            {
+                double dx = x - c, dy = y - c;
+                double cover = rad - Math.Sqrt(dx * dx + dy * dy) + 0.5; // 1px AA edge
+                if (cover <= 0) { px[y * S + x] = 0; continue; }
+                if (cover > 1) cover = 1;
+                int a = (int)(cover * 255);
+                int pr = r * a / 255, pg = g * a / 255, pb = b * a / 255; // premultiplied BGRA
+                px[y * S + x] = (a << 24) | (pr << 16) | (pg << 8) | pb;
+            }
+
+        var bmi = new BITMAPINFOHEADER
+        {
+            biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
+            biWidth = S, biHeight = -S, biPlanes = 1, biBitCount = 32, biCompression = 0, // top-down BI_RGB
+        };
+        IntPtr hbmColor = CreateDIBSection(IntPtr.Zero, ref bmi, 0, out IntPtr bits, IntPtr.Zero, 0);
+        if (hbmColor == IntPtr.Zero) return IntPtr.Zero;
+        Marshal.Copy(px, 0, bits, px.Length);
+        IntPtr hbmMask = CreateBitmap(S, S, 1, 1, IntPtr.Zero); // unused (alpha drives shape)
+        var ii = new ICONINFO { fIcon = true, hbmMask = hbmMask, hbmColor = hbmColor };
+        IntPtr hIcon = CreateIconIndirect(ref ii);
+        DeleteObject(hbmColor);
+        DeleteObject(hbmMask);
+        return hIcon;
+    }
 
     [DllImport("kernel32.dll")]
     public static extern IntPtr GetModuleHandleW(string? lpModuleName);

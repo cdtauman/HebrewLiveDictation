@@ -53,7 +53,6 @@ public sealed class AppHost
         CurrentState = "connecting";
         _main = new MainWindow(this);
         _main.Activate();
-        _main.SetEngineStatus("connecting", "");
 
         if (showOverlays)
         {
@@ -61,6 +60,7 @@ public sealed class AppHost
             _remote = new RemoteWindow(this);
             _main.Log("HUD + Remote shown (no-activate, topmost).");
         }
+        ApplyEngineState("connecting", "");
 
         try
         {
@@ -68,14 +68,24 @@ public sealed class AppHost
             var st = await Client.RpcAsync("getStatus");
             CurrentState = st.TryGetProperty("state", out var stState) ? stState.GetString() ?? "idle" : "idle";
             var connectedState = CurrentState;
-            _ui.TryEnqueue(() => { _main?.SetEngineStatus(connectedState, ""); StatusChanged?.Invoke(connectedState, ""); });
+            _ui.TryEnqueue(() => { ApplyEngineState(connectedState, ""); StatusChanged?.Invoke(connectedState, ""); });
         }
         catch (Exception ex)
         {
             CurrentState = "disconnected";
             var msg = ex.Message;
-            _ui.TryEnqueue(() => { _main?.SetEngineStatus("disconnected", msg); StatusChanged?.Invoke("disconnected", msg); });
+            _ui.TryEnqueue(() => { ApplyEngineState("disconnected", msg); StatusChanged?.Invoke("disconnected", msg); });
         }
+    }
+
+    /// <summary>Push one engine state to every status surface at once — console pane
+    /// footer, Voice HUD, and Remote — so all three stay in lockstep. UI thread only.</summary>
+    private void ApplyEngineState(string state, string message)
+    {
+        _main?.SetEngineStatus(state, message);
+        _hud?.SetState(state, message);
+        _remote?.SetState(state);
+        _tray?.SetHealth(state);
     }
 
     private void OnBridgeDisconnected()
@@ -85,7 +95,7 @@ public sealed class AppHost
         {
             CurrentState = "disconnected";
             CurrentMessage = "";
-            _main?.SetEngineStatus("disconnected", "");
+            ApplyEngineState("disconnected", "");
             StatusChanged?.Invoke("disconnected", "");
         });
     }
@@ -104,7 +114,7 @@ public sealed class AppHost
         _bridge = RepoPaths.StartSidecar(RepoPaths.FindRoot(), pipeFull, line => AppLog.Add("sidecar: " + line));
 
         CurrentState = "connecting";
-        _main?.SetEngineStatus("connecting", "");
+        ApplyEngineState("connecting", "");
         StatusChanged?.Invoke("connecting", "");
         try
         {
@@ -112,12 +122,12 @@ public sealed class AppHost
             var st = await Client.RpcAsync("getStatus");
             CurrentState = st.TryGetProperty("state", out var s) ? s.GetString() ?? "idle" : "idle";
             var ns = CurrentState;
-            _ui.TryEnqueue(() => { _main?.SetEngineStatus(ns, ""); StatusChanged?.Invoke(ns, ""); });
+            _ui.TryEnqueue(() => { ApplyEngineState(ns, ""); StatusChanged?.Invoke(ns, ""); });
         }
         catch (Exception ex)
         {
             var msg = ex.Message;
-            _ui.TryEnqueue(() => { CurrentState = "disconnected"; _main?.SetEngineStatus("disconnected", msg); StatusChanged?.Invoke("disconnected", msg); });
+            _ui.TryEnqueue(() => { CurrentState = "disconnected"; ApplyEngineState("disconnected", msg); StatusChanged?.Invoke("disconnected", msg); });
         }
     }
 
@@ -133,8 +143,7 @@ public sealed class AppHost
                     string msg = e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
                     CurrentState = string.IsNullOrEmpty(state) ? CurrentState : state;
                     CurrentMessage = msg;
-                    _main?.SetEngineStatus(CurrentState, CurrentMessage);
-                    _hud?.SetStatus(string.IsNullOrEmpty(msg) ? state : msg);
+                    ApplyEngineState(CurrentState, CurrentMessage);
                     _main?.Log($"status: {state} {msg}");
                     StatusChanged?.Invoke(CurrentState, CurrentMessage);
                     break;
@@ -145,8 +154,7 @@ public sealed class AppHost
                     string em = e.TryGetProperty("message", out var me) ? me.GetString() ?? "" : "";
                     CurrentState = "error";
                     CurrentMessage = em;
-                    _hud?.SetStatus("⚠ " + em);
-                    _main?.SetEngineStatus("error", em);
+                    ApplyEngineState("error", em);
                     _main?.Log("error: " + em);
                     StatusChanged?.Invoke("error", em);
                     break;

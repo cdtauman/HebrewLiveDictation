@@ -130,6 +130,32 @@ internal static class RuntimeSelfTest
             if (added) Native.Shell_NotifyIcon(Native.NIM_DELETE, ref nid);
             Check("tray.shell_notifyicon", added, "NIM_ADD succeeded (full click handling = interactive build)");
 
+            // 6b) Health-orb tray icon renders (GDI 32bpp premultiplied-alpha HICON).
+            IntPtr orb = Native.CreateDotIcon(0x51, 0xCF, 0x66);
+            Check("tray.health_icon", orb != IntPtr.Zero, "CreateDotIcon -> HICON (brand status orb)");
+            if (orb != IntPtr.Zero) Native.DestroyIcon(orb);
+
+            // 6c) The productized Voice HUD must preserve focus-safety and morph through
+            //     every engine state (incl. live words) without throwing.
+            IntPtr fgPreHud = Native.GetForegroundWindow();
+            var hudSurface = new HudWindow();
+            bool hudStates = true;
+            try
+            {
+                foreach (var hs in new[] { "connecting", "idle", "listening", "stopping", "error", "disconnected" })
+                    hudSurface.SetState(hs, hs == "error" ? "בדיקה" : "");
+                hudSurface.SetState("listening");
+                hudSurface.SetWords("שלום עולם");
+            }
+            catch { hudStates = false; }
+            await Task.Delay(250);
+            long hudSurfaceEx = Native.GetExStyle(hudSurface.Hwnd);
+            IntPtr fgPostHud = Native.GetForegroundWindow();
+            Check("hud.surface.noactivate", (hudSurfaceEx & Native.WS_EX_NOACTIVATE) != 0, $"exStyle=0x{hudSurfaceEx:X}");
+            Check("hud.surface.no_steal", fgPostHud == fgPreHud, "HUD did not take foreground");
+            Check("hud.surface.states", hudStates, "SetState morphs through all states + words");
+            hudSurface.Window.Close();
+
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).
             try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }

@@ -101,18 +101,26 @@ def engine_label(config) -> str:
 
 
 def compute_health(config) -> dict:
-    """Home health strip: engine label, microphone availability, offline readiness."""
+    """Home health strip: engine label, microphone availability, offline readiness.
+
+    Offline backup is "ready" only when it is BOTH configured (stt.mode is local or
+    auto_fallback) AND the local Whisper engine is actually enabled. Being configured
+    for fallback without enabling Whisper does not make offline backup work, so we
+    never claim it does — `configured` is reported separately from `ready`.
+    """
     try:
         from ..audio_stream import AudioStream
         mic_ok = bool(AudioStream.list_devices())
     except Exception:
         mic_ok = False
     mode = config.get("stt.mode", "api")
-    offline_ready = bool(config.get("providers.whisper.enabled", False)) or mode in ("local", "auto_fallback")
+    whisper_enabled = bool(config.get("providers.whisper.enabled", False))
+    offline_configured = mode in ("local", "auto_fallback")
+    offline_ready = offline_configured and whisper_enabled
     return {
         "engine": {"label": engine_label(config)},
         "microphone": {"ok": mic_ok},
-        "offline": {"ready": offline_ready},
+        "offline": {"ready": offline_ready, "configured": offline_configured},
     }
 
 

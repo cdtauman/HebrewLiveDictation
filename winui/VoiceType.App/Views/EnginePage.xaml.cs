@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
@@ -62,38 +63,65 @@ public sealed partial class EnginePage : Page
         BackupCard.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
         ChooseCard.Visibility = tag == "choose" ? Visibility.Visible : Visibility.Collapsed;
 
+        bool ok = true;
         switch (tag)
         {
             case "recommended":
-                await SetConfig("stt.provider", "google_v2");
-                await SetConfig("google.model", "chirp_3");
-                await SetConfig("stt.mode", BackupToggle.IsOn ? "auto_fallback" : "api");
+                ok &= await SetConfig("stt.provider", "google_v2");
+                ok &= await SetConfig("google.model", "chirp_3");
+                ok &= await ApplyCloudMode();
                 break;
             case "offline":
-                await SetConfig("stt.provider", "whisper_local");
-                await SetConfig("providers.whisper.enabled", true);
-                await SetConfig("stt.mode", "local");
+                ok &= await SetConfig("stt.provider", "whisper_local");
+                ok &= await SetConfig("providers.whisper.enabled", true);
+                ok &= await SetConfig("stt.mode", "local");
                 break;
             default: // choose
-                await SetConfig("stt.provider", SelectedProvider());
-                await SetConfig("stt.mode", BackupToggle.IsOn ? "auto_fallback" : "api");
+                ok &= await SetConfig("stt.provider", SelectedProvider());
+                ok &= await ApplyCloudMode();
                 break;
         }
-        await RefreshLabelAsync();
+        if (!await Finish(ok)) return;
     }
 
     private async void OnBackupToggled(object sender, RoutedEventArgs e)
     {
         if (_loading || OptOffline.IsChecked == true) return;   // offline has no cloud to back up
-        await SetConfig("stt.mode", BackupToggle.IsOn ? "auto_fallback" : "api");
-        await RefreshLabelAsync();
+        await Finish(await ApplyCloudMode());
     }
 
     private async void OnProviderChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || OptChoose.IsChecked != true) return;
-        await SetConfig("stt.provider", SelectedProvider());
+        await Finish(await SetConfig("stt.provider", SelectedProvider()));
+    }
+
+    /// <summary>Apply the cloud-mode pair: backup on -> stt.mode=auto_fallback AND the
+    /// local Whisper engine enabled (the fallback prerequisite — without it the backup
+    /// promise is false); backup off -> stt.mode=api.</summary>
+    private async Task<bool> ApplyCloudMode()
+    {
+        if (BackupToggle.IsOn)
+        {
+            bool ok = await SetConfig("providers.whisper.enabled", true);
+            return await SetConfig("stt.mode", "auto_fallback") && ok;
+        }
+        return await SetConfig("stt.mode", "api");
+    }
+
+    /// <summary>After a change: refresh the live label on success, or — if any write
+    /// failed — tell the user and resync the UI from the actually-persisted config so
+    /// nothing ever *looks* saved when it isn't. Returns whether the change succeeded.</summary>
+    private async Task<bool> Finish(bool ok)
+    {
+        if (!ok)
+        {
+            await ShowMessageAsync("לא ניתן לשמור את ההגדרה כעת.", "בדקו שהמנוע פעיל ונסו שוב.");
+            await LoadAsync();
+            return false;
+        }
         await RefreshLabelAsync();
+        return true;
     }
 
     private string SelectedProvider() => (ProviderCombo.SelectedItem as FrameworkElement)?.Tag as string ?? "deepgram";
@@ -110,10 +138,29 @@ public sealed partial class EnginePage : Page
         catch { return fallback; }
     }
 
-    private async Task SetConfig(string key, object value)
+    /// <summary>Write one config key; returns true only if the engine confirms saved.</summary>
+    private async Task<bool> SetConfig(string key, object value)
     {
-        if (_host?.Client == null) return;
-        try { await _host.Client.RpcAsync("setConfig", new { key, value }); } catch { }
+        if (_host?.Client == null) return false;
+        try
+        {
+            var r = await _host.Client.RpcAsync("setConfig", new { key, value });
+            return r.TryGetProperty("saved", out var s) && s.GetBoolean();
+        }
+        catch { return false; }
+    }
+
+    private async Task ShowMessageAsync(string title, string body)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = body,
+            CloseButtonText = "סגור",
+            XamlRoot = this.XamlRoot,
+            FlowDirection = FlowDirection.RightToLeft,
+        };
+        try { await dialog.ShowAsync(); } catch { }
     }
 
     private async Task RefreshLabelAsync()

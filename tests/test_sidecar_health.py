@@ -42,8 +42,20 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(engine_label(_FakeConfig({"stt.provider": "groq"})), "Groq")
 
     def test_health_offline_ready(self):
-        self.assertTrue(compute_health(_FakeConfig({"providers.whisper.enabled": True}))["offline"]["ready"])
-        self.assertTrue(compute_health(_FakeConfig({"stt.mode": "auto_fallback"}))["offline"]["ready"])
+        # Ready requires BOTH fallback configured AND the local Whisper engine enabled.
+        self.assertTrue(compute_health(
+            _FakeConfig({"stt.mode": "auto_fallback", "providers.whisper.enabled": True}))["offline"]["ready"])
+        self.assertTrue(compute_health(
+            _FakeConfig({"stt.mode": "local", "providers.whisper.enabled": True}))["offline"]["ready"])
+        # auto_fallback WITHOUT Whisper = configured but NOT ready (the overclaim fix).
+        cfg = compute_health(_FakeConfig({"stt.mode": "auto_fallback"}))
+        self.assertFalse(cfg["offline"]["ready"])
+        self.assertTrue(cfg["offline"]["configured"])
+        # Whisper enabled but no fallback configured (mode=api) = not ready, not configured.
+        notcfg = compute_health(_FakeConfig({"providers.whisper.enabled": True}))
+        self.assertFalse(notcfg["offline"]["ready"])
+        self.assertFalse(notcfg["offline"]["configured"])
+        # Nothing set = not ready.
         self.assertFalse(compute_health(_FakeConfig({}))["offline"]["ready"])
 
     def test_health_shape(self):
@@ -51,6 +63,7 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(h["engine"]["label"], "Google · Chirp 2")
         self.assertIn("ok", h["microphone"])
         self.assertIn("ready", h["offline"])
+        self.assertIn("configured", h["offline"])
 
     def test_recent_history_empty_and_safe(self):
         # Empty config dir -> no history file -> empty list, never raises.

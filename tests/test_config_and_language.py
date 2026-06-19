@@ -37,6 +37,16 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertFalse(config.set("app.theme", "dark"))
             self.assertEqual(config.get("app.theme"), "light")  # rolled back, no divergence
 
+    def test_update_rolls_back_memory_when_save_fails(self):
+        # Same transactional guarantee for the multi-key update path.
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.update({"app.theme": "light", "app.ui_language": "he"})
+            config.filepath = tmp  # force the next write to fail
+            self.assertFalse(config.update({"app.theme": "dark", "app.ui_language": "en"}))
+            self.assertEqual(config.get("app.theme"), "light")       # rolled back
+            self.assertEqual(config.get("app.ui_language"), "he")    # rolled back
+
     def test_legacy_settings_migrate_to_schema_v4(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"

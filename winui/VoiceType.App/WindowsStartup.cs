@@ -15,15 +15,23 @@ internal static class WindowsStartup
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "VoiceType";
 
+    /// <summary>True only when the Run entry exists AND points at *this* executable. A stale
+    /// entry from an old install location counts as not-enabled, so toggling on rewrites it.</summary>
     public static bool IsEnabled()
     {
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
-            return key?.GetValue(ValueName) != null;
+            if (key?.GetValue(ValueName) is not string raw || string.IsNullOrEmpty(raw)) return false;
+            string registered = raw.Trim().Trim('"');
+            string current = CurrentExe();
+            return !string.IsNullOrEmpty(current)
+                && string.Equals(registered, current, StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
+
+    private static string CurrentExe() => Process.GetCurrentProcess().MainModule?.FileName ?? "";
 
     /// <summary>Register or remove the auto-start entry. Returns true on success.</summary>
     public static bool Set(bool enabled)
@@ -35,7 +43,7 @@ internal static class WindowsStartup
             if (key == null) return false;
             if (enabled)
             {
-                string exe = Process.GetCurrentProcess().MainModule?.FileName ?? "";
+                string exe = CurrentExe();
                 if (string.IsNullOrEmpty(exe)) return false;
                 key.SetValue(ValueName, "\"" + exe + "\"");
             }

@@ -20,6 +20,7 @@ public sealed partial class SettingsPage : Page
 {
     private AppHost? _host;
     private bool _loading;
+    private string _theme = "light";   // last successfully-persisted theme (for live rollback)
 
     public SettingsPage() => this.InitializeComponent();
 
@@ -37,6 +38,7 @@ public sealed partial class SettingsPage : Page
         int historyLimit = await GetInt("history.max_entries", 500);
         bool startup = WindowsStartup.IsEnabled();   // real OS state, not just the saved value
 
+        _theme = theme;
         DispatcherQueue.TryEnqueue(() =>
         {
             _loading = true;
@@ -53,9 +55,11 @@ public sealed partial class SettingsPage : Page
     private async void OnThemeChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading) return;
+        string prev = _theme;
         string theme = (ThemeCombo.SelectedItem as FrameworkElement)?.Tag as string ?? "light";
         _host?.Console?.ApplyTheme(theme);            // live, even before the write lands
-        await Persist("app.theme", theme);
+        if (await Persist("app.theme", theme)) _theme = theme;
+        else _host?.Console?.ApplyTheme(prev);        // save failed — revert the live theme too
     }
 
     private async void OnMinimizeToggled(object sender, RoutedEventArgs e)
@@ -70,14 +74,17 @@ public sealed partial class SettingsPage : Page
         if (_loading) return;
         bool want = StartupToggle.IsOn;
         bool osOk = WindowsStartup.Set(want);            // the actual auto-start behavior
-        bool saved = await Persist("app.start_with_windows", want);
-        if (!osOk || !saved)
+        bool actual = WindowsStartup.IsEnabled();        // OS truth after the attempt — wins
+
+        // Persist what the registry actually says, never the intent — config must not claim
+        // startup is enabled/disabled unless the OS change really took.
+        await Persist("app.start_with_windows", actual);
+        if (!osOk || actual != want)
         {
-            // The OS action is the source of truth — reflect whatever really happened.
             _loading = true;
-            StartupToggle.IsOn = WindowsStartup.IsEnabled();
+            StartupToggle.IsOn = actual;
             _loading = false;
-            if (!osOk) await ShowMessageAsync("לא ניתן לעדכן את ההפעלה האוטומטית.", "נסו שוב.");
+            await ShowMessageAsync("לא ניתן לעדכן את ההפעלה האוטומטית.", "נסו שוב.");
         }
     }
 
@@ -99,7 +106,7 @@ public sealed partial class SettingsPage : Page
                 var sb = new StringBuilder();
                 sb.AppendLine("state: " + Str(st, "state"));
                 sb.AppendLine("hotkeys: " + (Bool(st, "hotkeysActive") ? "active" : "inactive"));
-                sb.AppendLine("config: " + Str(st, "configDir"));
+                sb.AppendLine("config: " + Redact(Str(st, "configDir")));
                 sb.AppendLine("pipe: " + Str(st, "pipe"));
                 sb.Append("shell: VoiceType " + AppVersion());
                 text = sb.ToString();
@@ -122,6 +129,16 @@ public sealed partial class SettingsPage : Page
 
     private static string Str(JsonElement o, string key)
         => o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    /// <summary>Replace the user's home directory with "~" so a copied diagnostic block
+    /// doesn't leak the account name.</summary>
+    private static string Redact(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return !string.IsNullOrEmpty(home) && path.StartsWith(home, StringComparison.OrdinalIgnoreCase)
+            ? "~" + path.Substring(home.Length) : path;
+    }
 
     private static bool Bool(JsonElement o, string key)
         => o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;

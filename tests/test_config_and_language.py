@@ -27,6 +27,16 @@ class ConfigAndLanguageTests(unittest.TestCase):
             config.filepath = tmp  # a directory -> open(..., "w") fails
             self.assertFalse(config.set("app.theme", "dark"))
 
+    def test_set_rolls_back_memory_when_save_fails(self):
+        # A failed persist must NOT leave the unsaved value in memory, or getConfig would
+        # read back a value that isn't on disk and a UI resync would be a false no-op.
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.set("app.theme", "light")
+            config.filepath = tmp  # force the next write to fail
+            self.assertFalse(config.set("app.theme", "dark"))
+            self.assertEqual(config.get("app.theme"), "light")  # rolled back, no divergence
+
     def test_legacy_settings_migrate_to_schema_v4(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"

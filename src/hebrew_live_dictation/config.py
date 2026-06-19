@@ -227,15 +227,26 @@ class Config:
         return self._get_path(self._resolve_key(key), default)
 
     def set(self, key: str, value: Any) -> bool:
+        # Transactional: snapshot first, and if the write fails roll the in-memory state
+        # back so a failed persist can never leave memory diverged from disk (callers/IPC
+        # would otherwise read back an unsaved value and a UI resync would be a no-op).
+        snapshot = copy.deepcopy(self.settings)
         self._set_path(self._resolve_key(key), value)
         self._normalize_settings()
-        return self.save()
+        if self.save():
+            return True
+        self.settings = snapshot
+        return False
 
-    def update(self, values: dict[str, Any]):
+    def update(self, values: dict[str, Any]) -> bool:
+        snapshot = copy.deepcopy(self.settings)
         for key, value in values.items():
             self._set_path(self._resolve_key(key), value)
         self._normalize_settings()
-        self.save()
+        if self.save():
+            return True
+        self.settings = snapshot
+        return False
 
     def as_dict(self):
         return copy.deepcopy(self.settings)

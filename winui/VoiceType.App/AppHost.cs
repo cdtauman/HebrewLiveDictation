@@ -85,15 +85,17 @@ public sealed class AppHost
     {
         if (forceShow) { SetHudVisible(true); SetRemoteVisible(true); return; }
 
-        // If the engine isn't reachable we can't know the user's choice — keep both hidden
-        // rather than default-showing something the user may have turned off.
-        if (CurrentState == "disconnected") { SetHudVisible(false); SetRemoteVisible(false); return; }
-
-        SetHudVisible(await GetBoolConfig("app.show_overlay", true));
-        SetRemoteVisible(await GetBoolConfig("toolbar.enabled", false));
+        // Only surface an overlay when we have actually read the user's choice from the
+        // engine and it says "visible". If the bridge is unreachable or the config read
+        // fails, the value is unknown → keep both hidden. Never default-show something the
+        // user may have turned off just because we couldn't reach the engine.
+        SetHudVisible(await TryGetBoolConfig("app.show_overlay") == true);
+        SetRemoteVisible(await TryGetBoolConfig("toolbar.enabled") == true);
     }
 
-    private async Task<bool> GetBoolConfig(string key, bool dflt)
+    /// <summary>Read a boolean config value, or null when the value can't be established
+    /// (bridge down, RPC failure, missing/non-bool value). Callers treat null as "keep hidden".</summary>
+    private async Task<bool?> TryGetBoolConfig(string key)
     {
         try
         {
@@ -105,7 +107,7 @@ public sealed class AppHost
             }
         }
         catch { }
-        return dflt;
+        return null;
     }
 
     /// <summary>Subscribe a client's event + disconnect callbacks, tagged with the client

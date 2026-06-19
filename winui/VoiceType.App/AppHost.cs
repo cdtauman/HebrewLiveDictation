@@ -18,6 +18,12 @@ public sealed class AppHost
     public BridgeClient Client { get; private set; } = null!;
     public bool IsExiting { get; private set; }
 
+    /// <summary>Latest engine state ("idle"|"listening"|"stopping"|"error") + message.
+    /// Raised on the UI thread so views (e.g. Home) can reflect it live.</summary>
+    public string CurrentState { get; private set; } = "idle";
+    public string CurrentMessage { get; private set; } = "";
+    public event Action<string, string>? StatusChanged;
+
     private Process? _bridge;
     private MainWindow? _main;
     private TrayIcon? _tray;
@@ -58,7 +64,10 @@ public sealed class AppHost
             await Client.ConnectAsync(20000);
             _main.SetBridgeStatus("connected ✓");
             var st = await Client.RpcAsync("getStatus");
-            _main.SetEngineState(st.GetProperty("state").GetString() ?? "?");
+            CurrentState = st.TryGetProperty("state", out var stState) ? stState.GetString() ?? "idle" : "idle";
+            _main.SetEngineState(CurrentState);
+            var connectedState = CurrentState;
+            _ui.TryEnqueue(() => StatusChanged?.Invoke(connectedState, ""));
         }
         catch (Exception ex)
         {
@@ -76,9 +85,12 @@ public sealed class AppHost
                 case "status":
                     string state = e.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "";
                     string msg = e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+                    CurrentState = string.IsNullOrEmpty(state) ? CurrentState : state;
+                    CurrentMessage = msg;
                     _main?.SetEngineState(state);
                     _hud?.SetStatus(string.IsNullOrEmpty(msg) ? state : msg);
                     _main?.Log($"status: {state} {msg}");
+                    StatusChanged?.Invoke(CurrentState, CurrentMessage);
                     break;
                 case "text":
                     _hud?.SetWords(e.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "");

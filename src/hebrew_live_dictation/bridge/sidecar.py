@@ -60,6 +60,54 @@ def make_callbacks(hotkeys, server_ref):
     return on_status, on_text, on_error, on_command
 
 
+_MODEL_PRETTY = {
+    "chirp_3": "Chirp 3", "chirp_2": "Chirp 2", "chirp": "Chirp",
+    "latest_long": "Latest Long", "latest_short": "Latest Short",
+}
+
+
+def engine_label(config) -> str:
+    """User-facing engine name derived from config (no engine internals exposed)."""
+    provider = config.get("stt.provider", "google_v2")
+    mode = config.get("stt.mode", "api")
+    if mode == "local" or provider == "whisper_local":
+        return "לא־מקוון · Whisper"
+    if provider == "google_v2":
+        model = str(config.get("google.model", "chirp_3"))
+        return "Google · " + _MODEL_PRETTY.get(model, model)
+    if provider == "deepgram":
+        return "Deepgram"
+    if provider == "groq":
+        return "Groq"
+    return str(provider)
+
+
+def compute_health(config) -> dict:
+    """Home health strip: engine label, microphone availability, offline readiness."""
+    try:
+        from ..audio_stream import AudioStream
+        mic_ok = bool(AudioStream.list_devices())
+    except Exception:
+        mic_ok = False
+    mode = config.get("stt.mode", "api")
+    offline_ready = bool(config.get("providers.whisper.enabled", False)) or mode in ("local", "auto_fallback")
+    return {
+        "engine": {"label": engine_label(config)},
+        "microphone": {"ok": mic_ok},
+        "offline": {"ready": offline_ready},
+    }
+
+
+def recent_history(config, count) -> list:
+    """Most-recent transcripts, newest first (empty on any error)."""
+    try:
+        from ..history import load
+        items = load(config, limit=max(1, int(count)))
+        return list(reversed(items))
+    except Exception:
+        return []
+
+
 def _parse_pipe_arg(argv) -> str:
     for i, a in enumerate(argv):
         if a == "--pipe" and i + 1 < len(argv):
@@ -173,6 +221,10 @@ def run(pipe_name: str | None = None) -> int:
                     "value": config.get(params.get("key"), params.get("default"))}
         if method == "getAllConfig":
             return config.as_dict()
+        if method == "getHealth":
+            return compute_health(config)
+        if method == "getHistory":
+            return {"items": recent_history(config, params.get("count", 5))}
         if method == "setConfig":
             config.set(params["key"], params["value"])  # engine is the single writer
             return {"key": params["key"], "value": config.get(params["key"]), "saved": True}

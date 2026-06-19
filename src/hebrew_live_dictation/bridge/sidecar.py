@@ -251,6 +251,59 @@ def _clear_history(config) -> bool:
         return False
 
 
+_SYMBOL_LABELS = {"\n": "↵ שורה חדשה", "\n\n": "¶ פסקה"}
+_ACTION_LABELS = {
+    "stop": "עצירת הכתבה",
+    "delete_last_word": "מחיקת המילה האחרונה",
+    "delete_last_sentence": "מחיקת המשפט האחרון",
+    "clear_all": "מחיקת הכל",
+    "undo": "ביטול",
+    "send": "שליחה",
+    "next_field": "מעבר לשדה הבא",
+    "select_last_word": "בחירת המילה האחרונה",
+    "select_last_sentence": "בחירת המשפט האחרון",
+    "replace_phrase": "החלפת ביטוי",
+    "delete_phrase": "מחיקת ביטוי",
+}
+
+
+def _visible_symbol(symbol) -> str:
+    if symbol in _SYMBOL_LABELS:
+        return _SYMBOL_LABELS[symbol]
+    stripped = symbol.strip()
+    return stripped if stripped else symbol
+
+
+def command_reference(config) -> dict:
+    """Human-readable voice-command reference for the active command pack — for the
+    Dictation room. Returns punctuation (say -> inserted symbol) and actions
+    (say -> friendly label), keeping only the first phrase per result so the many
+    alternates in a pack collapse into one clean teaching list.
+    """
+    try:
+        from ..language_packs import get_pack
+        pack = get_pack(config.get("languages.primary", "iw-IL"),
+                        config.get("languages.command_pack", None))
+    except Exception:
+        return {"punctuation": [], "actions": []}
+
+    punctuation, seen = [], set()
+    for phrase, symbol in pack.get("punctuation", ()):
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        punctuation.append({"say": phrase, "inserts": _visible_symbol(symbol)})
+
+    actions, seen_actions = [], set()
+    for phrase, action in pack.get("commands", {}).items():
+        if action in seen_actions:
+            continue
+        seen_actions.add(action)
+        actions.append({"say": phrase, "does": _ACTION_LABELS.get(action, action)})
+
+    return {"punctuation": punctuation, "actions": actions}
+
+
 def _parse_pipe_arg(argv) -> str:
     for i, a in enumerate(argv):
         if a == "--pipe" and i + 1 < len(argv):
@@ -367,6 +420,8 @@ def run(pipe_name: str | None = None) -> int:
             return config.as_dict()
         if method == "getHealth":
             return compute_health(config)
+        if method == "getCommands":
+            return command_reference(config)
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":

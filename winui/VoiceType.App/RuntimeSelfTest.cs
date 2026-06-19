@@ -82,6 +82,13 @@ internal static class RuntimeSelfTest
                       tr.TryGetProperty("items", out var trItems) && trItems.ValueKind == JsonValueKind.Array,
                       "items[] returned");
 
+                // Dictation room command reference (read-only).
+                var cmds = await client.RpcAsync("getCommands");
+                bool hasPunct = cmds.TryGetProperty("punctuation", out var cp) && cp.ValueKind == JsonValueKind.Array;
+                bool hasActions = cmds.TryGetProperty("actions", out var ca) && ca.ValueKind == JsonValueKind.Array;
+                Check("bridge.getCommands", hasPunct && hasActions,
+                      $"punctuation+actions returned ({(hasPunct ? cp.GetArrayLength() : 0)}+{(hasActions ? ca.GetArrayLength() : 0)})");
+
                 // Destructive-RPC guard: clearHistory WITHOUT a confirm flag must refuse
                 // (so this is safe to run — it never wipes the real store).
                 var clr = await client.RpcAsync("clearHistory");

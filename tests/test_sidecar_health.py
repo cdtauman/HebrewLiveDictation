@@ -5,6 +5,7 @@ import unittest
 
 from hebrew_live_dictation.bridge.sidecar import (
     _clear_history,
+    command_reference,
     compute_health,
     engine_label,
     full_history,
@@ -135,6 +136,26 @@ class HealthTests(unittest.TestCase):
             c = _FakeConfig({}, config_dir=tmp)
             self.assertTrue(_clear_history(c))
             self.assertEqual(full_history(c, 200), [])
+
+
+    def test_command_reference_he_deduped_and_friendly(self):
+        ref = command_reference(_FakeConfig({"languages.primary": "iw-IL", "languages.command_pack": "he"}))
+        says = [p["say"] for p in ref["punctuation"]]
+        # The many newline alternates collapse to a single entry (first phrase kept,
+        # deduped by inserted symbol — "שורה הבאה"/"רד שורה" share "\n" with "שורה חדשה").
+        self.assertEqual(says.count("שורה חדשה"), 1)
+        self.assertNotIn("שורה הבאה", says)
+        self.assertNotIn("רד שורה", says)
+        self.assertIn("נקודה", says)
+        # Actions: one row per action, with a friendly Hebrew label; first phrase kept.
+        self.assertEqual(len(ref["actions"]), 9)
+        stop = next(a for a in ref["actions"] if a["does"] == "עצירת הכתבה")
+        self.assertEqual(stop["say"], "עצור")
+
+    def test_command_reference_safe_on_bad_pack(self):
+        ref = command_reference(_FakeConfig({"languages.primary": "zz-ZZ"}))
+        self.assertIn("punctuation", ref)
+        self.assertIn("actions", ref)
 
 
 if __name__ == "__main__":

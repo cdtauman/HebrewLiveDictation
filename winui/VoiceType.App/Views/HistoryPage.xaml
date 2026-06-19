@@ -3,27 +3,77 @@
     x:Class="VoiceType.Shell.Views.HistoryPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:VoiceType.Shell.Views"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
     <ScrollViewer>
         <StackPanel Padding="{StaticResource PagePadding}" Spacing="{StaticResource SpaceLg}"
                     MaxWidth="{StaticResource ContentMaxWidth}" HorizontalAlignment="Center">
-            <StackPanel Spacing="4">
-                <TextBlock Text="היסטוריה" Style="{StaticResource PageTitleStyle}" />
-                <TextBlock Text="התמלולים שלכם, פרטיים ובמכשיר שלכם." Style="{StaticResource PageSubtitleStyle}" />
-            </StackPanel>
+
+            <!-- Header + actions -->
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="היסטוריה" Style="{StaticResource PageTitleStyle}" />
+                    <TextBlock Text="התמלולים שלכם, פרטיים ובמכשיר שלכם." Style="{StaticResource PageSubtitleStyle}" />
+                </StackPanel>
+                <StackPanel x:Name="Actions" Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                            VerticalAlignment="Center" Visibility="Collapsed">
+                    <Button x:Name="ExportButton" Click="OnExport">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+                            <TextBlock Text="ייצוא ל־TXT" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="ClearButton" Click="OnClear">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                            <TextBlock Text="נקה הכל" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
             <!-- Empty state -->
-            <Border Style="{StaticResource CardStyle}" Padding="48">
+            <Border x:Name="EmptyCard" Style="{StaticResource CardStyle}" Padding="48">
                 <StackPanel Spacing="12" HorizontalAlignment="Center">
                     <FontIcon Glyph="&#xE81C;" FontSize="34" Foreground="{ThemeResource TextTertiaryBrush}" />
                     <TextBlock Text="אין עדיין תמלולים" HorizontalAlignment="Center"
                                Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="כשתתחילו להכתיב, מה שתאמרו יישמר כאן — וניתן יהיה לייצא ל־TXT או DOCX."
+                    <TextBlock Text="כשתתחילו להכתיב, מה שתאמרו יישמר כאן — וניתן יהיה לייצא ל־TXT."
                                HorizontalAlignment="Center" TextAlignment="Center"
                                Style="{StaticResource CaptionMutedStyle}" MaxWidth="420" />
                 </StackPanel>
             </Border>
+
+            <!-- Transcripts -->
+            <ListView x:Name="List" SelectionMode="None" IsItemClickEnabled="False" Visibility="Collapsed">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,12" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:TranscriptItem">
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="{x:Bind Text}" TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextPrimaryBrush}" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{x:Bind When}" Style="{StaticResource CaptionMutedStyle}" />
+                                        <TextBlock Text="{x:Bind Target}" Style="{StaticResource CaptionMutedStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="העתק" Click="OnCopyItem" Tag="{x:Bind Text}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
         </StackPanel>
     </ScrollViewer>
 </Page>

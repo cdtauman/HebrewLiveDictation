@@ -148,12 +148,54 @@ def recent_history(config, count) -> list:
     return out
 
 
+HISTORY_FULL_MAX = 500
+
+
+def full_history(config, count) -> list:
+    """Full transcripts for the History room: newest-first, untruncated, with the
+    target app. Unlike the sanitized Home preview, this is the user's own complete
+    record on their machine; `count` is clamped to the store cap.
+    """
+    try:
+        n = int(count)
+    except (TypeError, ValueError):
+        n = 200
+    n = max(1, min(n, HISTORY_FULL_MAX))
+    try:
+        from ..history import load
+        items = load(config, limit=n)
+    except Exception:
+        return []
+    out = []
+    for it in reversed(items):
+        if not isinstance(it, dict):
+            continue
+        text = str(it.get("text", "")).strip()
+        if not text:
+            continue
+        ts = it.get("ts", 0)
+        out.append({
+            "ts": ts if isinstance(ts, (int, float)) else 0,
+            "text": text,
+            "target": str(it.get("target", "")),
+        })
+    return out
+
+
 def _append_history(config, transcript):
     try:
         from ..history import append
         append(config, transcript)
     except Exception:
         pass
+
+
+def _clear_history(config) -> bool:
+    try:
+        from ..history import clear
+        return bool(clear(config))
+    except Exception:
+        return False
 
 
 def _parse_pipe_arg(argv) -> str:
@@ -274,6 +316,10 @@ def run(pipe_name: str | None = None) -> int:
             return compute_health(config)
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
+        if method == "getTranscripts":
+            return {"items": full_history(config, params.get("count", 200))}
+        if method == "clearHistory":
+            return {"cleared": _clear_history(config)}
         if method == "setConfig":
             config.set(params["key"], params["value"])  # engine is the single writer
             return {"key": params["key"], "value": config.get(params["key"]), "saved": True}

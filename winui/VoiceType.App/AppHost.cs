@@ -18,6 +18,10 @@ public sealed class AppHost
     public BridgeClient Client { get; private set; } = null!;
     public bool IsExiting { get; private set; }
 
+    /// <summary>The console window — used by rooms that need its HWND (e.g. file pickers,
+    /// which require InitializeWithWindow in unpackaged WinUI).</summary>
+    public MainWindow? Console => _main;
+
     /// <summary>Latest engine state ("idle"|"listening"|"stopping"|"error") + message.
     /// Raised on the UI thread so views (e.g. Home) can reflect it live.</summary>
     public string CurrentState { get; private set; } = "idle";

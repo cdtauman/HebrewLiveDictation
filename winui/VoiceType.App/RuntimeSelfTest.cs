@@ -64,6 +64,13 @@ internal static class RuntimeSelfTest
                       wrote.TryGetProperty("saved", out var sv) && sv.GetBoolean(),
                       $"app.theme round-trip = {theme}");
 
+                // History room contract (read-only; clearHistory is intentionally NOT
+                // exercised here so the real transcript store is never wiped by a test).
+                var tr = await client.RpcAsync("getTranscripts", new { count = 5 });
+                Check("bridge.getTranscripts",
+                      tr.TryGetProperty("items", out var trItems) && trItems.ValueKind == JsonValueKind.Array,
+                      "items[] returned");
+
                 await client.RpcAsync("startDictation", new { mode = "external" });
                 await Task.Delay(2500);
                 await client.RpcAsync("stopDictation");

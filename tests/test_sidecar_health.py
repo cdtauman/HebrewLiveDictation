@@ -3,7 +3,13 @@ import os
 import tempfile
 import unittest
 
-from hebrew_live_dictation.bridge.sidecar import compute_health, engine_label, recent_history
+from hebrew_live_dictation.bridge.sidecar import (
+    _clear_history,
+    compute_health,
+    engine_label,
+    full_history,
+    recent_history,
+)
 
 
 def _write_history(tmp, rows):
@@ -77,6 +83,34 @@ class HealthTests(unittest.TestCase):
             _write_history(tmp, [{"ts": 1, "text": "  "}, {"ts": 2, "text": "ok"}])
             items = recent_history(_FakeConfig({}, config_dir=tmp), 5)
             self.assertEqual([i["text"] for i in items], ["ok"])
+
+    def test_full_history_untruncated_newest_first_with_target(self):
+        # The History room shows the user's complete record: full text + target, newest first.
+        with tempfile.TemporaryDirectory() as tmp:
+            long_text = "א" * 200
+            _write_history(tmp, [
+                {"ts": 1000, "target": "winword.exe", "text": "ראשון"},
+                {"ts": 2000, "target": "chrome.exe", "text": long_text},
+            ])
+            items = full_history(_FakeConfig({}, config_dir=tmp), 200)
+            self.assertEqual(items[0]["ts"], 2000)                      # newest first
+            self.assertEqual(items[0]["text"], long_text)              # NOT truncated
+            self.assertEqual(items[0]["target"], "chrome.exe")        # target preserved
+            self.assertEqual(set(items[0].keys()), {"ts", "text", "target"})
+
+    def test_full_history_count_clamped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [{"ts": i, "text": f"t{i}"} for i in range(20)])
+            c = _FakeConfig({}, config_dir=tmp)
+            self.assertLessEqual(len(full_history(c, 9999)), 500)       # upper clamp
+            self.assertGreaterEqual(len(full_history(c, "bad")), 1)     # bad -> default
+
+    def test_clear_history_removes_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [{"ts": 1, "text": "a"}, {"ts": 2, "text": "b"}])
+            c = _FakeConfig({}, config_dir=tmp)
+            self.assertTrue(_clear_history(c))
+            self.assertEqual(full_history(c, 200), [])
 
 
 if __name__ == "__main__":

@@ -7,28 +7,56 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid x:Name="RootGrid" FlowDirection="RightToLeft" Padding="28" RowSpacing="14"
-          RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
-        <TextBlock Grid.Row="0" Text="VoiceType — מעטפת WinUI (Phase 1)"
-                   FontSize="26" FontWeight="SemiBold"/>
-        <TextBlock Grid.Row="1" x:Name="BridgeStatus" Text="גשר: מתחבר…"
-                   FontSize="14" Opacity="0.75"/>
-        <TextBlock Grid.Row="2" x:Name="EngineState" Text="מצב מנוע: —"
-                   FontSize="14" Opacity="0.75"/>
+    <NavigationView
+        x:Name="Nav"
+        FlowDirection="RightToLeft"
+        PaneDisplayMode="Left"
+        OpenPaneLength="248"
+        IsBackButtonVisible="Collapsed"
+        IsSettingsVisible="False"
+        SelectionChanged="OnNavSelectionChanged">
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10" Margin="0,6,0,0">
-            <Button x:Name="StartButton" Content="התחל הכתבה" Click="OnStartClick"/>
-            <Button x:Name="StopButton" Content="עצור" Click="OnStopClick"/>
-            <Button x:Name="HideButton" Content="הסתר למגש" Click="OnHideClick"/>
-            <Button x:Name="ExitButton" Content="יציאה" Click="OnExitClick"/>
-        </StackPanel>
+        <NavigationView.PaneHeader>
+            <TextBlock Text="VoiceType" Margin="4,10,12,10"
+                       Style="{StaticResource SubtitleTextBlockStyle}"
+                       Foreground="{ThemeResource TextPrimaryBrush}" />
+        </NavigationView.PaneHeader>
 
-        <ScrollViewer Grid.Row="4" Margin="0,8,0,0">
-            <TextBlock x:Name="EventLog" FontFamily="Consolas" FontSize="12"
-                       TextWrapping="Wrap" Opacity="0.85" FlowDirection="LeftToRight"/>
-        </ScrollViewer>
+        <NavigationView.MenuItems>
+            <NavigationViewItem Content="בית" Tag="home">
+                <NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="הכתבה" Tag="dictation">
+                <NavigationViewItem.Icon><FontIcon Glyph="&#xE720;" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="מנוע" Tag="engine">
+                <NavigationViewItem.Icon><FontIcon Glyph="&#xE950;" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="שליטה" Tag="controls">
+                <NavigationViewItem.Icon><FontIcon Glyph="&#xE765;" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="היסטוריה" Tag="history">
+                <NavigationViewItem.Icon><FontIcon Glyph="&#xE81C;" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.MenuItems>
 
-        <TextBlock Grid.Row="5" x:Name="HintText" FontSize="12" Opacity="0.6"
-                   Text="סגירת החלון מסתירה אותו למגש המערכת. ההכתבה והקיצורים ממשיכים לפעול ברקע."/>
-    </Grid>
+        <NavigationView.FooterMenuItems>
+            <NavigationViewItem Content="הגדרות" Tag="settings">
+                <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+            </NavigationViewItem>
+        </NavigationView.FooterMenuItems>
+
+        <NavigationView.PaneFooter>
+            <StackPanel Margin="14,8,14,14" Spacing="2">
+                <TextBlock x:Name="EngineState" Text="מצב מנוע: —"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextTertiaryBrush}" />
+                <TextBlock x:Name="BridgeStatus" Text="גשר: מתחבר…"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextTertiaryBrush}" />
+            </StackPanel>
+        </NavigationView.PaneFooter>
+
+        <Frame x:Name="ContentFrame" />
+    </NavigationView>
 </Window>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="VoiceType.Shell.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <ScrollViewer>
+        <StackPanel Padding="{StaticResource PagePadding}" Spacing="{StaticResource SpaceLg}"
+                    MaxWidth="{StaticResource ContentMaxWidth}" HorizontalAlignment="Center">
+            <StackPanel Spacing="4">
+                <TextBlock Text="הגדרות" Style="{StaticResource PageTitleStyle}" />
+                <TextBlock Text="התנהגות האפליקציה, מראה ועדכונים." Style="{StaticResource PageSubtitleStyle}" />
+            </StackPanel>
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="מראה והתנהגות" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="שפת ממשק, ערכת נושא, הפעלה עם Windows ועדכונים — וכן אפשרויות מתקדמות ואבחון מאחורי דלת אחת."
+                               Style="{StaticResource BodyMutedStyle}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="VoiceType.Shell.Views.HistoryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <ScrollViewer>
+        <StackPanel Padding="{StaticResource PagePadding}" Spacing="{StaticResource SpaceLg}"
+                    MaxWidth="{StaticResource ContentMaxWidth}" HorizontalAlignment="Center">
+            <StackPanel Spacing="4">
+                <TextBlock Text="היסטוריה" Style="{StaticResource PageTitleStyle}" />
+                <TextBlock Text="התמלולים שלכם, פרטיים ובמכשיר שלכם." Style="{StaticResource PageSubtitleStyle}" />
+            </StackPanel>
+            <!-- Empty state -->
+            <Border Style="{StaticResource CardStyle}" Padding="48">
+                <StackPanel Spacing="12" HorizontalAlignment="Center">
+                    <FontIcon Glyph="&#xE81C;" FontSize="34" Foreground="{ThemeResource TextTertiaryBrush}" />
+                    <TextBlock Text="אין עדיין תמלולים" HorizontalAlignment="Center"
+                               Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="כשתתחילו להכתיב, מה שתאמרו יישמר כאן — וניתן יהיה לייצא ל־TXT או DOCX."
+                               HorizontalAlignment="Center" TextAlignment="Center"
+                               Style="{StaticResource CaptionMutedStyle}" MaxWidth="420" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

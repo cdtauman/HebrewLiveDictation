@@ -52,6 +52,7 @@ public sealed partial class HomePage : Page
     private void OnPrimary(object sender, RoutedEventArgs e)
     {
         var s = _host?.CurrentState ?? "idle";
+        if (s == "disconnected") { _host?.RestartEngine(); return; }
         if (s is "listening" or "stopping") _host?.StopDictation();
         else _host?.StartDictation();
     }
@@ -81,6 +82,18 @@ public sealed partial class HomePage : Page
                 StatusHint.Text = string.IsNullOrEmpty(message) ? "משהו דורש תשומת לב." : message;
                 PrimaryButton.Content = "התחל הכתבה";
                 break;
+            case "disconnected":
+                StatusDot.Fill = Palette.Error(d);
+                StatusText.Text = "המנוע אינו פעיל";
+                StatusHint.Text = "המנוע נעצר. לחצו כדי להפעיל אותו מחדש.";
+                PrimaryButton.Content = "הפעלה מחדש";
+                break;
+            case "connecting":
+                StatusDot.Fill = Palette.Neutral(d);
+                StatusText.Text = "מתחבר…";
+                StatusHint.Text = "מתחבר למנוע…";
+                PrimaryButton.Content = "מתחבר…";
+                break;
             default:
                 StatusDot.Fill = Palette.Ready(d);
                 StatusText.Text = "מוכן";
@@ -88,6 +101,7 @@ public sealed partial class HomePage : Page
                 PrimaryButton.Content = "התחל הכתבה";
                 break;
         }
+        PrimaryButton.IsEnabled = state != "connecting";
         if (listening) StartPulse();
         else StopPulse();
     }

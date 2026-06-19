@@ -25,6 +25,9 @@ public sealed class BridgeClient : IDisposable
     /// <summary>Raised for server-pushed events (status/text/error/heartbeat/hotkey).</summary>
     public event Action<JsonElement>? EventReceived;
 
+    /// <summary>Raised once when the pipe closes (sidecar died / disconnected).</summary>
+    public event Action? Disconnected;
+
     public BridgeClient(string pipeName)
     {
         _pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -63,10 +66,12 @@ public sealed class BridgeClient : IDisposable
                 else tcs.TrySetResult(default);
             }
         }
-        // pipe closed: fail any outstanding calls
+        // pipe closed: fail any outstanding calls, then notify the host so the dead
+        // engine becomes visible/recoverable instead of Home silently staying "ready".
         foreach (var kv in _pending)
             kv.Value.TrySetException(new IOException("bridge pipe closed"));
         _pending.Clear();
+        Disconnected?.Invoke();
     }
 
     public async Task<JsonElement> RpcAsync(string method, object? prms = null, int timeoutMs = 8000)

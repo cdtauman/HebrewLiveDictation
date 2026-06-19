@@ -60,6 +60,30 @@ class SidecarCallbackTests(unittest.TestCase):
         on_command("stop", {})
         self.assertEqual(events[-1]["kind"], "command")
 
+    def test_session_finals_accumulate_and_flush_on_idle(self):
+        # Parity with legacy qt_app: finals accumulate during a session and are
+        # appended to history once, when the session ends (returns to idle).
+        sessions = []
+        hk = _FakeHotkeys()
+        on_status, on_text, _, _ = make_callbacks(hk, lambda: None, on_session_end=sessions.append)
+        on_status("listening", "", "external")
+        on_text("שלום", True, "external")
+        on_text("interim", False, "external")  # non-final ignored
+        on_text("עולם", True, "external")
+        self.assertEqual(sessions, [])  # not flushed mid-session
+        on_status("idle", "", "external")
+        self.assertEqual(sessions, ["שלום עולם"])
+        on_status("idle", "", "external")  # nothing new -> no duplicate append
+        self.assertEqual(sessions, ["שלום עולם"])
+
+    def test_empty_session_appends_nothing(self):
+        sessions = []
+        hk = _FakeHotkeys()
+        on_status, _, _, _ = make_callbacks(hk, lambda: None, on_session_end=sessions.append)
+        on_status("listening", "", "external")
+        on_status("idle", "", "external")
+        self.assertEqual(sessions, [])
+
     def test_server_none_is_safe_but_still_syncs_hotkeys(self):
         hk = _FakeHotkeys()
         on_status, on_text, on_error, on_command = make_callbacks(hk, lambda: None)

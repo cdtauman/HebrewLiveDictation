@@ -62,7 +62,25 @@ public sealed partial class MainWindow : Window
         ContentFrame.Navigate(page, _host);
     }
 
-    public void SetBridgeStatus(string s) => BridgeStatus.Text = "גשר: " + s;
-    public void SetEngineState(string s) => EngineState.Text = "מצב מנוע: " + s;
+    /// <summary>Calm engine indicator in the pane footer — friendly Hebrew state + a
+    /// semantic dot. No technical "bridge"/raw-state language.</summary>
+    public void SetEngineStatus(string state, string message)
+    {
+        bool d = Palette.IsDark(Nav);
+        string text;
+        SolidColorBrush dot;
+        switch (state)
+        {
+            case "listening": text = "מקשיב"; dot = Palette.Accent(d); break;
+            case "stopping": text = "כותב…"; dot = Palette.Attention(d); break;
+            case "error": text = "שגיאה"; dot = Palette.Error(d); break;
+            case "disconnected": text = "המנוע אינו פעיל"; dot = Palette.Error(d); break;
+            case "connecting": text = "מתחבר…"; dot = Palette.Neutral(d); break;
+            default: text = "מוכן"; dot = Palette.Ready(d); break;
+        }
+        FooterText.Text = text;
+        FooterDot.Fill = dot;
+    }
+
     public void Log(string line) => AppLog.Add(line);
 }

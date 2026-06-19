@@ -42,7 +42,9 @@ internal static class RuntimeSelfTest
 
             // 2) Connect the C# client and exercise the contract from the WinUI side.
             using var client = new BridgeClient(pipeShort);
+            var disconnected = new System.Threading.ManualResetEventSlim(false);
             client.EventReceived += e => { lock (events) events.Add(e.Clone()); };
+            client.Disconnected += () => disconnected.Set();
             try
             {
                 await client.ConnectAsync(20000);
@@ -128,7 +130,13 @@ internal static class RuntimeSelfTest
             if (added) Native.Shell_NotifyIcon(Native.NIM_DELETE, ref nid);
             Check("tray.shell_notifyicon", added, "NIM_ADD succeeded (full click handling = interactive build)");
 
-            try { await client.RpcAsync("shutdown"); } catch { }
+            // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
+            //    so the shell can drop to a recoverable "disconnected" state (not hang).
+            try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }
+            bool sawDisconnect = disconnected.Wait(TimeSpan.FromSeconds(4));
+            Check("bridge.disconnect", sawDisconnect,
+                  sawDisconnect ? "Disconnected raised after engine kill" : "no Disconnected within 4s");
+
             hud.Close(); remote.Close();
         }
         catch (Exception ex)

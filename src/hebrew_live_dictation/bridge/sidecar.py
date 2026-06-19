@@ -28,13 +28,17 @@ logger = logging.getLogger("voicetype.bridge")
 HEARTBEAT_MS = 10000
 
 
-def make_callbacks(hotkeys, server_ref):
+def make_callbacks(hotkeys, server_ref, on_session_end=None):
     """Build the controller event callbacks.
 
     Extracted so the listening-state sync (toggle-hotkey parity with the legacy Qt
-    app) is unit-testable without a Qt event loop. `server_ref` is a callable that
-    returns the live server (or None before it is constructed).
+    app) and the session-history accumulation are unit-testable without a Qt event
+    loop. `server_ref` returns the live server (or None before it is constructed).
+    `on_session_end(transcript)` is invoked once per completed session (parity with
+    the legacy app, which appended finalized transcripts to history in the UI layer).
     """
+
+    finals = []
 
     def send(event):
         server = server_ref()
@@ -46,9 +50,22 @@ def make_callbacks(hotkeys, server_ref):
         # the legacy Qt app did (qt_app.py: set_listening_state on every status).
         # Without this, F8 toggle starts but never stops.
         hotkeys.set_listening_state(state == "listening")
+        # Session ended: append the accumulated finals to history. The legacy app
+        # did this in qt_app (_flush_session_history); the sidecar must replicate it
+        # or completed WinUI sessions never reach history / Home recent activity.
+        if state == "idle" and finals:
+            transcript = " ".join(finals).strip()
+            finals.clear()
+            if transcript and on_session_end:
+                try:
+                    on_session_end(transcript)
+                except Exception:
+                    logger.error("session history append failed:\n%s", traceback.format_exc())
         send({"kind": "status", "state": state, "message": message, "outputMode": output_mode})
 
     def on_text(text, final, output_mode):
+        if final and text and text.strip():
+            finals.append(text.strip())
         send({"kind": "text", "text": text, "final": bool(final), "outputMode": output_mode})
 
     def on_error(message):
@@ -98,14 +115,45 @@ def compute_health(config) -> dict:
     }
 
 
+HISTORY_PREVIEW_MAX = 80
+HISTORY_COUNT_MAX = 50
+
+
 def recent_history(config, count) -> list:
-    """Most-recent transcripts, newest first (empty on any error)."""
+    """Bounded, sanitized Home preview: newest first, only {ts, text} with text
+    truncated to a short preview. `target` and full text are never exposed, and
+    `count` is clamped (the underlying file is already capped at history.max_entries).
+    """
+    try:
+        n = int(count)
+    except (TypeError, ValueError):
+        n = 5
+    n = max(1, min(n, HISTORY_COUNT_MAX))
     try:
         from ..history import load
-        items = load(config, limit=max(1, int(count)))
-        return list(reversed(items))
+        items = load(config, limit=n)
     except Exception:
         return []
+    out = []
+    for it in reversed(items):
+        if not isinstance(it, dict):
+            continue
+        text = str(it.get("text", "")).strip()
+        if not text:
+            continue
+        if len(text) > HISTORY_PREVIEW_MAX:
+            text = text[:HISTORY_PREVIEW_MAX].rstrip() + "…"
+        ts = it.get("ts", 0)
+        out.append({"ts": ts if isinstance(ts, (int, float)) else 0, "text": text})
+    return out
+
+
+def _append_history(config, transcript):
+    try:
+        from ..history import append
+        append(config, transcript)
+    except Exception:
+        pass
 
 
 def _parse_pipe_arg(argv) -> str:
@@ -188,7 +236,8 @@ def run(pipe_name: str | None = None) -> int:
     hotkeys = HotkeyListener(config, hotkey_start, hotkey_stop)
 
     on_status, on_text, on_error, on_command = make_callbacks(
-        hotkeys, lambda: server_holder["server"])
+        hotkeys, lambda: server_holder["server"],
+        on_session_end=lambda transcript: _append_history(config, transcript))
     controller.on_status = on_status
     controller.on_text = on_text
     controller.on_error = on_error

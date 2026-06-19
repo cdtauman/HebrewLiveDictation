@@ -1,7 +1,15 @@
+import json
+import os
 import tempfile
 import unittest
 
 from hebrew_live_dictation.bridge.sidecar import compute_health, engine_label, recent_history
+
+
+def _write_history(tmp, rows):
+    with open(os.path.join(tmp, "history.jsonl"), "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
 class _FakeConfig:
@@ -42,6 +50,33 @@ class HealthTests(unittest.TestCase):
         # Empty config dir -> no history file -> empty list, never raises.
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(recent_history(_FakeConfig({}, config_dir=tmp), 5), [])
+
+    def test_recent_history_sanitized_and_truncated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            long_text = "א" * 200
+            _write_history(tmp, [
+                {"ts": 1000, "target": "winword.exe", "text": "ראשון"},
+                {"ts": 2000, "target": "secret-app.exe", "text": long_text},
+            ])
+            items = recent_history(_FakeConfig({}, config_dir=tmp), 5)
+            self.assertEqual(len(items), 2)
+            self.assertEqual(items[0]["ts"], 2000)               # newest first
+            self.assertEqual(set(items[0].keys()), {"ts", "text"})  # target dropped
+            self.assertTrue(items[0]["text"].endswith("…"))         # truncated
+            self.assertLessEqual(len(items[0]["text"]), 81)
+
+    def test_recent_history_count_clamped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [{"ts": i, "text": f"t{i}"} for i in range(100)])
+            c = _FakeConfig({}, config_dir=tmp)
+            self.assertLessEqual(len(recent_history(c, 9999)), 50)   # upper clamp
+            self.assertGreaterEqual(len(recent_history(c, "bad")), 1)  # bad -> default
+
+    def test_recent_history_skips_blank_and_nondict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [{"ts": 1, "text": "  "}, {"ts": 2, "text": "ok"}])
+            items = recent_history(_FakeConfig({}, config_dir=tmp), 5)
+            self.assertEqual([i["text"] for i in items], ["ok"])
 
 
 if __name__ == "__main__":

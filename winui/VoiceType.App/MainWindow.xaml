@@ -47,13 +47,12 @@
         </NavigationView.FooterMenuItems>
 
         <NavigationView.PaneFooter>
-            <StackPanel Margin="14,8,14,14" Spacing="2">
-                <TextBlock x:Name="EngineState" Text="מצב מנוע: —"
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="16,8,16,16" VerticalAlignment="Center">
+                <Ellipse x:Name="FooterDot" Width="9" Height="9" VerticalAlignment="Center"
+                         Fill="{ThemeResource TextTertiaryBrush}" />
+                <TextBlock x:Name="FooterText" Text="מתחבר…" VerticalAlignment="Center"
                            Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextTertiaryBrush}" />
-                <TextBlock x:Name="BridgeStatus" Text="גשר: מתחבר…"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextTertiaryBrush}" />
+                           Foreground="{ThemeResource TextSecondaryBrush}" />
             </StackPanel>
         </NavigationView.PaneFooter>
 

@@ -13,9 +13,7 @@
         <StackPanel Padding="{StaticResource PagePadding}" Spacing="{StaticResource SpaceLg}"
                     MaxWidth="{StaticResource ContentMaxWidth}" HorizontalAlignment="Center">
 
-            <TextBlock Text="ברוכים הבאים" Style="{StaticResource PageTitleStyle}" />
-
-            <!-- Ready hero (live) -->
+            <!-- Ready hero (live) — the status is the focal point, no generic page title -->
             <Border Style="{StaticResource CardStyle}" Padding="32">
                 <StackPanel Spacing="18">
                     <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">

@@ -79,3 +79,6 @@ benchmark/samples/*
 .keys/
 *.pem
 updater_private*
+
+# WinUI runtime self-test report (generated artifact)
+winui/*_runtime_report.txt

@@ -14,10 +14,11 @@ using Windows.Graphics;
 namespace VoiceType.Shell;
 
 /// <summary>
-/// Automated runtime verification of the Phase-1 migration-critical behaviors that
-/// can be checked without a human watching the screen: the C#-side bridge, the
-/// no-activate / always-on-top overlay windows (focus-safety), window styles, DPI
-/// awareness, and multi-monitor info. Writes a report file and exits.
+/// Automated runtime verification of the migration-critical behaviors that can be
+/// checked without a human watching the screen: the C#-side bridge + history contract,
+/// the no-activate / always-on-top overlay windows (focus-safety), the signature
+/// surfaces (HUD morphing, tray health orb), window styles, DPI awareness, and
+/// multi-monitor info. Writes a report file and exits.
 /// </summary>
 internal static class RuntimeSelfTest
 {
@@ -30,7 +31,7 @@ internal static class RuntimeSelfTest
         Process? bridge = null;
         var events = new List<JsonElement>();
         string repoRoot = RepoPaths.FindRoot();
-        string reportPath = Path.Combine(repoRoot, "winui", "phase1_runtime_report.txt");
+        string reportPath = Path.Combine(repoRoot, "winui", "winui_runtime_report.txt");
 
         var (pipeShort, pipeFull) = RepoPaths.NewPipe("voicetype-selftest");
         try
@@ -70,6 +71,13 @@ internal static class RuntimeSelfTest
                 Check("bridge.getTranscripts",
                       tr.TryGetProperty("items", out var trItems) && trItems.ValueKind == JsonValueKind.Array,
                       "items[] returned");
+
+                // Destructive-RPC guard: clearHistory WITHOUT a confirm flag must refuse
+                // (so this is safe to run — it never wipes the real store).
+                var clr = await client.RpcAsync("clearHistory");
+                Check("bridge.clearHistory.guard",
+                      clr.TryGetProperty("cleared", out var cl) && !cl.GetBoolean(),
+                      "refused without confirm");
 
                 await client.RpcAsync("startDictation", new { mode = "external" });
                 await Task.Delay(2500);
@@ -222,7 +230,7 @@ internal static class RuntimeSelfTest
     {
         int pass = Results.Count(r => r.ok);
         var sb = new StringBuilder();
-        sb.AppendLine("VoiceType Phase-1 WinUI RUNTIME self-test");
+        sb.AppendLine("VoiceType WinUI runtime self-test");
         sb.AppendLine($"timestamp: {DateTime.Now:O}");
         sb.AppendLine($"result: {pass}/{Results.Count} passed");
         sb.AppendLine(new string('-', 60));

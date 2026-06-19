@@ -98,12 +98,23 @@ class HealthTests(unittest.TestCase):
             self.assertEqual(items[0]["target"], "chrome.exe")        # target preserved
             self.assertEqual(set(items[0].keys()), {"ts", "text", "target"})
 
-    def test_full_history_count_clamped(self):
+    def test_full_history_count_clamped_to_store_cap(self):
+        # >500 rows on disk: the default cap (history.max_entries=500) bounds the result,
+        # and the NEWEST rows are returned (tail read, not a whole-file slice).
         with tempfile.TemporaryDirectory() as tmp:
-            _write_history(tmp, [{"ts": i, "text": f"t{i}"} for i in range(20)])
+            _write_history(tmp, [{"ts": i, "text": f"t{i}"} for i in range(620)])
             c = _FakeConfig({}, config_dir=tmp)
-            self.assertLessEqual(len(full_history(c, 9999)), 500)       # upper clamp
-            self.assertGreaterEqual(len(full_history(c, "bad")), 1)     # bad -> default
+            items = full_history(c, 9999)
+            self.assertEqual(len(items), 500)               # clamped to default cap
+            self.assertEqual(items[0]["text"], "t619")      # newest first
+            self.assertEqual(items[-1]["text"], "t120")     # only the last 500 kept
+            self.assertGreaterEqual(len(full_history(c, "bad")), 1)   # bad count -> default
+
+    def test_full_history_honors_higher_max_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [{"ts": i, "text": f"t{i}"} for i in range(620)])
+            c = _FakeConfig({"history.max_entries": 1000}, config_dir=tmp)
+            self.assertEqual(len(full_history(c, 9999)), 620)   # cap above count -> all rows
 
     def test_clear_history_removes_all(self):
         with tempfile.TemporaryDirectory() as tmp:

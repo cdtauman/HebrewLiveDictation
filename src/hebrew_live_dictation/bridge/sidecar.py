@@ -15,6 +15,7 @@ to the sidecar it spawned (never a stale/orphan one).
 from __future__ import annotations
 
 import ctypes
+import json
 import logging
 import os
 import sys
@@ -117,6 +118,43 @@ def compute_health(config) -> dict:
 
 HISTORY_PREVIEW_MAX = 80
 HISTORY_COUNT_MAX = 50
+HISTORY_TAIL_MAX_BYTES = 8_000_000  # never read more than this from the tail (corrupt/huge files)
+
+
+def _tail_entries(path, limit) -> list:
+    """Return up to the last `limit` JSON entries (oldest->newest) WITHOUT loading the
+    whole file: seek from the end and read bounded blocks until we have enough lines or
+    hit a byte ceiling. Corrupt lines are skipped. This keeps a pathological history
+    file from blocking the single IPC request loop (unlike history.load, which reads the
+    entire file before slicing).
+    """
+    if limit <= 0 or not os.path.exists(path):
+        return []
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            pos = f.tell()
+            data = b""
+            block = 65536
+            # +1 so the (possibly partial) first line is safely discarded by the slice
+            while pos > 0 and data.count(b"\n") <= limit and len(data) < HISTORY_TAIL_MAX_BYTES:
+                read = min(block, pos)
+                pos -= read
+                f.seek(pos)
+                data = f.read(read) + data
+        text = data.decode("utf-8", errors="replace")
+        out = []
+        for line in text.splitlines()[-limit:]:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+        return out
+    except Exception:
+        return []
 
 
 def recent_history(config, count) -> list:
@@ -130,8 +168,8 @@ def recent_history(config, count) -> list:
         n = 5
     n = max(1, min(n, HISTORY_COUNT_MAX))
     try:
-        from ..history import load
-        items = load(config, limit=n)
+        from ..history import _path
+        items = _tail_entries(_path(config), n)
     except Exception:
         return []
     out = []
@@ -148,22 +186,29 @@ def recent_history(config, count) -> list:
     return out
 
 
-HISTORY_FULL_MAX = 500
+HISTORY_FULL_MAX = 5000  # absolute safety ceiling regardless of config
 
 
 def full_history(config, count) -> list:
     """Full transcripts for the History room: newest-first, untruncated, with the
     target app. Unlike the sanitized Home preview, this is the user's own complete
-    record on their machine; `count` is clamped to the store cap.
+    record on their machine. The ceiling is the configured store cap
+    (history.max_entries) so an "export all" returns everything the store keeps,
+    bounded by an absolute safety ceiling.
     """
+    try:
+        max_entries = int(config.get("history.max_entries", 500) or 500)
+    except (TypeError, ValueError):
+        max_entries = 500
+    ceiling = max(1, min(max_entries, HISTORY_FULL_MAX))
     try:
         n = int(count)
     except (TypeError, ValueError):
-        n = 200
-    n = max(1, min(n, HISTORY_FULL_MAX))
+        n = min(200, ceiling)
+    n = max(1, min(n, ceiling))
     try:
-        from ..history import load
-        items = load(config, limit=n)
+        from ..history import _path
+        items = _tail_entries(_path(config), n)
     except Exception:
         return []
     out = []
@@ -319,6 +364,10 @@ def run(pipe_name: str | None = None) -> int:
         if method == "getTranscripts":
             return {"items": full_history(config, params.get("count", 200))}
         if method == "clearHistory":
+            # Destructive: require an explicit confirmation flag at the RPC boundary so
+            # a stray/automated call can never wipe the store without intent.
+            if not params.get("confirm"):
+                return {"cleared": False, "error": "confirmation required"}
             return {"cleared": _clear_history(config)}
         if method == "setConfig":
             config.set(params["key"], params["value"])  # engine is the single writer

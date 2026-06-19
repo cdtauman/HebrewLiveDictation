@@ -36,29 +36,37 @@ public sealed partial class HistoryPage : Page
         _ = LoadAsync();
     }
 
-    private async Task LoadAsync()
+    private const int DisplayCount = 200;
+    private const int ExportAllCount = 100000;   // engine clamps to the store cap = "all"
+
+    /// <summary>Fetch transcripts fresh from the engine. The list is the source of truth;
+    /// export re-fetches the full set rather than reusing the display page.</summary>
+    private async Task<List<TranscriptItem>> FetchAsync(int count)
     {
         var items = new List<TranscriptItem>();
-        if (_host?.Client != null)
+        if (_host?.Client == null) return items;
+        try
         {
-            try
+            var res = await _host.Client.RpcAsync("getTranscripts", new { count });
+            if (res.TryGetProperty("items", out var arr) && arr.ValueKind == JsonValueKind.Array)
             {
-                var res = await _host.Client.RpcAsync("getTranscripts", new { count = 200 });
-                if (res.TryGetProperty("items", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                foreach (var it in arr.EnumerateArray())
                 {
-                    foreach (var it in arr.EnumerateArray())
-                    {
-                        string text = it.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
-                        if (string.IsNullOrWhiteSpace(text)) continue;
-                        double ts = it.TryGetProperty("ts", out var tsEl) && tsEl.TryGetDouble(out var dv) ? dv : 0;
-                        string target = it.TryGetProperty("target", out var tg) ? tg.GetString() ?? "" : "";
-                        items.Add(new TranscriptItem { Text = text, When = FormatWhen(ts), Target = FriendlyTarget(target) });
-                    }
+                    string text = it.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
+                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    double ts = it.TryGetProperty("ts", out var tsEl) && tsEl.TryGetDouble(out var dv) ? dv : 0;
+                    string target = it.TryGetProperty("target", out var tg) ? tg.GetString() ?? "" : "";
+                    items.Add(new TranscriptItem { Text = text, When = FormatWhen(ts), Target = FriendlyTarget(target) });
                 }
             }
-            catch { /* not connected — show empty state */ }
         }
+        catch { /* not connected — caller shows empty state */ }
+        return items;
+    }
 
+    private async Task LoadAsync()
+    {
+        var items = await FetchAsync(DisplayCount);
         DispatcherQueue.TryEnqueue(() =>
         {
             List.ItemsSource = items;
@@ -81,7 +89,10 @@ public sealed partial class HistoryPage : Page
 
     private async void OnExport(object sender, RoutedEventArgs e)
     {
-        if (_host?.Console == null || List.ItemsSource is not List<TranscriptItem> items || items.Count == 0) return;
+        if (_host?.Console == null) return;
+        // Export ALL stored transcripts, not just the loaded display page.
+        var items = await FetchAsync(ExportAllCount);
+        if (items.Count == 0) return;
 
         var picker = new FileSavePicker
         {
@@ -119,8 +130,30 @@ public sealed partial class HistoryPage : Page
             FlowDirection = FlowDirection.RightToLeft,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-        try { await _host.Client.RpcAsync("clearHistory"); } catch { }
+
+        bool cleared = false;
+        try
+        {
+            var res = await _host.Client.RpcAsync("clearHistory", new { confirm = true });
+            cleared = res.TryGetProperty("cleared", out var c) && c.GetBoolean();
+        }
+        catch { /* cleared stays false -> show failure */ }
+
+        if (!cleared) { await ShowMessageAsync("לא ניתן לנקות את ההיסטוריה כעת.", "נסו שוב בעוד רגע."); return; }
         await LoadAsync();
+    }
+
+    private async Task ShowMessageAsync(string title, string body)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = body,
+            CloseButtonText = "סגור",
+            XamlRoot = this.XamlRoot,
+            FlowDirection = FlowDirection.RightToLeft,
+        };
+        try { await dialog.ShowAsync(); } catch { }
     }
 
     private static string FormatWhen(double unixSeconds)

@@ -33,8 +33,11 @@ public sealed class TrayIcon : IDisposable
         IntPtr hInstance = Native.GetModuleHandleW(null);
         var wc = new Native.WNDCLASS { lpfnWndProc = _wndProc, hInstance = hInstance, lpszClassName = _className };
         Native.RegisterClassW(ref wc);
+        // A hidden *top-level* window (parent = NULL), NOT a message-only (HWND_MESSAGE)
+        // window: only top-level windows receive the "TaskbarCreated" broadcast, which we
+        // need to re-add the icon after an Explorer restart. It is never shown.
         _hwnd = Native.CreateWindowExW(0, _className, "VoiceTypeTray", 0, 0, 0, 0, 0,
-                                       Native.HWND_MESSAGE, IntPtr.Zero, hInstance, IntPtr.Zero);
+                                       IntPtr.Zero, IntPtr.Zero, hInstance, IntPtr.Zero);
 
         var (r, g, b, tip) = Visuals(_state);
         _icon = Native.CreateDotIcon(r, g, b);
@@ -59,10 +62,10 @@ public sealed class TrayIcon : IDisposable
     {
         state = string.IsNullOrEmpty(state) ? "idle" : state;
         if (state == _state) return;
-        _state = state;
         var (r, g, b, tip) = Visuals(state);
         IntPtr fresh = Native.CreateDotIcon(r, g, b);
-        if (fresh == IntPtr.Zero) return;
+        if (fresh == IntPtr.Zero) return;   // keep the current icon + state; retry on next change
+        _state = state;
         IntPtr old = _icon;
         _icon = fresh;
         _nid.hIcon = fresh;
@@ -71,16 +74,29 @@ public sealed class TrayIcon : IDisposable
         if (old != IntPtr.Zero) Native.DestroyIcon(old);
     }
 
-    /// <summary>State → orb color (mirrors the dark-theme semantic palette) + tooltip.</summary>
-    private static (byte r, byte g, byte b, string tip) Visuals(string state) => state switch
+    /// <summary>State → orb color + tooltip. Color comes from the one shared
+    /// <see cref="Palette"/> source (dark-theme semantic values) — no duplicated bytes.</summary>
+    private static (byte r, byte g, byte b, string tip) Visuals(string state)
     {
-        "listening" => (0x8C, 0x9C, 0xFF, "VoiceType · מקשיב"),
-        "stopping" => (0xFF, 0xB8, 0x4D, "VoiceType · כותב…"),
-        "error" => (0xFF, 0x6B, 0x6B, "VoiceType · שגיאה"),
-        "disconnected" => (0xFF, 0x6B, 0x6B, "VoiceType · המנוע אינו פעיל"),
-        "connecting" => (0x7B, 0x7F, 0x88, "VoiceType · מתחבר…"),
-        _ => (0x51, 0xCF, 0x66, "VoiceType · מוכן"),
-    };
+        var c = state switch
+        {
+            "listening" => Palette.Accent(true).Color,
+            "stopping" => Palette.Attention(true).Color,
+            "error" or "disconnected" => Palette.Error(true).Color,
+            "connecting" => Palette.Neutral(true).Color,
+            _ => Palette.Ready(true).Color,
+        };
+        string tip = state switch
+        {
+            "listening" => "VoiceType · מקשיב",
+            "stopping" => "VoiceType · כותב…",
+            "error" => "VoiceType · שגיאה",
+            "disconnected" => "VoiceType · המנוע אינו פעיל",
+            "connecting" => "VoiceType · מתחבר…",
+            _ => "VoiceType · מוכן",
+        };
+        return (c.R, c.G, c.B, tip);
+    }
 
     private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {

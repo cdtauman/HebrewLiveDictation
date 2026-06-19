@@ -40,8 +40,8 @@ public sealed class AppHost
         var (pipeShort, pipeFull) = RepoPaths.NewPipe();
         Client = new BridgeClient(pipeShort);
         _bridge = RepoPaths.StartSidecar(RepoPaths.FindRoot(), pipeFull, line => AppLog.Add("sidecar: " + line));
-        Client.EventReceived += OnEvent;
-        Client.Disconnected += OnBridgeDisconnected;
+        Wire(Client);
+        var client = Client;
 
         _tray = new TrayIcon();
         _tray.ShowRequested += ShowConsole;
@@ -62,24 +62,50 @@ public sealed class AppHost
         }
         ApplyEngineState("connecting", "");
 
+        await ConnectAndSyncAsync(client);
+    }
+
+    /// <summary>Subscribe a client's event + disconnect callbacks, tagged with the client
+    /// identity so a stale client from a previous engine can never drive the UI after a
+    /// restart.</summary>
+    private void Wire(BridgeClient client)
+    {
+        client.EventReceived += e => OnEvent(client, e);
+        client.Disconnected += () => OnBridgeDisconnected(client);
+    }
+
+    /// <summary>Connect, read initial status, and publish it — but only if this client is
+    /// still the current one when the (awaited) results land.</summary>
+    private async Task ConnectAndSyncAsync(BridgeClient client)
+    {
         try
         {
-            await Client.ConnectAsync(20000);
-            var st = await Client.RpcAsync("getStatus");
-            CurrentState = st.TryGetProperty("state", out var stState) ? stState.GetString() ?? "idle" : "idle";
-            var connectedState = CurrentState;
-            _ui.TryEnqueue(() => { ApplyEngineState(connectedState, ""); StatusChanged?.Invoke(connectedState, ""); });
+            await client.ConnectAsync(20000);
+            var st = await client.RpcAsync("getStatus");
+            var connectedState = st.TryGetProperty("state", out var s) ? s.GetString() ?? "idle" : "idle";
+            _ui.TryEnqueue(() =>
+            {
+                if (client != Client) return;             // superseded by a newer engine
+                CurrentState = connectedState;
+                ApplyEngineState(connectedState, "");
+                StatusChanged?.Invoke(connectedState, "");
+            });
         }
         catch (Exception ex)
         {
-            CurrentState = "disconnected";
             var msg = ex.Message;
-            _ui.TryEnqueue(() => { ApplyEngineState("disconnected", msg); StatusChanged?.Invoke("disconnected", msg); });
+            _ui.TryEnqueue(() =>
+            {
+                if (client != Client) return;
+                CurrentState = "disconnected";
+                ApplyEngineState("disconnected", msg);
+                StatusChanged?.Invoke("disconnected", msg);
+            });
         }
     }
 
     /// <summary>Push one engine state to every status surface at once — console pane
-    /// footer, Voice HUD, and Remote — so all three stay in lockstep. UI thread only.</summary>
+    /// footer, Voice HUD, Remote, and tray orb — so all four stay in lockstep. UI thread only.</summary>
     private void ApplyEngineState(string state, string message)
     {
         _main?.SetEngineStatus(state, message);
@@ -88,11 +114,12 @@ public sealed class AppHost
         _tray?.SetHealth(state);
     }
 
-    private void OnBridgeDisconnected()
+    private void OnBridgeDisconnected(BridgeClient source)
     {
         if (IsExiting) return;
         _ui.TryEnqueue(() =>
         {
+            if (source != Client) return;                 // an old engine we already replaced
             CurrentState = "disconnected";
             CurrentMessage = "";
             ApplyEngineState("disconnected", "");
@@ -108,34 +135,23 @@ public sealed class AppHost
         try { Client?.Dispose(); } catch { }
 
         var (pipeShort, pipeFull) = RepoPaths.NewPipe();
-        Client = new BridgeClient(pipeShort);
-        Client.EventReceived += OnEvent;
-        Client.Disconnected += OnBridgeDisconnected;
+        var client = new BridgeClient(pipeShort);
+        Wire(client);
+        Client = client;                                   // becomes current before any await
         _bridge = RepoPaths.StartSidecar(RepoPaths.FindRoot(), pipeFull, line => AppLog.Add("sidecar: " + line));
 
         CurrentState = "connecting";
         ApplyEngineState("connecting", "");
         StatusChanged?.Invoke("connecting", "");
-        try
-        {
-            await Client.ConnectAsync(20000);
-            var st = await Client.RpcAsync("getStatus");
-            CurrentState = st.TryGetProperty("state", out var s) ? s.GetString() ?? "idle" : "idle";
-            var ns = CurrentState;
-            _ui.TryEnqueue(() => { ApplyEngineState(ns, ""); StatusChanged?.Invoke(ns, ""); });
-        }
-        catch (Exception ex)
-        {
-            var msg = ex.Message;
-            _ui.TryEnqueue(() => { CurrentState = "disconnected"; ApplyEngineState("disconnected", msg); StatusChanged?.Invoke("disconnected", msg); });
-        }
+        await ConnectAndSyncAsync(client);
     }
 
-    private void OnEvent(JsonElement e)
+    private void OnEvent(BridgeClient source, JsonElement e)
     {
         string? kind = e.TryGetProperty("kind", out var k) ? k.GetString() : null;
         _ui.TryEnqueue(() =>
         {
+            if (source != Client) return;                 // stale client from a previous engine
             switch (kind)
             {
                 case "status":

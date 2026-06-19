@@ -163,6 +163,7 @@ public sealed class HudWindow
     /// words area shows the friendly message for problem states and the idle hint at rest.</summary>
     public void SetState(string state, string message = "")
     {
+        string prev = _state;
         _state = string.IsNullOrEmpty(state) ? "idle" : state;
         var (dot, label, pulse) = Overlays.Treat(_state);
         _dot.Fill = dot;
@@ -173,7 +174,9 @@ public sealed class HudWindow
         {
             case "listening":
                 _words.Foreground = Overlays.Light;
-                _words.Text = "…";   // replaced as soon as words stream in
+                // Only clear on entering listening (fresh session). Repeated "listening"
+                // status refreshes must keep the live words — otherwise they flicker to "…".
+                if (prev != "listening") _words.Text = "…";
                 break;
             case "stopping":
                 _words.Foreground = Overlays.Muted;   // keep last words, dimmed while placing
@@ -204,6 +207,9 @@ public sealed class HudWindow
         _words.Foreground = Overlays.Light;
         _words.Text = string.IsNullOrWhiteSpace(w) ? "…" : w;
     }
+
+    /// <summary>Current displayed words — for the runtime self-test (word preservation).</summary>
+    internal string CurrentWordsForTest => _words.Text;
 
     private void StartPulse()
     {

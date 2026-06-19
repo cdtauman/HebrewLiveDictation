@@ -140,12 +140,15 @@ internal static class RuntimeSelfTest
             IntPtr fgPreHud = Native.GetForegroundWindow();
             var hudSurface = new HudWindow();
             bool hudStates = true;
+            string wordsAfterRefresh = "";
             try
             {
                 foreach (var hs in new[] { "connecting", "idle", "listening", "stopping", "error", "disconnected" })
                     hudSurface.SetState(hs, hs == "error" ? "בדיקה" : "");
-                hudSurface.SetState("listening");
-                hudSurface.SetWords("שלום עולם");
+                hudSurface.SetState("listening");        // fresh session
+                hudSurface.SetWords("שלום עולם");        // live words stream in
+                hudSurface.SetState("listening");        // repeated status refresh must NOT wipe them
+                wordsAfterRefresh = hudSurface.CurrentWordsForTest;
             }
             catch { hudStates = false; }
             await Task.Delay(250);
@@ -154,7 +157,15 @@ internal static class RuntimeSelfTest
             Check("hud.surface.noactivate", (hudSurfaceEx & Native.WS_EX_NOACTIVATE) != 0, $"exStyle=0x{hudSurfaceEx:X}");
             Check("hud.surface.no_steal", fgPostHud == fgPreHud, "HUD did not take foreground");
             Check("hud.surface.states", hudStates, "SetState morphs through all states + words");
+            Check("hud.words.preserved", wordsAfterRefresh == "שלום עולם",
+                  $"live words survive a repeated 'listening' refresh (got '{wordsAfterRefresh}')");
             hudSurface.Window.Close();
+
+            // 6d) Production tray path: a top-level (broadcast-capable) window + health orb
+            //     icon registered via the real TrayIcon (not the raw nid above).
+            var trayInst = new TrayIcon();
+            Check("tray.instance", trayInst.IsAdded, "real TrayIcon added (health orb + broadcast-capable window)");
+            trayInst.Dispose();
 
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).

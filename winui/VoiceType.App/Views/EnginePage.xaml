@@ -9,18 +9,68 @@
     <ScrollViewer>
         <StackPanel Padding="{StaticResource PagePadding}" Spacing="{StaticResource SpaceLg}"
                     MaxWidth="{StaticResource ContentMaxWidth}" HorizontalAlignment="Center">
+
             <StackPanel Spacing="4">
                 <TextBlock Text="מנוע" Style="{StaticResource PageTitleStyle}" />
                 <TextBlock Text="איכות הזיהוי והחיבור. בוחרים פעם אחת — ושוכחים מזה."
                            Style="{StaticResource PageSubtitleStyle}" />
             </StackPanel>
+
+            <!-- Engine choice (plain language; no engine internals on the surface) -->
             <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="8">
+                <StackPanel Spacing="14">
                     <TextBlock Text="בחירת מנוע" Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="מומלץ · לא־מקוון · בחירה ידנית — בשפה פשוטה, בלי לחשוף את פרטי המנוע."
-                               Style="{StaticResource BodyMutedStyle}" />
+                    <StackPanel Spacing="10">
+                        <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
+                            <StackPanel Spacing="2" Margin="6,0,0,0">
+                                <TextBlock Text="מומלץ · Google Chirp 3" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="האיכות הטובה ביותר לעברית. דורש מפתח Google."
+                                           Style="{StaticResource CaptionMutedStyle}" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="OptOffline" GroupName="engine" Tag="offline" Checked="OnEngineChoice">
+                            <StackPanel Spacing="2" Margin="6,0,0,0">
+                                <TextBlock Text="לא־מקוון · Whisper" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="פרטי לחלוטין. עובד בלי חיבור לאינטרנט ובלי הגדרות."
+                                           Style="{StaticResource CaptionMutedStyle}" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="OptChoose" GroupName="engine" Tag="choose" Checked="OnEngineChoice">
+                            <StackPanel Spacing="2" Margin="6,0,0,0">
+                                <TextBlock Text="בחירה ידנית" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="בחרו ספק זיהוי אחר." Style="{StaticResource CaptionMutedStyle}" />
+                            </StackPanel>
+                        </RadioButton>
+                    </StackPanel>
+                    <TextBlock x:Name="CurrentLabel" Style="{StaticResource CaptionMutedStyle}" />
+                    <TextBlock Text="השינוי ייכנס לתוקף בהכתבה הבאה." Style="{StaticResource CaptionMutedStyle}" />
                 </StackPanel>
             </Border>
+
+            <!-- Provider picker — only when 'choose' is selected -->
+            <Border x:Name="ChooseCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="ספק זיהוי" Style="{StaticResource SectionHeaderStyle}" />
+                    <ComboBox x:Name="ProviderCombo" MinWidth="240" SelectionChanged="OnProviderChanged">
+                        <ComboBoxItem Tag="deepgram" Content="Deepgram" />
+                        <ComboBoxItem Tag="groq" Content="Groq" />
+                    </ComboBox>
+                </StackPanel>
+            </Border>
+
+            <!-- Offline backup — plain-language wrapper over stt.mode=auto_fallback -->
+            <Border x:Name="BackupCard" Style="{StaticResource CardStyle}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="גיבוי לא־מקוון אם הענן נופל" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="אם החיבור לענן נכשל, נמשיך אוטומטית עם המנוע המקומי."
+                                   Style="{StaticResource CaptionMutedStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="BackupToggle" Grid.Column="1" VerticalAlignment="Center"
+                                  Toggled="OnBackupToggled" />
+                </Grid>
+            </Border>
+
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -65,6 +65,16 @@ internal static class RuntimeSelfTest
                       wrote.TryGetProperty("saved", out var sv) && sv.GetBoolean(),
                       $"app.theme round-trip = {theme}");
 
+                // Engine room writes stt.mode via setConfig — verify the exact key round-trips
+                // (read current value, write it back unchanged: no net change to user config).
+                var modeRead = await client.RpcAsync("getConfig", new { key = "stt.mode" });
+                string modeNow = modeRead.TryGetProperty("value", out var mv) && mv.ValueKind == JsonValueKind.String
+                                 ? mv.GetString()! : "api";
+                var modeWrote = await client.RpcAsync("setConfig", new { key = "stt.mode", value = modeNow });
+                Check("bridge.engine.config",
+                      modeWrote.TryGetProperty("saved", out var ms) && ms.GetBoolean(),
+                      $"stt.mode round-trip = {modeNow}");
+
                 // History room contract (read-only; clearHistory is intentionally NOT
                 // exercised here so the real transcript store is never wiped by a test).
                 var tr = await client.RpcAsync("getTranscripts", new { count = 5 });

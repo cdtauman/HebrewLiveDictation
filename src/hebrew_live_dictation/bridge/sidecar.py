@@ -124,11 +124,16 @@ def compute_health(config) -> dict:
     }
 
 
-def list_microphones() -> dict:
+def list_microphones(config=None) -> dict:
     """Input devices for the Controls mic picker — a thin wrapper over the engine's own
     enumeration (AudioStream.list_devices, also used by the health check). Returns just the
     real devices keyed by their device index; the UI prepends a "Windows default" option
-    (the engine treats a null microphone_device as the system default)."""
+    (the engine treats a null microphone_device as the system default).
+
+    When `config` is given and at least one device is enumerated, a saved selection whose
+    index is no longer present is cleared to null (Windows default), so the engine never
+    opens a stale device on the next dictation — keeping persisted truth and the UI in sync.
+    """
     try:
         from ..audio_stream import AudioStream
         devices = AudioStream.list_devices()
@@ -143,7 +148,20 @@ def list_microphones() -> dict:
                 items.append({"index": int(d["index"]), "name": name})
         except Exception:
             continue
+    if config is not None and items:
+        _normalize_microphone(config, {it["index"] for it in items})
     return {"items": items}
+
+
+def _normalize_microphone(config, available_indices) -> bool:
+    """Clear audio.microphone_device to null when it points at a device that is gone.
+    Returns True if it cleared the stale selection. Only call with a non-empty device set."""
+    saved = config.get("audio.microphone_device")
+    if isinstance(saved, int) and not isinstance(saved, bool) and saved not in available_indices:
+        config.set("audio.microphone_device", None)
+        logger.info("Cleared stale microphone device %s (no longer present).", saved)
+        return True
+    return False
 
 
 HISTORY_PREVIEW_MAX = 80
@@ -367,6 +385,14 @@ def run(pipe_name: str | None = None) -> int:
     config_dir = os.path.join(appdata, "VoiceType")
     config = Config(config_dir)
 
+    # Clear a stale saved microphone before any dictation can start, so the engine falls
+    # back to the Windows default rather than trying a device that no longer exists —
+    # even if the user never opens the Controls room this session.
+    try:
+        list_microphones(config)
+    except Exception:
+        logger.error("startup microphone normalization failed:\n%s", traceback.format_exc())
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
@@ -445,7 +471,7 @@ def run(pipe_name: str | None = None) -> int:
         if method == "getCommands":
             return command_reference(config)
         if method == "listMicrophones":
-            return list_microphones()
+            return list_microphones(config)
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":

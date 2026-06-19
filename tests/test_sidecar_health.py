@@ -30,6 +30,10 @@ class _FakeConfig:
     def get(self, key, default=None):
         return self.d.get(key, default)
 
+    def set(self, key, value):
+        self.d[key] = value
+        return True
+
 
 class HealthTests(unittest.TestCase):
     def test_engine_label_google_pretty(self):
@@ -176,6 +180,29 @@ class HealthTests(unittest.TestCase):
         with mock.patch("hebrew_live_dictation.audio_stream.AudioStream.list_devices",
                         side_effect=RuntimeError("no audio")):
             self.assertEqual(list_microphones(), {"items": []})
+
+    def test_list_microphones_clears_stale_saved_index(self):
+        # Saved device index 7 is gone -> normalized to null so the engine uses the
+        # Windows default instead of opening a stale device.
+        fake = [{"index": 3, "name": "USB Mic"}, {"index": 1, "name": "Internal"}]
+        cfg = _FakeConfig({"audio.microphone_device": 7})
+        with mock.patch("hebrew_live_dictation.audio_stream.AudioStream.list_devices", return_value=fake):
+            list_microphones(cfg)
+        self.assertIsNone(cfg.get("audio.microphone_device"))
+
+    def test_list_microphones_keeps_valid_saved_index(self):
+        fake = [{"index": 3, "name": "USB Mic"}, {"index": 1, "name": "Internal"}]
+        cfg = _FakeConfig({"audio.microphone_device": 3})
+        with mock.patch("hebrew_live_dictation.audio_stream.AudioStream.list_devices", return_value=fake):
+            list_microphones(cfg)
+        self.assertEqual(cfg.get("audio.microphone_device"), 3)  # present -> untouched
+
+    def test_list_microphones_does_not_clear_when_enumeration_empty(self):
+        # No devices enumerated (transient/failure) must NOT clobber a saved selection.
+        cfg = _FakeConfig({"audio.microphone_device": 5})
+        with mock.patch("hebrew_live_dictation.audio_stream.AudioStream.list_devices", return_value=[]):
+            list_microphones(cfg)
+        self.assertEqual(cfg.get("audio.microphone_device"), 5)
 
 
 if __name__ == "__main__":

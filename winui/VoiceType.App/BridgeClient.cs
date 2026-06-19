@@ -10,15 +10,13 @@ using System.Threading.Tasks;
 namespace VoiceType.Shell;
 
 /// <summary>
-/// WinUI-side client for the Python engine bridge. Connects to the named pipe
-/// \\.\pipe\voicetype-bridge and speaks newline-delimited JSON-RPC. .NET pipes
-/// use overlapped I/O, so concurrent read/write is safe (unlike a naive sync client).
+/// WinUI-side client for the Python engine bridge. Connects to a per-launch unique
+/// named pipe and speaks newline-delimited JSON-RPC. .NET pipes use overlapped I/O,
+/// so concurrent read/write is safe (unlike a naive sync client).
 /// </summary>
 public sealed class BridgeClient : IDisposable
 {
-    public const string PipeName = "voicetype-bridge";
-
-    private readonly NamedPipeClientStream _pipe = new(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+    private readonly NamedPipeClientStream _pipe;
     private StreamWriter? _writer;
     private int _id;
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
@@ -26,6 +24,11 @@ public sealed class BridgeClient : IDisposable
 
     /// <summary>Raised for server-pushed events (status/text/error/heartbeat/hotkey).</summary>
     public event Action<JsonElement>? EventReceived;
+
+    public BridgeClient(string pipeName)
+    {
+        _pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+    }
 
     public async Task ConnectAsync(int timeoutMs)
     {

@@ -32,15 +32,16 @@ internal static class RuntimeSelfTest
         string repoRoot = RepoPaths.FindRoot();
         string reportPath = Path.Combine(repoRoot, "winui", "phase1_runtime_report.txt");
 
+        var (pipeShort, pipeFull) = RepoPaths.NewPipe("voicetype-selftest");
         try
         {
-            // 1) Spawn the Python engine bridge (self-contained test).
-            bridge = StartBridge(repoRoot);
+            // 1) Spawn the Python engine bridge on a unique pipe (stdout/stderr drained).
+            bridge = RepoPaths.StartSidecar(repoRoot, pipeFull);
             Check("bridge.spawn", bridge != null && !bridge.HasExited,
                   bridge != null ? $"pid={bridge.Id}" : "failed to start");
 
             // 2) Connect the C# client and exercise the contract from the WinUI side.
-            using var client = new BridgeClient();
+            using var client = new BridgeClient(pipeShort);
             client.EventReceived += e => { lock (events) events.Add(e.Clone()); };
             try
             {
@@ -163,12 +164,6 @@ internal static class RuntimeSelfTest
         Native.MakeOverlay(hwnd, clickThrough);   // WS_EX_NOACTIVATE | TOPMOST | (TRANSPARENT)
         window.AppWindow.Show(activateWindow: false);  // show WITHOUT stealing focus
         return (window, hwnd);
-    }
-
-    private static Process? StartBridge(string repoRoot)
-    {
-        try { return Process.Start(RepoPaths.SidecarStartInfo(repoRoot)); }
-        catch { return null; }
     }
 
     private static void WriteReport(string path)

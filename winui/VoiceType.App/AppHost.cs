@@ -15,7 +15,7 @@ namespace VoiceType.Shell;
 /// </summary>
 public sealed class AppHost
 {
-    public BridgeClient Client { get; } = new BridgeClient();
+    public BridgeClient Client { get; private set; } = null!;
     public bool IsExiting { get; private set; }
 
     private Process? _bridge;
@@ -28,7 +28,12 @@ public sealed class AppHost
     public async Task RunAsync(bool showOverlays)
     {
         _ui = DispatcherQueue.GetForCurrentThread();
-        _bridge = StartBridge();
+
+        // Per-launch unique pipe: the client can only ever attach to the sidecar we
+        // spawn here, never a stale/orphan one. stdout/stderr are drained into AppLog.
+        var (pipeShort, pipeFull) = RepoPaths.NewPipe();
+        Client = new BridgeClient(pipeShort);
+        _bridge = RepoPaths.StartSidecar(RepoPaths.FindRoot(), pipeFull, line => AppLog.Add("sidecar: " + line));
         Client.EventReceived += OnEvent;
 
         _tray = new TrayIcon();
@@ -109,9 +114,4 @@ public sealed class AppHost
         Application.Current.Exit();
     }
 
-    private static Process? StartBridge()
-    {
-        try { return Process.Start(RepoPaths.SidecarStartInfo(RepoPaths.FindRoot())); }
-        catch { return null; }
-    }
 }

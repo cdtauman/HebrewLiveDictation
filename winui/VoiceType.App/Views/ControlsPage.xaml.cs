@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
@@ -42,6 +43,57 @@ public sealed partial class ControlsPage : Page
             RemoteToggle.IsOn = remote;
             _loading = false;
         });
+
+        await LoadMicrophonesAsync();
+    }
+
+    private async Task LoadMicrophonesAsync()
+    {
+        var items = new List<(int index, string name)>();
+        if (_host?.Client != null)
+        {
+            try
+            {
+                var res = await _host.Client.RpcAsync("listMicrophones");
+                if (res.TryGetProperty("items", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                    foreach (var it in arr.EnumerateArray())
+                    {
+                        int idx = it.TryGetProperty("index", out var ix) && ix.TryGetInt32(out var n) ? n : -1;
+                        string name = it.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
+                        if (idx >= 0 && !string.IsNullOrEmpty(name)) items.Add((idx, name));
+                    }
+            }
+            catch { }
+        }
+        int? current = await GetNullableInt("audio.microphone_device");
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _loading = true;
+            MicCombo.Items.Clear();
+            MicCombo.Items.Add(new ComboBoxItem { Content = "ברירת המחדל של Windows", Tag = "" });
+            foreach (var (index, name) in items)
+                MicCombo.Items.Add(new ComboBoxItem { Content = name, Tag = index.ToString() });
+            SelectMic(current);
+            _loading = false;
+        });
+    }
+
+    private void SelectMic(int? index)
+    {
+        string target = index?.ToString() ?? "";
+        foreach (var obj in MicCombo.Items)
+            if (obj is ComboBoxItem ci && (ci.Tag as string) == target) { MicCombo.SelectedItem = obj; return; }
+        MicCombo.SelectedIndex = 0;   // saved device no longer present -> fall back to Windows default
+    }
+
+    private async void OnMicChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string tag = (MicCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        // Empty tag = Windows default, persisted as null (the engine treats null as default).
+        object? value = string.IsNullOrEmpty(tag) ? null : (int.TryParse(tag, out var n) ? n : null);
+        await Persist("audio.microphone_device", value);
     }
 
     private async void OnModeChoice(object sender, RoutedEventArgs e)
@@ -74,7 +126,7 @@ public sealed partial class ControlsPage : Page
 
     /// <summary>Write a setting; on failure tell the user and resync the UI from the
     /// actually-persisted config so a control never *looks* set when it isn't.</summary>
-    private async Task<bool> Persist(string key, object value)
+    private async Task<bool> Persist(string key, object? value)
     {
         bool ok = false;
         if (_host?.Client != null)
@@ -120,6 +172,19 @@ public sealed partial class ControlsPage : Page
         }
         catch { }
         return fallback;
+    }
+
+    private async Task<int?> GetNullableInt(string key)
+    {
+        if (_host?.Client == null) return null;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Number
+                && v.TryGetInt32(out var n)) return n;
+        }
+        catch { }
+        return null;
     }
 
     private static string FormatHotkey(string raw)

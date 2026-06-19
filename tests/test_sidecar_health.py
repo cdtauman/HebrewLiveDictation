@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from hebrew_live_dictation.bridge.sidecar import (
     _clear_history,
@@ -9,6 +10,7 @@ from hebrew_live_dictation.bridge.sidecar import (
     compute_health,
     engine_label,
     full_history,
+    list_microphones,
     recent_history,
 )
 
@@ -156,6 +158,24 @@ class HealthTests(unittest.TestCase):
         ref = command_reference(_FakeConfig({"languages.primary": "zz-ZZ"}))
         self.assertIn("punctuation", ref)
         self.assertIn("actions", ref)
+
+    def test_list_microphones_shapes_devices(self):
+        # Prefers display_name, falls back to name, drops blank/invalid, keeps the index.
+        fake = [
+            {"index": 3, "display_name": "USB Mic", "name": "USB Mic (2- USB Audio)"},
+            {"index": 1, "name": "Internal"},
+            {"index": 9, "display_name": "  "},  # no usable name -> dropped
+        ]
+        with mock.patch("hebrew_live_dictation.audio_stream.AudioStream.list_devices", return_value=fake):
+            items = list_microphones()["items"]
+        self.assertEqual([i["index"] for i in items], [3, 1])
+        self.assertEqual(items[0]["name"], "USB Mic")   # display_name preferred
+        self.assertEqual(items[1]["name"], "Internal")  # falls back to raw name
+
+    def test_list_microphones_safe_on_error(self):
+        with mock.patch("hebrew_live_dictation.audio_stream.AudioStream.list_devices",
+                        side_effect=RuntimeError("no audio")):
+            self.assertEqual(list_microphones(), {"items": []})
 
 
 if __name__ == "__main__":

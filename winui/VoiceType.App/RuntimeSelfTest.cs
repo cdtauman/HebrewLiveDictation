@@ -89,6 +89,12 @@ internal static class RuntimeSelfTest
                 Check("bridge.getCommands", hasPunct && hasActions,
                       $"punctuation+actions returned ({(hasPunct ? cp.GetArrayLength() : 0)}+{(hasActions ? ca.GetArrayLength() : 0)})");
 
+                // Controls room microphone picker: thin-adapter enumeration RPC.
+                var mics = await client.RpcAsync("listMicrophones");
+                bool micItems = mics.TryGetProperty("items", out var mi) && mi.ValueKind == JsonValueKind.Array;
+                Check("bridge.listMicrophones", micItems,
+                      $"items[] returned ({(micItems ? mi.GetArrayLength() : 0)} input devices)");
+
                 // Destructive-RPC guard: clearHistory WITHOUT a confirm flag must refuse
                 // (so this is safe to run — it never wipes the real store).
                 var clr = await client.RpcAsync("clearHistory");

@@ -124,6 +124,28 @@ def compute_health(config) -> dict:
     }
 
 
+def list_microphones() -> dict:
+    """Input devices for the Controls mic picker — a thin wrapper over the engine's own
+    enumeration (AudioStream.list_devices, also used by the health check). Returns just the
+    real devices keyed by their device index; the UI prepends a "Windows default" option
+    (the engine treats a null microphone_device as the system default)."""
+    try:
+        from ..audio_stream import AudioStream
+        devices = AudioStream.list_devices()
+    except Exception:
+        logger.error("list_microphones failed:\n%s", traceback.format_exc())
+        devices = []
+    items = []
+    for d in devices:
+        try:
+            name = str(d.get("display_name") or d.get("name") or "").strip()
+            if name:
+                items.append({"index": int(d["index"]), "name": name})
+        except Exception:
+            continue
+    return {"items": items}
+
+
 HISTORY_PREVIEW_MAX = 80
 HISTORY_COUNT_MAX = 50
 HISTORY_TAIL_MAX_BYTES = 8_000_000  # never read more than this from the tail (corrupt/huge files)
@@ -422,6 +444,8 @@ def run(pipe_name: str | None = None) -> int:
             return compute_health(config)
         if method == "getCommands":
             return command_reference(config)
+        if method == "listMicrophones":
+            return list_microphones()
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":

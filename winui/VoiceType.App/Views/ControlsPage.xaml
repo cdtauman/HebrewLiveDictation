@@ -44,6 +44,19 @@
                 </StackPanel>
             </Border>
 
+            <!-- Microphone -->
+            <Border Style="{StaticResource CardStyle}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="מיקרופון" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="ההתקן שממנו מקליטים. השינוי חל בהכתבה הבאה."
+                                   Style="{StaticResource CaptionMutedStyle}" />
+                    </StackPanel>
+                    <ComboBox x:Name="MicCombo" Grid.Column="1" MinWidth="240" VerticalAlignment="Center"
+                              SelectionChanged="OnMicChanged" />
+                </Grid>
+            </Border>
+
             <!-- On-screen surfaces (live) -->
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="16">

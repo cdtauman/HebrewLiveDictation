@@ -31,16 +31,15 @@ public sealed partial class ControlsPage : Page
         string mode = await GetString("hotkeys.mode", "toggle");
         bool hud = await GetBool("app.show_overlay", true);
         bool remote = await GetBool("toolbar.enabled", false);
-        bool sound = await GetBool("audio.feedback_enabled", false);
 
         DispatcherQueue.TryEnqueue(() =>
         {
             _loading = true;
             HotkeyText.Text = FormatHotkey(hotkey);
             if (mode == "push_to_talk") ModePtt.IsChecked = true; else ModeToggle.IsChecked = true;
+            ApplyHotkeyHint(mode);
             HudToggle.IsOn = hud;
             RemoteToggle.IsOn = remote;
-            SoundToggle.IsOn = sound;
             _loading = false;
         });
     }
@@ -49,8 +48,14 @@ public sealed partial class ControlsPage : Page
     {
         if (_loading) return;
         string mode = (sender as FrameworkElement)?.Tag as string ?? "toggle";
+        ApplyHotkeyHint(mode);
         await Persist("hotkeys.mode", mode);   // applies on next launch (hotkey listener boots once)
     }
+
+    private void ApplyHotkeyHint(string mode)
+        => HotkeyHint.Text = mode == "push_to_talk"
+            ? "החזקת המקש מקליטה; שחרורו עוצר ומכתיב."
+            : "לחיצה מפעילה ולחיצה נוספת עוצרת — בכל מקום.";
 
     private async void OnHudToggled(object sender, RoutedEventArgs e)
     {
@@ -64,11 +69,8 @@ public sealed partial class ControlsPage : Page
         if (await Persist("toolbar.enabled", RemoteToggle.IsOn)) _host?.SetRemoteVisible(RemoteToggle.IsOn);
     }
 
-    private async void OnSoundToggled(object sender, RoutedEventArgs e)
-    {
-        if (_loading) return;
-        await Persist("audio.feedback_enabled", SoundToggle.IsOn);
-    }
+    // Note: start/stop sounds are deferred — the WinUI engine path does not play them yet,
+    // so the control is disabled in XAML rather than writing a setting that has no effect.
 
     /// <summary>Write a setting; on failure tell the user and resync the UI from the
     /// actually-persisted config so a control never *looks* set when it isn't.</summary>

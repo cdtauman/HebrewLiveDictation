@@ -45,8 +45,10 @@ internal static class Overlays
             _ => (Palette.Ready(true), "מוכן", false),
         };
 
-    /// <summary>Configure a frameless, always-on-top, no-activate overlay window and show it
-    /// without stealing focus. clickThrough adds WS_EX_TRANSPARENT (display-only HUD).</summary>
+    /// <summary>Configure a frameless, always-on-top, no-activate overlay window. The window
+    /// is positioned + styled but left HIDDEN — the owner shows it (no-activate) only once the
+    /// configured visibility is known, so a disabled overlay never flashes at startup.
+    /// clickThrough adds WS_EX_TRANSPARENT (display-only HUD).</summary>
     public static void Configure(Window window, IntPtr hwnd, bool clickThrough, int dipW, int dipH, OverlayAnchor anchor)
     {
         var presenter = OverlappedPresenter.CreateForToolWindow();
@@ -73,7 +75,7 @@ internal static class Overlays
         window.AppWindow.MoveAndResize(new RectInt32(x, y, w, h));
 
         Native.MakeOverlay(hwnd, clickThrough);          // WS_EX_NOACTIVATE | TOPMOST | (TRANSPARENT)
-        window.AppWindow.Show(activateWindow: false);     // show WITHOUT stealing focus
+        // Intentionally NOT shown here — the owner shows it (no-activate) after reading config.
     }
 
     /// <summary>A small status orb that pulses (opacity) while listening — the same

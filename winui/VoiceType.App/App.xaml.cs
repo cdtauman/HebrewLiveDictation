@@ -27,7 +27,8 @@ public partial class App : Application
             return;
         }
 
-        // Interactive shell. --show also displays the live HUD + draggable Remote.
+        // Interactive shell. The HUD + Remote show per config (Controls room); --show
+        // forces both on regardless, for manual testing.
         bool showOverlays = Has("--show");
         Host = new AppHost();
         _ = Host.RunAsync(showOverlays);

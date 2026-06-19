@@ -378,8 +378,8 @@ def run(pipe_name: str | None = None) -> int:
                 return {"cleared": False, "error": "confirmation required"}
             return {"cleared": _clear_history(config)}
         if method == "setConfig":
-            config.set(params["key"], params["value"])  # engine is the single writer
-            return {"key": params["key"], "value": config.get(params["key"]), "saved": True}
+            saved = config.set(params["key"], params["value"])  # engine is the single writer
+            return {"key": params["key"], "value": config.get(params["key"]), "saved": bool(saved)}
         if method == "startDictation":
             invoker.invoke.emit(lambda: controller.start_listening(params.get("mode", "external")))
             return {"accepted": True}

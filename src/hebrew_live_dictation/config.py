@@ -211,21 +211,25 @@ class Config:
             logger.error(f"Error loading settings.json: {e}. Using defaults.")
             self.settings = copy.deepcopy(DEFAULT_SETTINGS)
 
-    def save(self):
+    def save(self) -> bool:
+        """Persist settings. Returns True on success, False if the write failed (so
+        callers/IPC can report a real save failure instead of silently claiming success)."""
         try:
             with open(self.filepath, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
             logger.info("Config saved successfully.")
+            return True
         except Exception as e:
             logger.error(f"Error saving settings.json: {e}")
+            return False
 
     def get(self, key: str, default: Any = None):
         return self._get_path(self._resolve_key(key), default)
 
-    def set(self, key: str, value: Any):
+    def set(self, key: str, value: Any) -> bool:
         self._set_path(self._resolve_key(key), value)
         self._normalize_settings()
-        self.save()
+        return self.save()
 
     def update(self, values: dict[str, Any]):
         for key, value in values.items():

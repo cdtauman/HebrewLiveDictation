@@ -10,8 +10,9 @@ namespace VoiceType.Shell;
 
 /// <summary>
 /// Ties the interactive WinUI shell to the Python engine sidecar: spawns the bridge,
-/// owns the tray icon, the console (MainWindow, hide-to-tray), and — in --show mode —
-/// the live HUD and draggable Remote. Created on the UI thread from App.OnLaunched.
+/// owns the tray icon, the console (MainWindow, hide-to-tray), and the signature
+/// surfaces — the live HUD and draggable Remote, shown per config (Controls room;
+/// --show forces both). Created on the UI thread from App.OnLaunched.
 /// </summary>
 public sealed class AppHost
 {
@@ -82,14 +83,14 @@ public sealed class AppHost
 
     private async Task ApplyOverlayVisibilityAsync(bool forceShow)
     {
-        bool hud = true, remote = false;   // defaults mirror config (app.show_overlay, toolbar.enabled)
-        if (!forceShow)
-        {
-            hud = await GetBoolConfig("app.show_overlay", true);
-            remote = await GetBoolConfig("toolbar.enabled", false);
-        }
-        SetHudVisible(hud);
-        SetRemoteVisible(remote);
+        if (forceShow) { SetHudVisible(true); SetRemoteVisible(true); return; }
+
+        // If the engine isn't reachable we can't know the user's choice — keep both hidden
+        // rather than default-showing something the user may have turned off.
+        if (CurrentState == "disconnected") { SetHudVisible(false); SetRemoteVisible(false); return; }
+
+        SetHudVisible(await GetBoolConfig("app.show_overlay", true));
+        SetRemoteVisible(await GetBoolConfig("toolbar.enabled", false));
     }
 
     private async Task<bool> GetBoolConfig(string key, bool dflt)

@@ -21,7 +21,7 @@
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                             <TextBlock Text="מקש קיצור" Style="{StaticResource SectionHeaderStyle}" />
-                            <TextBlock Text="לחיצה מפעילה ועוצרת את ההכתבה בכל מקום."
+                            <TextBlock x:Name="HotkeyHint" Text="לחיצה מפעילה ועוצרת את ההכתבה בכל מקום."
                                        Style="{StaticResource CaptionMutedStyle}" />
                         </StackPanel>
                         <Border Grid.Column="1" VerticalAlignment="Center"
@@ -67,15 +67,15 @@
                 </StackPanel>
             </Border>
 
-            <!-- Sound -->
+            <!-- Sound — deferred: the WinUI engine path does not play start/stop sounds yet -->
             <Border Style="{StaticResource CardStyle}">
                 <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                         <TextBlock Text="צלילי התחלה ועצירה" Style="{StaticResource SectionHeaderStyle}" />
-                        <TextBlock Text="צליל קצר כשמתחילים וכשעוצרים להכתיב."
+                        <TextBlock Text="צליל קצר כשמתחילים וכשעוצרים — יתווסף בקרוב."
                                    Style="{StaticResource CaptionMutedStyle}" />
                     </StackPanel>
-                    <ToggleSwitch x:Name="SoundToggle" Grid.Column="1" VerticalAlignment="Center" Toggled="OnSoundToggled" />
+                    <ToggleSwitch x:Name="SoundToggle" Grid.Column="1" VerticalAlignment="Center" IsEnabled="False" />
                 </Grid>
             </Border>
         </StackPanel>

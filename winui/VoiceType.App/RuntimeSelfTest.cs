@@ -164,6 +164,7 @@ internal static class RuntimeSelfTest
             //     every engine state (incl. live words) without throwing.
             IntPtr fgPreHud = Native.GetForegroundWindow();
             var hudSurface = new HudWindow();
+            bool hiddenAtStart = !hudSurface.Window.AppWindow.IsVisible;   // constructed hidden (no startup flash)
             bool hudStates = true;
             string wordsAfterRefresh = "";
             try
@@ -176,11 +177,15 @@ internal static class RuntimeSelfTest
                 wordsAfterRefresh = hudSurface.CurrentWordsForTest;
             }
             catch { hudStates = false; }
-            await Task.Delay(250);
+
+            hudSurface.Window.AppWindow.Show(false);   // show no-activate, exactly as AppHost does
+            await Task.Delay(200);
             long hudSurfaceEx = Native.GetExStyle(hudSurface.Hwnd);
             IntPtr fgPostHud = Native.GetForegroundWindow();
+            Check("hud.starts_hidden", hiddenAtStart, "overlay constructed hidden, shown only after config");
             Check("hud.surface.noactivate", (hudSurfaceEx & Native.WS_EX_NOACTIVATE) != 0, $"exStyle=0x{hudSurfaceEx:X}");
-            Check("hud.surface.no_steal", fgPostHud == fgPreHud, "HUD did not take foreground");
+            Check("hud.surface.no_steal", hudSurface.Window.AppWindow.IsVisible && fgPostHud == fgPreHud,
+                  "shown no-activate, did not take foreground");
             Check("hud.surface.states", hudStates, "SetState morphs through all states + words");
             Check("hud.words.preserved", wordsAfterRefresh == "שלום עולם",
                   $"live words survive a repeated 'listening' refresh (got '{wordsAfterRefresh}')");

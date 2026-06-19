@@ -12,6 +12,21 @@ from hebrew_live_dictation.text_diff import compute_end_rewrite
 
 
 class ConfigAndLanguageTests(unittest.TestCase):
+    def test_set_returns_true_on_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            self.assertTrue(config.set("app.theme", "dark"))
+            self.assertEqual(config.get("app.theme"), "dark")
+
+    def test_set_returns_false_when_save_fails(self):
+        # Persistence failure must be detectable (so setConfig over IPC can report it
+        # instead of falsely claiming saved=True). Point the file at a directory so the
+        # write raises and save() returns False.
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.filepath = tmp  # a directory -> open(..., "w") fails
+            self.assertFalse(config.set("app.theme", "dark"))
+
     def test_legacy_settings_migrate_to_schema_v4(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"

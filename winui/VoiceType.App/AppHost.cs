@@ -58,15 +58,53 @@ public sealed class AppHost
         _main = new MainWindow(this);
         _main.Activate();
 
-        if (showOverlays)
-        {
-            _hud = new HudWindow();
-            _remote = new RemoteWindow(this);
-            _main.Log("HUD + Remote shown (no-activate, topmost).");
-        }
+        // The signature surfaces live at the cursor, not behind a debug flag: create them
+        // always and drive visibility from config (Controls room). --show forces both on.
+        _hud = new HudWindow();
+        _remote = new RemoteWindow(this);
         ApplyEngineState("connecting", "");
 
         await ConnectAndSyncAsync(client);
+        await ApplyOverlayVisibilityAsync(showOverlays);
+    }
+
+    /// <summary>Live show/hide of the Voice HUD (Controls room toggle), no focus steal.</summary>
+    public void SetHudVisible(bool visible) => _ui.TryEnqueue(() =>
+    {
+        try { if (_hud != null) { if (visible) _hud.Window.AppWindow.Show(false); else _hud.Window.AppWindow.Hide(); } } catch { }
+    });
+
+    /// <summary>Live show/hide of the Remote (Controls room toggle), no focus steal.</summary>
+    public void SetRemoteVisible(bool visible) => _ui.TryEnqueue(() =>
+    {
+        try { if (_remote != null) { if (visible) _remote.Window.AppWindow.Show(false); else _remote.Window.AppWindow.Hide(); } } catch { }
+    });
+
+    private async Task ApplyOverlayVisibilityAsync(bool forceShow)
+    {
+        bool hud = true, remote = false;   // defaults mirror config (app.show_overlay, toolbar.enabled)
+        if (!forceShow)
+        {
+            hud = await GetBoolConfig("app.show_overlay", true);
+            remote = await GetBoolConfig("toolbar.enabled", false);
+        }
+        SetHudVisible(hud);
+        SetRemoteVisible(remote);
+    }
+
+    private async Task<bool> GetBoolConfig(string key, bool dflt)
+    {
+        try
+        {
+            var r = await Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v))
+            {
+                if (v.ValueKind == JsonValueKind.True) return true;
+                if (v.ValueKind == JsonValueKind.False) return false;
+            }
+        }
+        catch { }
+        return dflt;
     }
 
     /// <summary>Subscribe a client's event + disconnect callbacks, tagged with the client

@@ -11,15 +11,72 @@
                     MaxWidth="{StaticResource ContentMaxWidth}" HorizontalAlignment="Center">
             <StackPanel Spacing="4">
                 <TextBlock Text="שליטה" Style="{StaticResource PageTitleStyle}" />
-                <TextBlock Text="איך מפעילים ורואים את ההכתבה: קיצור מקשים, מיקרופון, חיווי וסרגל."
+                <TextBlock Text="איך מפעילים ורואים את ההכתבה."
                            Style="{StaticResource PageSubtitleStyle}" />
             </StackPanel>
+
+            <!-- Trigger -->
             <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="הפעלה ותצוגה" Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="כאן תגדירו את קיצור המקשים והלחיצה-לדיבור, את המיקרופון, ואת החיווי הקולי והשלט הצף."
-                               Style="{StaticResource BodyMutedStyle}" />
+                <StackPanel Spacing="16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="מקש קיצור" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="לחיצה מפעילה ועוצרת את ההכתבה בכל מקום."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <Border Grid.Column="1" VerticalAlignment="Center"
+                                Background="{ThemeResource SurfaceSubtleBrush}"
+                                BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1"
+                                CornerRadius="6" Padding="14,6,14,6">
+                            <TextBlock x:Name="HotkeyText" Text="F8" FontFamily="Consolas"
+                                       Foreground="{ThemeResource TextPrimaryBrush}" />
+                        </Border>
+                    </Grid>
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="אופן ההפעלה" Style="{StaticResource SectionHeaderStyle}" />
+                        <RadioButton x:Name="ModeToggle" GroupName="trigmode" Tag="toggle" Checked="OnModeChoice"
+                                     Content="החלפה — לחיצה מתחילה, לחיצה נוספת עוצרת" />
+                        <RadioButton x:Name="ModePtt" GroupName="trigmode" Tag="push_to_talk" Checked="OnModeChoice"
+                                     Content="לחיצה ממושכת — מקליט כל עוד המקש לחוץ" />
+                    </StackPanel>
+                    <TextBlock Text="השינוי באופן ההפעלה ובמקש ייכנס לתוקף בהפעלה הבאה."
+                               Style="{StaticResource CaptionMutedStyle}" />
                 </StackPanel>
+            </Border>
+
+            <!-- On-screen surfaces (live) -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="חיוויים על המסך" Style="{StaticResource SectionHeaderStyle}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="חיווי קולי" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="פס קטן בתחתית המסך שמראה שמקשיבים ומה נכתב."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="HudToggle" Grid.Column="1" VerticalAlignment="Center" Toggled="OnHudToggled" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="שלט צף" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="כפתורי התחלה ועצירה צפים שאפשר לגרור לכל מקום."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="RemoteToggle" Grid.Column="1" VerticalAlignment="Center" Toggled="OnRemoteToggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Sound -->
+            <Border Style="{StaticResource CardStyle}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="צלילי התחלה ועצירה" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="צליל קצר כשמתחילים וכשעוצרים להכתיב."
+                                   Style="{StaticResource CaptionMutedStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="SoundToggle" Grid.Column="1" VerticalAlignment="Center" Toggled="OnSoundToggled" />
+                </Grid>
             </Border>
         </StackPanel>
     </ScrollViewer>

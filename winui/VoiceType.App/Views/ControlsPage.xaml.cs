@@ -1,8 +1,138 @@
+using System;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Navigation;
 
 namespace VoiceType.Shell.Views;
 
+/// <summary>
+/// Controls room: trigger (hotkey + toggle/push-to-talk), the on-screen surfaces
+/// (Voice HUD + Remote — toggled LIVE through AppHost), and start/stop sounds. The
+/// engine stays the single config writer; visibility toggles also take effect now.
+/// </summary>
 public sealed partial class ControlsPage : Page
 {
+    private AppHost? _host;
+    private bool _loading;
+
     public ControlsPage() => this.InitializeComponent();
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        _host = e.Parameter as AppHost;
+        _ = LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        string hotkey = await GetString("hotkeys.hotkey", "f8");
+        string mode = await GetString("hotkeys.mode", "toggle");
+        bool hud = await GetBool("app.show_overlay", true);
+        bool remote = await GetBool("toolbar.enabled", false);
+        bool sound = await GetBool("audio.feedback_enabled", false);
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _loading = true;
+            HotkeyText.Text = FormatHotkey(hotkey);
+            if (mode == "push_to_talk") ModePtt.IsChecked = true; else ModeToggle.IsChecked = true;
+            HudToggle.IsOn = hud;
+            RemoteToggle.IsOn = remote;
+            SoundToggle.IsOn = sound;
+            _loading = false;
+        });
+    }
+
+    private async void OnModeChoice(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        string mode = (sender as FrameworkElement)?.Tag as string ?? "toggle";
+        await Persist("hotkeys.mode", mode);   // applies on next launch (hotkey listener boots once)
+    }
+
+    private async void OnHudToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        if (await Persist("app.show_overlay", HudToggle.IsOn)) _host?.SetHudVisible(HudToggle.IsOn);
+    }
+
+    private async void OnRemoteToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        if (await Persist("toolbar.enabled", RemoteToggle.IsOn)) _host?.SetRemoteVisible(RemoteToggle.IsOn);
+    }
+
+    private async void OnSoundToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        await Persist("audio.feedback_enabled", SoundToggle.IsOn);
+    }
+
+    /// <summary>Write a setting; on failure tell the user and resync the UI from the
+    /// actually-persisted config so a control never *looks* set when it isn't.</summary>
+    private async Task<bool> Persist(string key, object value)
+    {
+        bool ok = false;
+        if (_host?.Client != null)
+        {
+            try
+            {
+                var r = await _host.Client.RpcAsync("setConfig", new { key, value });
+                ok = r.TryGetProperty("saved", out var s) && s.GetBoolean();
+            }
+            catch { ok = false; }
+        }
+        if (!ok)
+        {
+            await ShowMessageAsync("לא ניתן לשמור את ההגדרה כעת.", "בדקו שהמנוע פעיל ונסו שוב.");
+            await LoadAsync();
+        }
+        return ok;
+    }
+
+    private async Task<string> GetString(string key, string fallback)
+    {
+        if (_host?.Client == null) return fallback;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getConfig", new { key });
+            return r.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.String
+                ? v.GetString() ?? fallback : fallback;
+        }
+        catch { return fallback; }
+    }
+
+    private async Task<bool> GetBool(string key, bool fallback)
+    {
+        if (_host?.Client == null) return fallback;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v))
+            {
+                if (v.ValueKind == JsonValueKind.True) return true;
+                if (v.ValueKind == JsonValueKind.False) return false;
+            }
+        }
+        catch { }
+        return fallback;
+    }
+
+    private static string FormatHotkey(string raw)
+        => string.IsNullOrWhiteSpace(raw) ? "—" : raw.ToUpperInvariant().Replace("+", " + ");
+
+    private async Task ShowMessageAsync(string title, string body)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = body,
+            CloseButtonText = "סגור",
+            XamlRoot = this.XamlRoot,
+            FlowDirection = FlowDirection.RightToLeft,
+        };
+        try { await dialog.ShowAsync(); } catch { }
+    }
 }

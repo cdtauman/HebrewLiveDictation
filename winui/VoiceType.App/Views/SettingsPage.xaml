@@ -13,11 +13,103 @@
                 <TextBlock Text="הגדרות" Style="{StaticResource PageTitleStyle}" />
                 <TextBlock Text="התנהגות האפליקציה, מראה ועדכונים." Style="{StaticResource PageSubtitleStyle}" />
             </StackPanel>
+
+            <!-- Appearance -->
             <Border Style="{StaticResource CardStyle}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="מראה והתנהגות" Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="שפת ממשק, ערכת נושא, הפעלה עם Windows ועדכונים — וכן אפשרויות מתקדמות ואבחון מאחורי דלת אחת."
-                               Style="{StaticResource BodyMutedStyle}" />
+                <StackPanel Spacing="16">
+                    <TextBlock Text="מראה" Style="{StaticResource SectionHeaderStyle}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="ערכת נושא" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="הופך מיד, בלי להפעיל מחדש." Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ComboBox x:Name="ThemeCombo" Grid.Column="1" MinWidth="180" VerticalAlignment="Center"
+                                  SelectionChanged="OnThemeChanged">
+                            <ComboBoxItem Tag="light" Content="בהיר" />
+                            <ComboBoxItem Tag="dark" Content="כהה" />
+                            <ComboBoxItem Tag="default" Content="לפי המערכת" />
+                        </ComboBox>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="שפת הממשק" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="הממשק בעברית. אנגלית תיתמך בקרוב." Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" MinWidth="180" VerticalAlignment="Center" IsEnabled="False"
+                                  SelectedIndex="0">
+                            <ComboBoxItem Content="עברית" />
+                        </ComboBox>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Behavior -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="הפעלה והתנהגות" Style="{StaticResource SectionHeaderStyle}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="מזעור למגש המערכת בסגירה" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="סגירת החלון משאירה את ההכתבה פעילה ברקע." Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="MinimizeToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnMinimizeToggled" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="הפעלה עם Windows" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="VoiceType יעלה אוטומטית עם הכניסה למחשב." Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="StartupToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnStartupToggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Advanced -->
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <TextBlock Text="מתקדם" Style="{StaticResource SectionHeaderStyle}" />
+                </Expander.Header>
+                <StackPanel Spacing="16" Padding="0,8,0,4">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="כמות פריטים בהיסטוריה" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="כמה תמלולים אחרונים נשמרים." Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <NumberBox x:Name="HistoryLimitBox" Grid.Column="1" MinWidth="140" VerticalAlignment="Center"
+                                   Minimum="50" Maximum="5000" SmallChange="50" LargeChange="500"
+                                   SpinButtonPlacementMode="Inline" ValueChanged="OnHistoryLimitChanged" />
+                    </Grid>
+                    <TextBlock Text="אפשרויות מומחה למנוע (פרמטרים מתקדמים, מצב מעבדה) יתווספו בהמשך."
+                               Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Expander>
+
+            <!-- Diagnostics -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="אבחון" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="מצב המנוע — שימושי לתמיכה." Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="העתקה" Click="OnCopyDiagnostics" VerticalAlignment="Center" />
+                    </Grid>
+                    <Border CornerRadius="4" Padding="12" Background="{ThemeResource SurfaceSubtleBrush}">
+                        <TextBlock x:Name="DiagnosticsText" Text="…" FontFamily="Consolas" IsTextSelectionEnabled="True"
+                                   TextWrapping="Wrap" FlowDirection="LeftToRight" />
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- About -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="אודות" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock x:Name="AboutText" Text="VoiceType" Style="{StaticResource BodyMutedStyle}" />
+                    <TextBlock Text="הכתבה קולית בעברית — לחצו, דברו, והמילים מופיעות במקום שבו אתם עובדים."
+                               Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
         </StackPanel>

@@ -33,12 +33,24 @@ public sealed partial class MainWindow : Window
 
     private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
-        // Hide-to-tray: cancel the close and hide instead, unless really exiting.
-        if (!_host.IsExiting)
-        {
-            args.Cancel = true;
-            this.AppWindow.Hide();
-        }
+        if (_host.IsExiting) return;                  // a real teardown is in progress
+        args.Cancel = true;
+        // Honor the user's choice (Settings room): hide to tray, or fully exit on close.
+        if (_host.MinimizeOnClose) this.AppWindow.Hide();
+        else _host.Exit();
+    }
+
+    /// <summary>Apply the chosen color theme to the whole shell live (Settings room).
+    /// "default" follows the system theme.</summary>
+    public void ApplyTheme(string theme)
+    {
+        if (Content is FrameworkElement fe)
+            fe.RequestedTheme = theme switch
+            {
+                "dark" => ElementTheme.Dark,
+                "light" => ElementTheme.Light,
+                _ => ElementTheme.Default,
+            };
     }
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)

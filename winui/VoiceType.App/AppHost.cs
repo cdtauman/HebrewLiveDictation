@@ -29,6 +29,11 @@ public sealed class AppHost
     public string CurrentMessage { get; private set; } = "";
     public event Action<string, string>? StatusChanged;
 
+    /// <summary>Cached "minimize to tray on close" choice (Settings room). Read on connect
+    /// and updated live by Settings so the synchronous window-close handler can honor it
+    /// without an IPC round-trip. Defaults to the engine default (true).</summary>
+    public bool MinimizeOnClose { get; set; } = true;
+
     private Process? _bridge;
     private MainWindow? _main;
     private TrayIcon? _tray;
@@ -66,7 +71,30 @@ public sealed class AppHost
         ApplyEngineState("connecting", "");
 
         await ConnectAndSyncAsync(client);
+        await ApplyAppPreferencesAsync();
         await ApplyOverlayVisibilityAsync(showOverlays);
+    }
+
+    /// <summary>Apply the persisted shell preferences (Settings room) once the engine is
+    /// reachable: color theme (live) and the minimize-on-close choice (cached for the
+    /// synchronous close handler). Silently no-ops if the values can't be read.</summary>
+    private async Task ApplyAppPreferencesAsync()
+    {
+        string theme = await TryGetStringConfig("app.theme") ?? "light";
+        _ui.TryEnqueue(() => _main?.ApplyTheme(theme));
+        if (await TryGetBoolConfig("app.minimize_on_close") is bool m) MinimizeOnClose = m;
+    }
+
+    private async Task<string?> TryGetStringConfig(string key)
+    {
+        try
+        {
+            var r = await Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.String)
+                return v.GetString();
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>Live show/hide of the Voice HUD (Controls room toggle), no focus steal.</summary>

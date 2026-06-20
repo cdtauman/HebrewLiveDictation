@@ -217,20 +217,21 @@ public sealed class HudWindow
         else StopPulse();
     }
 
-    /// <summary>Show where text will land ("יעד: {app}") while listening — the focus-safety
-    /// promise made visible. Hidden when not listening or the target is unknown/suppressed.</summary>
+    /// <summary>Show where text will land while listening — the focus-safety promise made
+    /// visible. The engine sends the app name only when it matches the injector's real,
+    /// safe target; when that's unknown/unsafe it sends "", and we show a calm non-naming
+    /// state ("יעד: החלון הפעיל") rather than a confident — possibly wrong — claim. Hidden
+    /// when not listening.</summary>
     public void SetTarget(string app)
     {
-        if (_state == "listening" && !string.IsNullOrWhiteSpace(app))
-        {
-            _target.Text = "יעד: " + app;
-            _target.Visibility = Visibility.Visible;
-        }
-        else
+        if (_state != "listening")
         {
             _target.Text = "";
             _target.Visibility = Visibility.Collapsed;
+            return;
         }
+        _target.Text = string.IsNullOrWhiteSpace(app) ? "יעד: החלון הפעיל" : "יעד: " + app;
+        _target.Visibility = Visibility.Visible;
     }
 
     /// <summary>Current target line — for the runtime self-test.</summary>

@@ -40,6 +40,10 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
     """
 
     finals = []
+    # HUD target reassurance is captured ONCE when a session enters "listening" and is
+    # reused for every later listening-status refresh, so the displayed target can never
+    # change mid-session. Reset the moment listening ends.
+    session = {"listening": False, "target": ""}
 
     def send(event):
         server = server_ref()
@@ -51,7 +55,15 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
         # the legacy Qt app did (qt_app.py: set_listening_state on every status).
         # Without this, F8 toggle starts but never stops.
         hotkeys.set_listening_state(state == "listening")
-        target = foreground_app_name() if state == "listening" else ""
+
+        # Capture the injection target exactly once, on the transition into listening.
+        if state == "listening":
+            if not session["listening"]:
+                session["listening"] = True
+                session["target"] = injection_target_label()
+        else:
+            session["listening"] = False
+            session["target"] = ""
         # Session ended: append the accumulated finals to history. The legacy app
         # did this in qt_app (_flush_session_history); the sidecar must replicate it
         # or completed WinUI sessions never reach history / Home recent activity.
@@ -64,8 +76,10 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
                 except Exception:
                     logger.error("session history append failed:\n%s", traceback.format_exc())
         event = {"kind": "status", "state": state, "message": message, "outputMode": output_mode}
-        if target:
-            event["target"] = target   # where text will land — the HUD's "→ {app}" reassurance
+        if state == "listening":
+            # Always carry the captured-once target while listening; "" tells the HUD to
+            # show its safe state rather than a confident — possibly wrong — target claim.
+            event["target"] = session["target"]
         send(event)
 
     def on_text(text, final, output_mode):
@@ -112,42 +126,23 @@ def friendly_app_name(proc: str) -> str:
     return base[:1].upper() + base[1:] if base else ""
 
 
-def _foreground_process_name() -> str:
-    """Executable name of the current foreground window's process (Windows only). Our
-    overlays are no-activate, so at listening-start the foreground window is the user's
-    actual target app."""
+def injection_target_label() -> str:
+    """Friendly label of the window the text injector will actually type into.
+
+    Critically, this uses the SAME selection the injector uses
+    (WindowTarget.capture_best_target) and the SAME safety gate (is_usable_external),
+    so the HUD's "יעד: X" can never name a window the injector would not actually write
+    to. Returns "" when the target is unknown, detached, our own shell, or an
+    unsafe/blocked window — the HUD then shows a safe state rather than a confident
+    (possibly wrong) claim. Windows-only; safe-empty on any failure."""
     if sys.platform != "win32":
         return ""
     try:
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-        hwnd = user32.GetForegroundWindow()
-        if not hwnd:
+        from ..editing_backend import WindowTarget
+        target = WindowTarget.capture_best_target()
+        if target is None or not target.is_usable_external():
             return ""
-        pid = ctypes.c_ulong(0)
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if not pid.value:
-            return ""
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
-        if not handle:
-            return ""
-        try:
-            buf = ctypes.create_unicode_buffer(260)
-            size = ctypes.c_ulong(260)
-            if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
-                return os.path.basename(buf.value)
-            return ""
-        finally:
-            kernel32.CloseHandle(handle)
-    except Exception:
-        return ""
-
-
-def foreground_app_name() -> str:
-    """Friendly label for the current foreground app, or "" when unknown/suppressed."""
-    try:
-        return friendly_app_name(_foreground_process_name())
+        return friendly_app_name(target.process_name)
     except Exception:
         return ""
 
@@ -232,9 +227,13 @@ def _normalize_microphone(config, available_indices) -> bool:
     Returns True if it cleared the stale selection. Only call with a non-empty device set."""
     saved = config.get("audio.microphone_device")
     if isinstance(saved, int) and not isinstance(saved, bool) and saved not in available_indices:
-        config.set("audio.microphone_device", None)
-        logger.info("Cleared stale microphone device %s (no longer present).", saved)
-        return True
+        if config.set("audio.microphone_device", None):
+            logger.info("Cleared stale microphone device %s (no longer present).", saved)
+            return True
+        # Persisting null failed (e.g. disk error). Do NOT claim the device was cleared;
+        # the saved value is still stale and config.set already rolled memory back.
+        logger.warning("Stale microphone device %s could not be cleared (save failed).", saved)
+        return False
     return False
 
 

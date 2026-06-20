@@ -1,9 +1,11 @@
 import json
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
+from hebrew_live_dictation.bridge import sidecar
 from hebrew_live_dictation.bridge.sidecar import (
     _clear_history,
     command_reference,
@@ -11,7 +13,9 @@ from hebrew_live_dictation.bridge.sidecar import (
     engine_label,
     friendly_app_name,
     full_history,
+    injection_target_label,
     list_microphones,
+    make_callbacks,
     recent_history,
 )
 
@@ -20,6 +24,22 @@ def _write_history(tmp, rows):
     with open(os.path.join(tmp, "history.jsonl"), "w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+
+class _FakeHotkeys:
+    def __init__(self):
+        self.listening = None
+
+    def set_listening_state(self, on):
+        self.listening = on
+
+
+class _RecordingServer:
+    def __init__(self):
+        self.events = []
+
+    def send_event(self, event):
+        self.events.append(event)
 
 
 class _FakeConfig:
@@ -211,6 +231,68 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(friendly_app_name("MyEditor.exe"), "Myeditor")  # fallback: strip .exe, cap
         self.assertEqual(friendly_app_name(""), "")
         self.assertEqual(friendly_app_name("VoiceType.exe"), "")     # our own shell suppressed
+
+
+class HudTargetTests(unittest.TestCase):
+    def _status_cb(self, server):
+        on_status, _, _, _ = make_callbacks(_FakeHotkeys(), lambda: server)
+        return on_status
+
+    def test_target_captured_once_and_preserved_across_listening_refreshes(self):
+        # If the target were recomputed per status, this iterator would hand out a new
+        # app each call; captured-once must pin the FIRST value for the whole session.
+        server = _RecordingServer()
+        on_status = self._status_cb(server)
+        changing = iter(["Word", "Chrome", "Excel"])
+        with mock.patch.object(sidecar, "injection_target_label", lambda: next(changing)):
+            on_status("listening", "", "external")   # captures "Word"
+            on_status("listening", "", "external")   # refresh — must NOT recompute
+            on_status("listening", "", "external")   # refresh — must NOT recompute
+        self.assertEqual([e.get("target") for e in server.events], ["Word", "Word", "Word"])
+
+    def test_target_reset_and_recaptured_for_next_session(self):
+        server = _RecordingServer()
+        on_status = self._status_cb(server)
+        changing = iter(["Word", "Chrome"])
+        with mock.patch.object(sidecar, "injection_target_label", lambda: next(changing)):
+            on_status("listening", "", "external")   # session 1 -> "Word"
+            on_status("idle", "", "external")         # session ends
+            on_status("listening", "", "external")   # session 2 -> fresh capture "Chrome"
+        self.assertEqual(server.events[0].get("target"), "Word")
+        self.assertNotIn("target", server.events[1])  # non-listening carries no target claim
+        self.assertEqual(server.events[2].get("target"), "Chrome")
+
+    def test_unknown_target_carries_empty_safe_state_while_listening(self):
+        server = _RecordingServer()
+        on_status = self._status_cb(server)
+        with mock.patch.object(sidecar, "injection_target_label", lambda: ""):
+            on_status("listening", "", "external")
+        # Listening always carries the field; "" tells the HUD to show its safe state
+        # rather than name a window the injector might not actually write to.
+        self.assertIn("target", server.events[0])
+        self.assertEqual(server.events[0]["target"], "")
+
+    @unittest.skipUnless(sys.platform == "win32", "Win32 target selection")
+    def test_injection_target_label_uses_injector_selection_and_safety_gate(self):
+        class _T:
+            def __init__(self, name, usable):
+                self.process_name = name
+                self._usable = usable
+
+            def is_usable_external(self):
+                return self._usable
+
+        with mock.patch("hebrew_live_dictation.editing_backend.WindowTarget.capture_best_target",
+                        return_value=_T("winword.exe", True)):
+            self.assertEqual(injection_target_label(), "Word")
+        # Unsafe / blocked / our-own target -> no confident claim.
+        with mock.patch("hebrew_live_dictation.editing_backend.WindowTarget.capture_best_target",
+                        return_value=_T("winword.exe", False)):
+            self.assertEqual(injection_target_label(), "")
+        # Failure in the lookup is safe-empty, never raised.
+        with mock.patch("hebrew_live_dictation.editing_backend.WindowTarget.capture_best_target",
+                        side_effect=RuntimeError("boom")):
+            self.assertEqual(injection_target_label(), "")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="VoiceType.Shell.OnboardingWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid FlowDirection="RightToLeft" Padding="32,28,32,24" RowSpacing="20"
+          Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock x:Name="StepCounter" Style="{StaticResource CaptionMutedStyle}" Text="שלב 1 מתוך 5" />
+            <TextBlock x:Name="StepTitle" Style="{StaticResource PageTitleStyle}" Text="ברוכים הבאים" />
+            <TextBlock x:Name="StepSubtitle" Style="{StaticResource PageSubtitleStyle}"
+                       TextWrapping="Wrap" Text="" />
+        </StackPanel>
+
+        <!-- Steps -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Grid>
+                <!-- Step 0 — Language -->
+                <StackPanel x:Name="Step0" Spacing="16">
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="שפת ההכתבה" />
+                            <ComboBox x:Name="LanguageCombo" MinWidth="240"
+                                      SelectionChanged="OnLanguageChanged">
+                                <ComboBoxItem Tag="iw-IL" Content="עברית" />
+                                <ComboBoxItem Tag="en-US" Content="English (US)" />
+                                <ComboBoxItem Tag="ar-XA" Content="العربية" />
+                                <ComboBoxItem Tag="ru-RU" Content="Русский" />
+                                <ComboBoxItem Tag="fr-FR" Content="Français" />
+                                <ComboBoxItem Tag="es-ES" Content="Español" />
+                            </ComboBox>
+                            <TextBlock x:Name="PackLabel" Style="{StaticResource CaptionMutedStyle}"
+                                       Text="פקודות קוליות: עברית" />
+                            <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
+                                       Text="שפת התצוגה היא עברית. תמיכה באנגלית לתצוגה תיתמך בהמשך." />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Step 1 — Microphone -->
+                <StackPanel x:Name="Step1" Spacing="16" Visibility="Collapsed">
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="מיקרופון" />
+                            <ComboBox x:Name="MicCombo" MinWidth="280" SelectionChanged="OnMicChanged" />
+                            <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
+                                       Text="בחרו את המיקרופון להכתבה. אפשר להחליף בכל עת בחדר ‘שליטה’." />
+                            <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
+                                       Text="מד עוצמה חי ובדיקת הכתבה ראשונה יתווספו בהמשך — לא נציג כאן חיווי שאינו אמיתי." />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Step 2 — Engine -->
+                <StackPanel x:Name="Step2" Spacing="12" Visibility="Collapsed">
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="10">
+                            <RadioButton x:Name="OptOffline" GroupName="Engine" Tag="offline"
+                                         Checked="OnEngineChoice">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="לא־מקוון" />
+                                    <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
+                                               Text="פרטי, עובד מיד ללא הגדרה. מומלץ להתחלה." />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="OptRecommended" GroupName="Engine" Tag="recommended"
+                                         Checked="OnEngineChoice">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="מומלץ — Google Chirp 3" />
+                                    <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
+                                               Text="עברית מצוינת. צריך מפתח Google — נגדיר אותו בהמשך בחדר ‘מנוע’. עד אז ההכתבה תעבוד לא־מקוון." />
+                                </StackPanel>
+                            </RadioButton>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Step 3 — Hotkey -->
+                <StackPanel x:Name="Step3" Spacing="12" Visibility="Collapsed">
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="מקש ההפעלה: F8" />
+                            <RadioButton x:Name="ModeToggle" GroupName="Mode" Tag="toggle" Checked="OnModeChanged"
+                                         Content="לחיצה מפעילה ולחיצה נוספת עוצרת" />
+                            <RadioButton x:Name="ModePtt" GroupName="Mode" Tag="push_to_talk" Checked="OnModeChanged"
+                                         Content="החזקה מקליטה, שחרור עוצר (Push-to-talk)" />
+                            <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
+                                       Text="החיווי הקולי יופיע מעל החלון הפעיל ברגע שתתחילו להכתיב." />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Step 4 — Ready -->
+                <StackPanel x:Name="Step4" Spacing="16" Visibility="Collapsed">
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Style="{StaticResource DisplayTextStyle}" Text="הכול מוכן" />
+                            <TextBlock Style="{StaticResource PageSubtitleStyle}" TextWrapping="Wrap"
+                                       Text="לחצו F8 בכל מקום כדי להכתיב — Word, דפדפן, וואטסאפ. אפשר לשנות הכול בחדרים שבתפריט." />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Grid Grid.Row="2">
+            <Button x:Name="BackButton" Content="חזרה" Click="OnBack"
+                    HorizontalAlignment="Left" Visibility="Collapsed" />
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button x:Name="SkipButton" Content="דלגו" Click="OnSkip" />
+                <Button x:Name="NextButton" Content="הבא" Click="OnNext" Style="{StaticResource AccentButtonStyle}" />
+                <Button x:Name="FinishButton" Content="סיום" Click="OnFinish"
+                        Visibility="Collapsed" Style="{StaticResource AccentButtonStyle}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -72,7 +72,32 @@ public sealed class AppHost
 
         await ConnectAndSyncAsync(client);
         await ApplyAppPreferencesAsync();
+        await MaybeRunOnboardingAsync();
         await ApplyOverlayVisibilityAsync(showOverlays);
+    }
+
+    /// <summary>On a genuine first run (app.first_run_completed not yet true), present the
+    /// setup wizard and wait for it to close before showing the overlays. The wizard
+    /// persists every choice through the engine and sets the flag itself, so a normal
+    /// finish — or a skip — never shows it again. If the flag can't be read (bridge issue)
+    /// we do NOT block startup on a wizard.</summary>
+    private async Task MaybeRunOnboardingAsync()
+    {
+        if (await TryGetBoolConfig("app.first_run_completed") != false) return;
+
+        var tcs = new TaskCompletionSource();
+        OnboardingWindow? wiz = null;
+        _ui.TryEnqueue(() =>
+        {
+            try
+            {
+                wiz = new OnboardingWindow(this);
+                wiz.Closed += (_, __) => tcs.TrySetResult();
+                wiz.Activate();
+            }
+            catch (Exception ex) { AppLog.Add("onboarding failed: " + ex.Message); tcs.TrySetResult(); }
+        });
+        await tcs.Task;
     }
 
     /// <summary>Apply the persisted shell preferences (Settings room) once the engine is

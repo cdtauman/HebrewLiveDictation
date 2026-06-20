@@ -240,6 +240,22 @@ internal static class RuntimeSelfTest
             Check("tray.instance", trayInst.IsAdded, "real TrayIcon added (health orb + broadcast-capable window)");
             trayInst.Dispose();
 
+            // 6e) First-run wizard: constructs and steps through all 5 stages; the Finish
+            //     action appears only on the last step and Back returns. Navigation only —
+            //     no config writes (host omitted), so the real first-run flag is untouched.
+            try
+            {
+                var wiz = new OnboardingWindow(null!);
+                int steps = wiz.StepCountForTest;
+                for (int i = 0; i < steps - 1; i++) wiz.NextForTest();
+                bool finishOnLast = wiz.CurrentStepForTest == steps - 1 && wiz.FinishVisibleForTest;
+                wiz.BackForTest();
+                bool backWorks = wiz.CurrentStepForTest == steps - 2 && !wiz.FinishVisibleForTest;
+                Check("onboarding.navigation", steps == 5 && finishOnLast && backWorks,
+                      $"5-step wizard navigates; Finish only on last step (steps={steps})");
+            }
+            catch (Exception ex) { Check("onboarding.navigation", false, ex.Message); }
+
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).
             try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }

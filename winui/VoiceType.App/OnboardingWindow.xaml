@@ -85,10 +85,19 @@
                         </StackPanel>
                     </Border>
                     <!-- Honest offline readiness: both choices run local now, which needs a
-                         model. We never claim offline is ready unless the model is on disk. -->
+                         model. We never claim offline is ready unless the model is on disk, and
+                         we offer the one-time download here (recommended) rather than silently. -->
                     <Border Style="{StaticResource CardStyle}">
-                        <TextBlock x:Name="OfflineReadyNote" Style="{StaticResource CaptionMutedStyle}"
-                                   TextWrapping="Wrap" Text="בודק מצב מודל לא־מקוון…" />
+                        <StackPanel Spacing="10">
+                            <TextBlock x:Name="OfflineReadyNote" Style="{StaticResource CaptionMutedStyle}"
+                                       TextWrapping="Wrap" Text="בודק מצב מודל לא־מקוון…" />
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Button x:Name="DownloadModelButton" Content="התקן מודל לא־מקוון עכשיו (מומלץ)"
+                                        Click="OnDownloadModel" Visibility="Collapsed" />
+                                <ProgressRing x:Name="DownloadRing" IsActive="False" Visibility="Collapsed"
+                                              Width="20" Height="20" />
+                            </StackPanel>
+                        </StackPanel>
                     </Border>
                 </StackPanel>
 

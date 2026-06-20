@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 import traceback
 
@@ -234,6 +235,62 @@ def model_status(config) -> dict:
     except Exception:
         logger.error("model_status failed:\n%s", traceback.format_exc())
         return {"name": "", "downloaded": False, "path": ""}
+
+
+class ModelDownloadManager:
+    """Runs a single local-model download OFF the pipe thread and streams progress events.
+
+    faster-whisper / Hugging Face downloads do not expose granular byte progress, so progress
+    is honest and indeterminate: a "running" event, then "done" (the model is now complete) or
+    "error". Only one download runs at a time; a second request while busy is refused, not
+    queued. `send_event` is the server's thread-safe push; `downloader(config, name)` is
+    injectable for tests (defaults to models.download_model, which writes the completion
+    marker on success).
+    """
+
+    def __init__(self, send_event, downloader=None):
+        self._send = send_event
+        self._downloader = downloader
+        self._lock = threading.Lock()
+        self._running = None  # model name currently downloading, else None
+
+    @property
+    def active(self):
+        with self._lock:
+            return self._running
+
+    def start(self, config, name=None) -> dict:
+        from .. import models
+        name = name or config.get("providers.whisper.model", models.DEFAULT_MODEL)
+        with self._lock:
+            if self._running is not None:
+                return {"started": False, "busy": True, "name": self._running}
+            self._running = name
+        self._emit("running", name)
+        threading.Thread(target=self._run, args=(config, name),
+                         name="ModelDownload", daemon=True).start()
+        return {"started": True, "name": name}
+
+    def _run(self, config, name):
+        from .. import models
+        try:
+            download = self._downloader or (lambda cfg, nm: models.download_model(cfg, nm))
+            download(config, name)
+            self._emit("done", name, downloaded=True)
+        except Exception as e:
+            logger.error("model download failed:\n%s", traceback.format_exc())
+            self._emit("error", name, message=str(e))
+        finally:
+            with self._lock:
+                self._running = None
+
+    def _emit(self, state, name, **extra):
+        try:
+            event = {"kind": "modelDownload", "state": state, "name": name}
+            event.update(extra)
+            self._send(event)
+        except Exception:
+            logger.error("model download event emit failed:\n%s", traceback.format_exc())
 
 
 def compute_health(config) -> dict:
@@ -554,6 +611,13 @@ def run(pipe_name: str | None = None) -> int:
     invoker = Invoker()
     server_holder = {"server": None}
 
+    def emit_event(event):
+        s = server_holder["server"]
+        if s:
+            s.send_event(event)
+
+    model_downloads = ModelDownloadManager(emit_event)
+
     # Controller first (no callbacks yet), then hotkeys, then wire callbacks so the
     # callbacks can reference the hotkey listener for listening-state sync.
     controller = DictationController(config)
@@ -615,6 +679,9 @@ def run(pipe_name: str | None = None) -> int:
             return list_microphones(config)
         if method == "getModelStatus":
             return model_status(config)
+        if method == "downloadModel":
+            # Runs off this thread; progress arrives as {"kind":"modelDownload",...} events.
+            return model_downloads.start(config, params.get("name"))
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":

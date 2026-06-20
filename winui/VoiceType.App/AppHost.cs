@@ -29,6 +29,10 @@ public sealed class AppHost
     public string CurrentMessage { get; private set; } = "";
     public event Action<string, string>? StatusChanged;
 
+    /// <summary>Local-model download progress (state = "running"|"done"|"error", message).
+    /// Raised on the UI thread so the onboarding/Engine surfaces can reflect it live.</summary>
+    public event Action<string, string>? ModelDownloadChanged;
+
     /// <summary>Cached "minimize to tray on close" choice (Settings room). Read on connect
     /// and updated live by Settings so the synchronous window-close handler can honor it
     /// without an IPC round-trip. Defaults to the engine default (true).</summary>
@@ -280,6 +284,11 @@ public sealed class AppHost
                     break;
                 case "hotkey":
                     _main?.Log("hotkey: " + (e.TryGetProperty("edge", out var ed) ? ed.GetString() : ""));
+                    break;
+                case "modelDownload":
+                    string mdState = e.TryGetProperty("state", out var mds) ? mds.GetString() ?? "" : "";
+                    string mdMsg = e.TryGetProperty("message", out var mdm) ? mdm.GetString() ?? "" : "";
+                    ModelDownloadChanged?.Invoke(mdState, mdMsg);
                     break;
             }
         });

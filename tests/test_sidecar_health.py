@@ -20,6 +20,15 @@ from hebrew_live_dictation.bridge.sidecar import (
 )
 
 
+def _join_threads(name_prefix, timeout=2.0):
+    """Wait for the manager's daemon worker thread(s) to finish, so event assertions are
+    deterministic without sleeps."""
+    import threading
+    for t in threading.enumerate():
+        if t.name.startswith(name_prefix) and t.is_alive():
+            t.join(timeout)
+
+
 def _write_history(tmp, rows):
     with open(os.path.join(tmp, "history.jsonl"), "w", encoding="utf-8") as f:
         for r in rows:
@@ -119,6 +128,59 @@ class HealthTests(unittest.TestCase):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))
         with mock.patch("hebrew_live_dictation.models.model_status", side_effect=RuntimeError("x")):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))   # unknown -> not ready
+
+
+class ModelDownloadTests(unittest.TestCase):
+    def test_successful_download_emits_running_then_done(self):
+        events = []
+        seen = []
+
+        def downloader(config, name):
+            seen.append(name)
+            return "/models/" + name
+
+        mgr = sidecar.ModelDownloadManager(events.append, downloader=downloader)
+        res = mgr.start(_FakeConfig({"providers.whisper.model": "small"}))
+        self.assertEqual(res, {"started": True, "name": "small"})
+        _join_threads("ModelDownload")
+        self.assertEqual(seen, ["small"])
+        states = [(e["state"], e.get("downloaded")) for e in events]
+        self.assertEqual(states, [("running", None), ("done", True)])
+        self.assertIsNone(mgr.active)
+
+    def test_failed_download_emits_error_and_clears_active(self):
+        events = []
+
+        def downloader(config, name):
+            raise RuntimeError("network down")
+
+        mgr = sidecar.ModelDownloadManager(events.append, downloader=downloader)
+        mgr.start(_FakeConfig({}), name="base")
+        _join_threads("ModelDownload")
+        self.assertEqual(events[0]["state"], "running")
+        self.assertEqual(events[-1]["state"], "error")
+        self.assertIn("network down", events[-1]["message"])
+        self.assertIsNone(mgr.active)   # cleared even on failure
+
+    def test_second_download_while_busy_is_refused_not_queued(self):
+        import threading
+        release = threading.Event()
+        started = threading.Event()
+
+        def downloader(config, name):
+            started.set()
+            release.wait(2.0)
+
+        mgr = sidecar.ModelDownloadManager(lambda e: None, downloader=downloader)
+        first = mgr.start(_FakeConfig({}), name="small")
+        self.assertTrue(first["started"])
+        self.assertTrue(started.wait(2.0))
+        self.assertEqual(mgr.active, "small")
+        busy = mgr.start(_FakeConfig({}), name="small")     # still running
+        self.assertEqual(busy, {"started": False, "busy": True, "name": "small"})
+        release.set()
+        _join_threads("ModelDownload")
+        self.assertIsNone(mgr.active)
 
     def test_recent_history_empty_and_safe(self):
         # Empty config dir -> no history file -> empty list, never raises.

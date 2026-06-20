@@ -23,7 +23,7 @@ namespace VoiceType.Shell;
 /// </summary>
 public sealed partial class OnboardingWindow : Window
 {
-    private readonly AppHost _host;
+    private readonly AppHost? _host;
     private bool _loading;
     private bool _engineApplied;   // did the user explicitly choose an engine?
     private bool _completing;      // re-entrancy guard for finish/skip/close
@@ -66,6 +66,10 @@ public sealed partial class OnboardingWindow : Window
         this.AppWindow.SetPresenter(presenter);
         this.AppWindow.Closing += OnClosing;   // X behaves like Skip-with-safe-baseline
 
+        // Live model-download progress (the download runs in the engine, off this window).
+        if (_host != null) _host.ModelDownloadChanged += OnModelDownloadChanged;
+        this.Closed += (_, __) => { if (_host != null) _host.ModelDownloadChanged -= OnModelDownloadChanged; };
+
         var wa = DisplayArea.Primary.WorkArea;
         int w = 660, h = 720;
         this.AppWindow.MoveAndResize(new RectInt32(wa.X + (wa.Width - w) / 2, wa.Y + (wa.Height - h) / 2, w, h));
@@ -103,14 +107,64 @@ public sealed partial class OnboardingWindow : Window
 
             if (hkMode == "push_to_talk") ModePtt.IsChecked = true; else ModeToggle.IsChecked = true;
 
-            // Never claim offline is ready unless the model is actually on disk. If it isn't,
-            // say plainly that the first offline use downloads it (or it can be fetched ahead
-            // of time from the Engine room) — no silent offline-first promise.
-            OfflineReadyNote.Text = modelReady
-                ? "מודל לא־מקוון מותקן ✓ — הכתבה לא־מקוונת מוכנה."
-                : "להכתבה לא־מקוונת יורד מודל בפעם הראשונה (פעם אחת, דרוש אינטרנט). אפשר להוריד אותו מראש בהמשך מחדר ‘מנוע’.";
+            RenderOfflineReadiness(modelReady ? "ready" : "absent");
             _loading = false;
         });
+    }
+
+    /// <summary>Reflect offline-model readiness honestly. "ready" only when the model is on
+    /// disk; otherwise we offer the one-time download (recommended) and say plainly that,
+    /// failing that, it downloads on first offline use. Never a silent offline promise.</summary>
+    private void RenderOfflineReadiness(string state)
+    {
+        switch (state)
+        {
+            case "ready":
+                OfflineReadyNote.Text = "מודל לא־מקוון מותקן ✓ — הכתבה לא־מקוונת מוכנה.";
+                DownloadModelButton.Visibility = Visibility.Collapsed;
+                DownloadRing.IsActive = false; DownloadRing.Visibility = Visibility.Collapsed;
+                break;
+            case "downloading":
+                OfflineReadyNote.Text = "מוריד מודל לא־מקוון… (פעם אחת, דרוש אינטרנט). אפשר להמשיך בינתיים.";
+                DownloadModelButton.Visibility = Visibility.Collapsed;
+                DownloadRing.IsActive = true; DownloadRing.Visibility = Visibility.Visible;
+                break;
+            case "error":
+                OfflineReadyNote.Text = "הורדת המודל נכשלה. אפשר לנסות שוב, או שהמודל יירד בפעם הראשונה שתשתמשו בהכתבה לא־מקוונת.";
+                DownloadModelButton.Content = "נסו שוב";
+                DownloadModelButton.Visibility = Visibility.Visible;
+                DownloadRing.IsActive = false; DownloadRing.Visibility = Visibility.Collapsed;
+                break;
+            default: // "absent"
+                OfflineReadyNote.Text = "הכתבה לא־מקוונת דורשת מודל (פעם אחת, דרוש אינטרנט). אפשר להתקין עכשיו, או שהוא יירד בפעם הראשונה שתשתמשו.";
+                DownloadModelButton.Content = "התקן מודל לא־מקוון עכשיו (מומלץ)";
+                DownloadModelButton.Visibility = Visibility.Visible;
+                DownloadRing.IsActive = false; DownloadRing.Visibility = Visibility.Collapsed;
+                break;
+        }
+    }
+
+    private async void OnDownloadModel(object sender, RoutedEventArgs e)
+    {
+        RenderOfflineReadiness("downloading");
+        if (_host?.Client == null) { RenderOfflineReadiness("error"); return; }
+        try
+        {
+            var r = await _host.Client.RpcAsync("downloadModel");
+            bool started = r.TryGetProperty("started", out var s) && s.GetBoolean();
+            bool busy = r.TryGetProperty("busy", out var b) && b.GetBoolean();
+            // running/done/error then arrive as ModelDownloadChanged events. Only revert if
+            // the engine neither started nor was already downloading.
+            if (!started && !busy) RenderOfflineReadiness("absent");
+        }
+        catch { RenderOfflineReadiness("error"); }
+    }
+
+    /// <summary>Live download progress from the engine (raised on the UI thread).</summary>
+    private void OnModelDownloadChanged(string state, string message)
+    {
+        DispatcherQueue.TryEnqueue(() => RenderOfflineReadiness(
+            state switch { "done" => "ready", "running" => "downloading", "error" => "error", _ => "absent" }));
     }
 
     private void ShowStep(int index)
@@ -398,6 +452,10 @@ public sealed partial class OnboardingWindow : Window
     internal void NextForTest() => ShowStep(_step + 1);
     internal void BackForTest() => ShowStep(_step - 1);
     internal bool FinishVisibleForTest => FinishButton.Visibility == Visibility.Visible;
+    internal void RenderReadinessForTest(string state) => RenderOfflineReadiness(state);
+    internal string OfflineNoteForTest => OfflineReadyNote.Text;
+    internal bool DownloadButtonVisibleForTest => DownloadModelButton.Visibility == Visibility.Visible;
+    internal bool DownloadRingActiveForTest => DownloadRing.IsActive;
 
     /// <summary>The plain-language -> config mapping for an engine choice — the single source
     /// of truth used by both ApplyEngine and the self-test, so the assertion can't drift from

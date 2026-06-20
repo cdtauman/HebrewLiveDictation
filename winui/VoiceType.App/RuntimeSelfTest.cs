@@ -290,6 +290,22 @@ internal static class RuntimeSelfTest
                   !OnboardingWindow.MayMarkComplete(false) && OnboardingWindow.MayMarkComplete(true),
                   "first_run_completed gated on a successful offline baseline");
 
+            // 6h) Honest offline-readiness rendering (no real download triggered): ready hides
+            //     the install button; absent offers it; downloading shows the ring, no button.
+            try
+            {
+                var wiz = new OnboardingWindow(null!);
+                wiz.RenderReadinessForTest("ready");
+                bool readyOk = !wiz.DownloadButtonVisibleForTest && wiz.OfflineNoteForTest.Contains("מוכנה");
+                wiz.RenderReadinessForTest("absent");
+                bool absentOk = wiz.DownloadButtonVisibleForTest;
+                wiz.RenderReadinessForTest("downloading");
+                bool dlOk = !wiz.DownloadButtonVisibleForTest && wiz.DownloadRingActiveForTest;
+                Check("onboarding.offline_readiness", readyOk && absentOk && dlOk,
+                      "offline note honest per model state; download offered only when not ready");
+            }
+            catch (Exception ex) { Check("onboarding.offline_readiness", false, ex.Message); }
+
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).
             try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }

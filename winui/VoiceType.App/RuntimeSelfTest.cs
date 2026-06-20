@@ -193,7 +193,7 @@ internal static class RuntimeSelfTest
                 hudSurface.SetWords("שלום עולם");        // live words stream in
                 hudSurface.SetTarget("Word");            // confident, injector-aligned target
                 targetWhileListening = hudSurface.CurrentTargetForTest;
-                hudSurface.SetTarget("");                // unknown/unsafe target -> calm safe state, not a wrong claim
+                hudSurface.SetTarget("");                // unknown/unsafe target -> non-claiming state, not a wrong claim
                 targetSafeState = hudSurface.CurrentTargetForTest;
                 hudSurface.SetTarget("Word");            // back to a known target
                 hudSurface.SetFallback(true);            // cloud dropped -> offline backup notice
@@ -220,8 +220,8 @@ internal static class RuntimeSelfTest
                   $"live words survive a repeated 'listening' refresh (got '{wordsAfterRefresh}')");
             Check("hud.target.reassurance", targetWhileListening == "יעד: Word" && targetAfterStop == "",
                   $"shows target while listening, cleared on stop (got '{targetWhileListening}')");
-            Check("hud.target.safe_state", targetSafeState == "יעד: החלון הפעיל",
-                  $"unknown/unsafe target shows a calm safe state, never a wrong app (got '{targetSafeState}')");
+            Check("hud.target.safe_state", targetSafeState == "יעד לא זוהה",
+                  $"unknown/unsafe target shows a non-claiming state, never a destination claim (got '{targetSafeState}')");
             Check("hud.fallback.notice", fallbackShown && fallbackClearedOnStop,
                   "offline-backup notice latches while listening, cleared on stop");
             hudSurface.Window.Close();

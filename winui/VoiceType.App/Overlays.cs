@@ -235,9 +235,9 @@ public sealed class HudWindow
 
     /// <summary>Show where text will land while listening — the focus-safety promise made
     /// visible. The engine sends the app name only when it matches the injector's real,
-    /// safe target; when that's unknown/unsafe it sends "", and we show a calm non-naming
-    /// state ("יעד: החלון הפעיל") rather than a confident — possibly wrong — claim. Hidden
-    /// when not listening.</summary>
+    /// safe target; when that's unknown/unsafe/self/blocked it sends "", and we show the
+    /// non-claiming "יעד לא זוהה" — never implying a destination we haven't verified.
+    /// Hidden when not listening.</summary>
     public void SetTarget(string app)
     {
         if (_state != "listening")
@@ -246,7 +246,7 @@ public sealed class HudWindow
             _target.Visibility = Visibility.Collapsed;
             return;
         }
-        _target.Text = string.IsNullOrWhiteSpace(app) ? "יעד: החלון הפעיל" : "יעד: " + app;
+        _target.Text = string.IsNullOrWhiteSpace(app) ? "יעד לא זוהה" : "יעד: " + app;
         _target.Visibility = Visibility.Visible;
     }
 

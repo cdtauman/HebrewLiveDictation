@@ -1,5 +1,11 @@
 # QA and Release Gates
 
+> **WinUI shell:** the build, packaging, and shell-side runtime gates have moved to
+> [winui-release-qa.md](winui-release-qa.md). The "Release Gate" and "Build Smoke Test"
+> sections below describe the legacy PySide/PyInstaller flow (`build_app.ps1`,
+> `dist\HebrewLiveDictation.exe`) and do not apply to the WinUI two-process build. The
+> engine test areas and manual injection matrix here remain valid.
+
 ## Automated Tests
 
 Run from the repository root:

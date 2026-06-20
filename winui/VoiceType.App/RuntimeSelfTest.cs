@@ -183,6 +183,8 @@ internal static class RuntimeSelfTest
             string targetWhileListening = "";
             string targetAfterStop = "x";
             string targetSafeState = "";
+            bool fallbackShown = false;
+            bool fallbackClearedOnStop = true;
             try
             {
                 foreach (var hs in new[] { "connecting", "idle", "listening", "stopping", "error", "disconnected" })
@@ -194,10 +196,13 @@ internal static class RuntimeSelfTest
                 hudSurface.SetTarget("");                // unknown/unsafe target -> calm safe state, not a wrong claim
                 targetSafeState = hudSurface.CurrentTargetForTest;
                 hudSurface.SetTarget("Word");            // back to a known target
+                hudSurface.SetFallback(true);            // cloud dropped -> offline backup notice
                 hudSurface.SetState("listening");        // repeated status refresh must NOT wipe them
+                fallbackShown = hudSurface.FallbackVisibleForTest;   // latched + still shown
                 wordsAfterRefresh = hudSurface.CurrentWordsForTest;
-                hudSurface.SetState("idle");             // leaving listening clears the target
+                hudSurface.SetState("idle");             // leaving listening clears target + fallback
                 targetAfterStop = hudSurface.CurrentTargetForTest;
+                fallbackClearedOnStop = !hudSurface.FallbackVisibleForTest;
                 hudSurface.SetState("listening");        // restore for the no-steal/visibility checks below
             }
             catch { hudStates = false; }
@@ -217,6 +222,8 @@ internal static class RuntimeSelfTest
                   $"shows target while listening, cleared on stop (got '{targetWhileListening}')");
             Check("hud.target.safe_state", targetSafeState == "יעד: החלון הפעיל",
                   $"unknown/unsafe target shows a calm safe state, never a wrong app (got '{targetSafeState}')");
+            Check("hud.fallback.notice", fallbackShown && fallbackClearedOnStop,
+                  "offline-backup notice latches while listening, cleared on stop");
             hudSurface.Window.Close();
 
             // 6d) Production tray path: a top-level (broadcast-capable) window + health orb

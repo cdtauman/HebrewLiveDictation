@@ -42,8 +42,9 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
     finals = []
     # HUD target reassurance is captured ONCE when a session enters "listening" and is
     # reused for every later listening-status refresh, so the displayed target can never
-    # change mid-session. Reset the moment listening ends.
-    session = {"listening": False, "target": ""}
+    # change mid-session. `fallback` latches when the engine reports the cloud provider
+    # dropped to local mid-session (auto_fallback). Both reset the moment listening ends.
+    session = {"listening": False, "target": "", "fallback": False}
 
     def send(event):
         server = server_ref()
@@ -57,13 +58,18 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
         hotkeys.set_listening_state(state == "listening")
 
         # Capture the injection target exactly once, on the transition into listening.
+        # Latch the offline-fallback notice if the engine reports it mid-session.
         if state == "listening":
             if not session["listening"]:
                 session["listening"] = True
                 session["target"] = injection_target_label()
+                session["fallback"] = False
+            if is_fallback_status(message):
+                session["fallback"] = True
         else:
             session["listening"] = False
             session["target"] = ""
+            session["fallback"] = False
         # Session ended: append the accumulated finals to history. The legacy app
         # did this in qt_app (_flush_session_history); the sidecar must replicate it
         # or completed WinUI sessions never reach history / Home recent activity.
@@ -80,6 +86,8 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
             # Always carry the captured-once target while listening; "" tells the HUD to
             # show its safe state rather than a confident — possibly wrong — target claim.
             event["target"] = session["target"]
+            if session["fallback"]:
+                event["fallback"] = True
         send(event)
 
     def on_text(text, final, output_mode):
@@ -124,6 +132,23 @@ def friendly_app_name(proc: str) -> str:
         return _APP_NAMES[key]
     base = key[:-4] if key.endswith(".exe") else key
     return base[:1].upper() + base[1:] if base else ""
+
+
+# Markers for the engine's auto_fallback notice. The FallbackSpeechClient emits a
+# status event ("Cloud transcription unavailable; switching to offline local mode.")
+# the moment it switches the live audio from the cloud provider to local Whisper. We
+# match on stable substrings of that one engine-owned message rather than the whole
+# literal, so wording tweaks upstream don't silently drop the §10 "offline backup
+# active" treatment.
+_FALLBACK_STATUS_MARKERS = ("offline local mode", "switching to offline")
+
+
+def is_fallback_status(message) -> bool:
+    """True when a listening status message is the engine's offline-fallback notice."""
+    if not message:
+        return False
+    text = str(message).lower()
+    return any(marker in text for marker in _FALLBACK_STATUS_MARKERS)
 
 
 def injection_target_label() -> str:

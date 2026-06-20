@@ -272,6 +272,31 @@ class HudTargetTests(unittest.TestCase):
         self.assertIn("target", server.events[0])
         self.assertEqual(server.events[0]["target"], "")
 
+    def test_fallback_latches_and_persists_then_resets_next_session(self):
+        # The engine emits the offline-fallback notice ONCE mid-session; the sidecar must
+        # latch it so every later listening status carries fallback=True, then drop it when
+        # listening ends so the next session doesn't inherit a stale notice.
+        server = _RecordingServer()
+        on_status = self._status_cb(server)
+        with mock.patch.object(sidecar, "injection_target_label", lambda: "Word"):
+            on_status("listening", "recording", "external")                  # no fallback yet
+            on_status("listening", "switching to offline local mode.", "external")  # fallback fires
+            on_status("listening", "recording", "external")                  # later refresh keeps it
+            on_status("idle", "", "external")                                 # session ends
+            on_status("listening", "recording", "external")                  # new session: clean
+        self.assertNotIn("fallback", server.events[0])
+        self.assertTrue(server.events[1].get("fallback"))
+        self.assertTrue(server.events[2].get("fallback"))   # latched across refreshes
+        self.assertNotIn("fallback", server.events[3])      # not listening -> no flag
+        self.assertNotIn("fallback", server.events[4])      # fresh session reset
+
+    def test_is_fallback_status_matches_engine_notice_only(self):
+        self.assertTrue(sidecar.is_fallback_status("Cloud transcription unavailable; switching to offline local mode."))
+        self.assertTrue(sidecar.is_fallback_status("SWITCHING TO OFFLINE now"))
+        self.assertFalse(sidecar.is_fallback_status("recording"))
+        self.assertFalse(sidecar.is_fallback_status(""))
+        self.assertFalse(sidecar.is_fallback_status(None))
+
     @unittest.skipUnless(sys.platform == "win32", "Win32 target selection")
     def test_injection_target_label_uses_injector_selection_and_safety_gate(self):
         class _T:

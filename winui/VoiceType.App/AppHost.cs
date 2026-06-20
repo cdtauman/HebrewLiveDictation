@@ -231,10 +231,12 @@ public sealed class AppHost
                     string state = e.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "";
                     string msg = e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
                     string target = e.TryGetProperty("target", out var tg) ? tg.GetString() ?? "" : "";
+                    bool fallback = e.TryGetProperty("fallback", out var fb) && fb.ValueKind == JsonValueKind.True;
                     CurrentState = string.IsNullOrEmpty(state) ? CurrentState : state;
                     CurrentMessage = msg;
                     ApplyEngineState(CurrentState, CurrentMessage);
-                    _hud?.SetTarget(target);   // "→ {app}" reassurance while listening
+                    _hud?.SetTarget(target);   // "יעד: {app}" reassurance while listening
+                    _hud?.SetFallback(fallback);   // amber "offline backup active" when cloud dropped
                     _main?.Log($"status: {state} {msg}");
                     StatusChanged?.Invoke(CurrentState, CurrentMessage);
                     break;

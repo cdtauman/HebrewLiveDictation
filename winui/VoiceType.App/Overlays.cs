@@ -114,8 +114,10 @@ public sealed class HudWindow
     private readonly TextBlock _status;
     private readonly TextBlock _words;
     private readonly TextBlock _target;
+    private readonly TextBlock _fallback;
     private Storyboard? _pulse;
     private string _state = "idle";
+    private bool _fallbackActive;
 
     public HudWindow()
     {
@@ -151,11 +153,21 @@ public sealed class HudWindow
             HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center,
             Visibility = Visibility.Collapsed,
         };
+        // Fallback notice — calm amber, informative (no recovery needed): the cloud engine
+        // dropped and the offline backup took over mid-session. Hidden unless that happened.
+        _fallback = new TextBlock
+        {
+            Text = "מצב לא־מקוון פעיל", FontSize = 12, FontWeight = FontWeights.SemiBold,
+            Foreground = Palette.Attention(true),
+            HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center,
+            Visibility = Visibility.Collapsed,
+        };
 
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(head);
         panel.Children.Add(_words);
         panel.Children.Add(_target);
+        panel.Children.Add(_fallback);
 
         var border = new Border
         {
@@ -183,9 +195,13 @@ public sealed class HudWindow
         _status.Foreground = dot;
         _status.Text = label;
 
-        // The target reassurance only makes sense while listening; clear it otherwise.
-        // While listening it's populated by SetTarget from the status event.
-        if (_state != "listening") { _target.Text = ""; _target.Visibility = Visibility.Collapsed; }
+        // The target reassurance and fallback notice only make sense while listening;
+        // clear both otherwise. While listening they're driven by the status event.
+        if (_state != "listening")
+        {
+            _target.Text = ""; _target.Visibility = Visibility.Collapsed;
+            _fallbackActive = false; _fallback.Visibility = Visibility.Collapsed;
+        }
 
         switch (_state)
         {
@@ -234,8 +250,21 @@ public sealed class HudWindow
         _target.Visibility = Visibility.Visible;
     }
 
+    /// <summary>Latch the calm "offline backup active" notice when the engine reports the
+    /// cloud provider dropped and local fallback took over. Sticky for the rest of the
+    /// listening session (the engine signals it once at the switch); cleared on stop.</summary>
+    public void SetFallback(bool active)
+    {
+        if (active) _fallbackActive = true;
+        bool show = _state == "listening" && _fallbackActive;
+        _fallback.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>Current target line — for the runtime self-test.</summary>
     internal string CurrentTargetForTest => _target.Text;
+
+    /// <summary>Whether the fallback notice is currently shown — for the runtime self-test.</summary>
+    internal bool FallbackVisibleForTest => _fallback.Visibility == Visibility.Visible;
 
     /// <summary>Live words while listening (ignored in non-speaking states).</summary>
     public void SetWords(string w)

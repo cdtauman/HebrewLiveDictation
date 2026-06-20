@@ -70,8 +70,11 @@ Plus the shell surfaces:
   `auto_fallback` drop → amber "offline backup active".
 - **RTL** on every room + onboarding; mixed LTR tokens (model names) read correctly.
 - **DPI/monitors:** 100% and 150%, 2+ monitors mixed scaling — HUD/Remote placement.
-- **Onboarding:** finish AND skip/X both leave a working offline product; first-run flag set
-  only once; a failed save shows feedback and never advances.
+- **Onboarding:** finish AND skip/X both leave the app in a working *configuration* (a valid
+  offline engine selected), but offline **dictation** requires the Whisper model — which is
+  downloaded on first offline use or pre-fetched from the app. The wizard states this and
+  never claims offline is ready before the model is present. First-run flag set only once; a
+  failed save shows feedback and never advances.
 - **Tray:** show / start / stop / exit; hide-to-tray vs exit honors the Settings choice.
 
 ## Packaging status — NOT yet shippable
@@ -79,23 +82,40 @@ Plus the shell surfaces:
 The shell builds self-contained (`SelfContained=true`, `win-x64`), **but the engine launch
 is dev-only**: `RepoPaths` locates the `src/`+`winui/` repo tree and spawns a `.venv` or
 system `python -m hebrew_live_dictation.bridge`. A shipped machine has none of that. Closing
-this is the remaining work and is gated on decisions in [§17 of the master plan] — see
-"Open packaging decisions" below.
+this is the remaining work.
 
 Already in place (reusable, from the prior app): a signed-manifest updater
 (`updater.py`, `docs/updater.md`) with `test_updater.py`, `test_sign_release.py`,
 `test_verify.py`. The two-artifact model needs the updater extended to update **both** the
 shell and the engine atomically.
 
-### Open packaging decisions (block the installer)
+### Packaging decisions (agreed)
 
-1. **Engine bundling** — PyInstaller a standalone `engine.exe` (no Python on target) vs an
-   embedded CPython + `src/` vs requiring system Python. Drives `RepoPaths` and installer.
-2. **Offline model** — bundle a small Whisper model so the onboarding offline-first default
-   truly works out-of-box (bigger installer) vs download-on-first-use vs none.
-3. **Package format** — unpackaged self-contained (plan assumption, full Win32 freedom) vs
-   MSIX.
-4. **Code signing** — sign both artifacts with a real cert now vs ship an unsigned beta.
+These are settled, not open:
 
-Until #1 is chosen, `RepoPaths.SidecarStartInfo` must gain a packaged path (locate the
-bundled engine next to `VoiceType.exe`) alongside the existing dev path.
+1. **Engine bundling — PyInstaller `engine.exe`.** The sidecar is frozen into a standalone
+   executable (no Python required on the target). `RepoPaths.SidecarStartInfo` gains a
+   packaged path (locate `engine.exe` next to `VoiceType.exe`) with the existing dev
+   `python -m` path as fallback.
+2. **Offline model — hybrid, honest.** No model is bundled blindly. During setup/first-run
+   the user is offered a one-time download of a small Hebrew-capable Whisper model (default:
+   yes). If they decline, offline is **not** silently promised — it is reported as not-ready
+   and the model can be fetched later from the app. Readiness is the real on-disk completion
+   signal (see "Honest offline readiness" below), never a config flag.
+3. **Package format — unpackaged self-contained.** A conventional installer dropping
+   `VoiceType.exe` + `engine.exe` + the WindowsAppRuntime; full Win32 freedom, simplest
+   sidecar lifecycle, and compatible with the existing updater.
+4. **Code signing — unsigned beta first.** The first packaged build ships unsigned to
+   validate the end-to-end flow. **Unsigned binaries trigger a Windows SmartScreen "unknown
+   publisher" warning** (and possible AV friction); release notes must say so plainly.
+   Real signing is wired once a certificate is available — `test_sign_release.py` /
+   `test_verify.py` infrastructure already exists.
+
+### Honest offline readiness (authoritative completion signal)
+
+`models.is_downloaded()` reports a model ready **only** when a matching cache dir contains
+either the authoritative `COMPLETE_MARKER` (`.vt_complete`, written by `download_model` as
+the last step of a successful download) or a non-trivially-sized `model.bin`. An empty,
+partial (`*.incomplete` blobs only), or zero-byte cache reports not-ready. `getModelStatus`
+and `compute_health` (offline.ready / offline.model_ready) derive from this, so the UI never
+claims offline works before a model is actually, completely present.

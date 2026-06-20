@@ -6,6 +6,12 @@ from hebrew_live_dictation import models
 from hebrew_live_dictation.config import Config
 
 
+def _write_weights(model_dir, size=2048):
+    """Write a non-trivial model.bin so the dir looks like a complete model."""
+    with open(os.path.join(model_dir, "model.bin"), "wb") as f:
+        f.write(b"\x00" * size)
+
+
 class ModelsTests(unittest.TestCase):
     def test_known_models_include_defaults(self):
         names = models.known_models()
@@ -77,20 +83,56 @@ class ModelsTests(unittest.TestCase):
             self.assertEqual(status["name"], "small")
             self.assertFalse(status["downloaded"])
             self.assertEqual(status["path"], os.path.join(tmp, "models"))
+            # A bare matching directory is NOT downloaded — only a complete model is.
             os.makedirs(os.path.join(tmp, "models", "models--small"))
+            self.assertFalse(models.model_status(config, "small")["downloaded"])
+            _write_weights(os.path.join(tmp, "models", "models--small"))
             self.assertTrue(models.model_status(config, "small")["downloaded"])
 
-    def test_is_downloaded_and_delete(self):
+    def test_is_downloaded_requires_complete_model(self):
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertFalse(models.is_downloaded("small", tmp))
+            self.assertFalse(models.is_downloaded("small", tmp))               # nothing
             model_dir = os.path.join(tmp, "models--Systran--faster-whisper-small")
             os.makedirs(model_dir)
-            with open(os.path.join(model_dir, "model.bin"), "w") as f:
-                f.write("x")
-            # Heuristic matches on the bare name token too.
+            self.assertFalse(models.is_downloaded("small", tmp))               # bare dir
+            # Partial HF download: only an *.incomplete blob, no real weights -> not ready.
+            with open(os.path.join(model_dir, "model.bin.incomplete"), "wb") as f:
+                f.write(b"\x00" * 4096)
+            self.assertFalse(models.is_downloaded("small", tmp))
+            # Corrupt/zero-byte weights -> not ready.
+            open(os.path.join(model_dir, "model.bin"), "wb").close()
+            self.assertFalse(models.is_downloaded("small", tmp))
+            # Real (non-trivial) weights -> ready.
+            _write_weights(model_dir)
             self.assertTrue(models.is_downloaded("small", tmp))
             self.assertTrue(models.delete_model("small", tmp))
             self.assertFalse(os.path.isdir(model_dir))
+
+    def test_completion_marker_alone_means_ready(self):
+        # A model fetched by our download_model leaves the authoritative marker even before we
+        # second-guess the weights layout; the marker alone makes it ready.
+        with tempfile.TemporaryDirectory() as tmp:
+            model_dir = os.path.join(tmp, "models--small")
+            os.makedirs(model_dir)
+            self.assertFalse(models.is_downloaded("small", tmp))
+            with open(os.path.join(model_dir, models.COMPLETE_MARKER), "w") as f:
+                f.write("ok")
+            self.assertTrue(models.is_downloaded("small", tmp))
+
+    def test_download_model_writes_completion_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.update({"providers.whisper.model": "small"})
+
+            def fake_downloader(name, cache_dir=None, revision=None):
+                path = os.path.join(cache_dir, f"models--{name}")
+                os.makedirs(path, exist_ok=True)   # weights not written, but download "succeeded"
+                return path
+
+            self.assertFalse(models.model_status(config, "small")["downloaded"])
+            models.download_model(config, downloader=fake_downloader)
+            # Marker written -> truthfully ready even though the fake wrote no weights.
+            self.assertTrue(models.model_status(config, "small")["downloaded"])
 
 
 if __name__ == "__main__":

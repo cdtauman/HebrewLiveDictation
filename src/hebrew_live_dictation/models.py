@@ -93,11 +93,25 @@ def _matches(entry: str, name: str) -> bool:
     return flat in entry or name in entry
 
 
+# Authoritative completion marker. A model is "ready" only when this sentinel is present
+# inside its cache dir; download_model writes it as the LAST step, after the downloader has
+# returned successfully. Its presence means a download we performed finished completely — an
+# interrupted/partial download never leaves it behind. (For models fetched by faster-whisper's
+# own first-use auto-download — no marker — readiness falls back to validating the weights.)
+COMPLETE_MARKER = ".vt_complete"
+
+# The CTranslate2 weights file every faster-whisper model has. A complete model has it
+# present and non-trivially sized; a partial HF download leaves only ``*.incomplete`` blobs.
+_WEIGHTS_FILE = "model.bin"
+_MIN_WEIGHTS_BYTES = 1024  # guard against zero/placeholder files
+
+
 def download_model(config, name=None, downloader=None):
     """Download a model into the storage dir without loading it into RAM.
 
     Uses faster-whisper's downloader (Hugging Face); ``downloader`` is injectable
-    for tests. Returns the local model path.
+    for tests. On success, writes the COMPLETE_MARKER inside the model dir so readiness
+    can be reported truthfully. Returns the local model path.
     """
     name = name or config.get("providers.whisper.model", DEFAULT_MODEL)
     storage_dir = default_storage_dir(config)
@@ -107,20 +121,66 @@ def download_model(config, name=None, downloader=None):
         pass
     if downloader is None:
         from faster_whisper import download_model as downloader  # type: ignore
-    return downloader(name, cache_dir=storage_dir, revision=model_revision(name))
+    path = downloader(name, cache_dir=storage_dir, revision=model_revision(name))
+    _mark_complete(path)
+    return path
+
+
+def _mark_complete(model_path) -> None:
+    """Stamp a completed download. Best-effort: failure to write the marker only means a
+    later readiness check falls back to validating the weights file."""
+    try:
+        if model_path and os.path.isdir(model_path):
+            with open(os.path.join(model_path, COMPLETE_MARKER), "w", encoding="utf-8") as f:
+                f.write("ok")
+    except Exception as e:  # pragma: no cover - marker is best-effort
+        logger.warning("Could not write model completion marker in %s: %s", model_path, e)
 
 
 def model_status(config, name=None):
-    """Return {name, downloaded, path} for the UI."""
+    """Return {name, downloaded, path} for the UI. ``downloaded`` is the TRUTHFUL completion
+    signal (see is_downloaded), never merely "a matching directory exists"."""
     name = name or config.get("providers.whisper.model", DEFAULT_MODEL)
     storage_dir = default_storage_dir(config)
     return {"name": name, "downloaded": is_downloaded(name, storage_dir), "path": storage_dir}
 
 
 def is_downloaded(name, storage_dir) -> bool:
+    """Whether a COMPLETE model is present — not just a matching cache entry.
+
+    An empty, partial, or corrupt cache must report False. We accept the model only if a
+    matching cache dir contains either our authoritative COMPLETE_MARKER (a download we
+    finished) or a non-trivially-sized ``model.bin`` (e.g. faster-whisper's own first-use
+    download). A bare directory, an interrupted download (only ``*.incomplete`` blobs), or a
+    zero-byte weights file all report False.
+    """
     if not storage_dir or not os.path.isdir(storage_dir):
         return False
-    return any(_matches(entry, name) for entry in os.listdir(storage_dir))
+    for entry in os.listdir(storage_dir):
+        if not _matches(entry, name):
+            continue
+        if _entry_is_complete(os.path.join(storage_dir, entry)):
+            return True
+    return False
+
+
+def _entry_is_complete(root) -> bool:
+    """True if a matched cache entry holds a finished model: our marker, or real weights."""
+    try:
+        if not os.path.isdir(root):
+            return False
+        for dirpath, _dirs, files in os.walk(root):
+            if COMPLETE_MARKER in files:
+                return True
+            if _WEIGHTS_FILE in files:
+                try:
+                    if os.path.getsize(os.path.join(dirpath, _WEIGHTS_FILE)) >= _MIN_WEIGHTS_BYTES:
+                        return True
+                except OSError:
+                    continue
+    except Exception:
+        return False
+    return False
 
 
 def delete_model(name, storage_dir) -> bool:

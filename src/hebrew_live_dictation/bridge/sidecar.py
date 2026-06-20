@@ -226,6 +226,46 @@ def model_downloaded(config) -> bool:
         return False
 
 
+# Shown (and routed on) when offline is the live engine but no model is installed. Hebrew
+# first, with a short English tail so a mixed-locale user still understands. The shell reads
+# the `needsModel` flag to route the user to the explicit download flow (Engine room).
+OFFLINE_MODEL_REQUIRED_MSG = (
+    "המודל הלא־מקוון אינו מותקן. התקינו אותו בחדר המנוע כדי להכתיב במצב לא־מקוון. "
+    "(Offline model not installed — install it in the Engine room first.)"
+)
+
+
+def offline_is_primary_engine(config) -> bool:
+    """True when starting dictation now runs local Whisper as the LIVE (primary) transcriber —
+    i.e. the path that, without an installed model, would otherwise trigger faster-whisper's
+    silent first-use auto-download.
+
+    Mirrors stt_factory's selection: stt.mode 'local' forces whisper_local, and an explicit
+    whisper_local provider is the live engine — but BOTH require providers.whisper.enabled to
+    actually run (else the factory falls back to the cloud default, so no local download would
+    happen). auto_fallback / smart_auto are deliberately NOT counted: their live path is the
+    cloud provider, and the local backup is reached (if at all) only mid-session — which the
+    sidecar cannot gate at the start boundary without touching protected STT modules.
+    """
+    mode = config.get("stt.mode", "api") or "api"
+    provider = config.get("stt.provider", "google_v2") or "google_v2"
+    whisper_enabled = bool(config.get("providers.whisper.enabled", False))
+    selects_local = (mode == "local") or (provider == "whisper_local")
+    return selects_local and whisper_enabled
+
+
+def offline_model_required(config) -> bool:
+    """True when starting dictation would run local Whisper as primary but no usable model is
+    installed. Option A: all offline model acquisition goes through the explicit download flow,
+    so the caller must REFUSE to start (never let faster-whisper silently auto-download) and
+    route the user to download the model first. Readiness is the authoritative on-disk check."""
+    try:
+        return offline_is_primary_engine(config) and not model_downloaded(config)
+    except Exception:
+        logger.error("offline model gate check failed:\n%s", traceback.format_exc())
+        return False
+
+
 def model_status(config) -> dict:
     """Local-model state for the UI (Onboarding/Engine): {name, downloaded, path}. Read-only;
     no heavy import (presence is an on-disk check), so safe to call on any status query."""
@@ -641,7 +681,20 @@ def run(pipe_name: str | None = None) -> int:
     # callbacks can reference the hotkey listener for listening-state sync.
     controller = DictationController(config)
 
+    def offline_start_refused() -> bool:
+        """Option A gate: if offline is the live engine but no model is installed, refuse to
+        start dictation and surface a clear, recoverable status that routes the user to the
+        explicit download flow — never let faster-whisper silently auto-download. Returns True
+        when the start was refused (caller must NOT start)."""
+        if not offline_model_required(config):
+            return False
+        emit_event({"kind": "status", "state": "error",
+                    "message": OFFLINE_MODEL_REQUIRED_MSG, "needsModel": True})
+        return True
+
     def hotkey_start():
+        if offline_start_refused():
+            return
         s = server_holder["server"]
         if s:
             s.send_event({"kind": "hotkey", "edge": "start"})
@@ -705,6 +758,10 @@ def run(pipe_name: str | None = None) -> int:
             # Destructive: require an explicit confirmation flag at the RPC boundary.
             if not params.get("confirm"):
                 return {"deleted": False, "error": "confirmation required"}
+            # Don't delete out from under an in-flight download (it would race the writer and
+            # could leave a half-written cache). Refuse while a download is active.
+            if model_downloads.active is not None:
+                return {"deleted": False, "error": "download in progress"}
             return delete_model(config, params.get("name"))
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
@@ -720,12 +777,18 @@ def run(pipe_name: str | None = None) -> int:
             saved = config.set(params["key"], params["value"])  # engine is the single writer
             return {"key": params["key"], "value": config.get(params["key"]), "saved": bool(saved)}
         if method == "startDictation":
+            if offline_start_refused():
+                return {"accepted": False, "needsModel": True, "message": OFFLINE_MODEL_REQUIRED_MSG}
             invoker.invoke.emit(lambda: controller.start_listening(params.get("mode", "external")))
             return {"accepted": True}
         if method == "stopDictation":
             invoker.invoke.emit(controller.stop_listening)
             return {"accepted": True}
         if method == "toggleDictation":
+            # Only a start (idle -> listening) can trigger an offline model download; a toggle
+            # that stops an active session needs no model, so gate only when currently idle.
+            if controller.state == "idle" and offline_start_refused():
+                return {"accepted": False, "needsModel": True, "message": OFFLINE_MODEL_REQUIRED_MSG}
             invoker.invoke.emit(lambda: controller.toggle_listening(params.get("mode", "external")))
             return {"accepted": True}
         if method == "shutdown":

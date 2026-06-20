@@ -33,6 +33,11 @@ public sealed class AppHost
     /// Raised on the UI thread so the onboarding/Engine surfaces can reflect it live.</summary>
     public event Action<string, string>? ModelDownloadChanged;
 
+    /// <summary>Raised when a dictation start was refused because offline is the live engine but
+    /// no model is installed (Option A: no silent auto-download). Handled by the console to route
+    /// the user to the explicit download flow (Engine room). UI thread.</summary>
+    public event Action? OfflineModelRequired;
+
     /// <summary>Cached "minimize to tray on close" choice (Settings room). Read on connect
     /// and updated live by Settings so the synchronous window-close handler can honor it
     /// without an IPC round-trip. Defaults to the engine default (true).</summary>
@@ -262,6 +267,7 @@ public sealed class AppHost
                     string target = e.TryGetProperty("target", out var tg) ? tg.GetString() ?? "" : "";
                     bool fallback = e.TryGetProperty("fallback", out var fb) && fb.ValueKind == JsonValueKind.True;
                     bool targetChanged = e.TryGetProperty("targetChanged", out var tc) && tc.ValueKind == JsonValueKind.True;
+                    bool needsModel = e.TryGetProperty("needsModel", out var nm) && nm.ValueKind == JsonValueKind.True;
                     CurrentState = string.IsNullOrEmpty(state) ? CurrentState : state;
                     CurrentMessage = msg;
                     ApplyEngineState(CurrentState, CurrentMessage);
@@ -270,6 +276,9 @@ public sealed class AppHost
                     _hud?.SetFallback(fallback);   // amber "offline backup active" when cloud dropped
                     _main?.Log($"status: {state} {msg}");
                     StatusChanged?.Invoke(CurrentState, CurrentMessage);
+                    // Offline start refused for lack of a model: bring the console forward and
+                    // route the user to the explicit download flow (Engine room).
+                    if (needsModel) { ShowConsole(); OfflineModelRequired?.Invoke(); }
                     break;
                 case "text":
                     _hud?.SetWords(e.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "");

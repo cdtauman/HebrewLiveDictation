@@ -27,9 +27,23 @@ public sealed partial class MainWindow : Window
 
         Nav.SelectedItem = Nav.MenuItems[0];   // Home
         Navigate("home");
+
+        // Offline start refused for lack of a model: route the user to the Engine room, where
+        // the model card offers the explicit download (Option A: no silent auto-download).
+        _host.OfflineModelRequired += NavigateToEngine;
+        this.Closed += (_, __) => _host.OfflineModelRequired -= NavigateToEngine;
     }
 
     public AppHost Host => _host;
+
+    /// <summary>Select the Engine room (its NavigationViewItem, so the pane highlights too),
+    /// which surfaces the offline-model download card.</summary>
+    public void NavigateToEngine()
+    {
+        foreach (var mi in Nav.MenuItems)
+            if (mi is NavigationViewItem it && (it.Tag as string) == "engine") { Nav.SelectedItem = it; return; }
+        Navigate("engine");
+    }
 
     private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {

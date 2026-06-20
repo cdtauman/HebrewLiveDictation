@@ -95,9 +95,11 @@ def _matches(entry: str, name: str) -> bool:
 
 # Authoritative completion marker. A model is "ready" only when this sentinel is present
 # inside its cache dir; download_model writes it as the LAST step, after the downloader has
-# returned successfully. Its presence means a download we performed finished completely — an
-# interrupted/partial download never leaves it behind. (For models fetched by faster-whisper's
-# own first-use auto-download — no marker — readiness falls back to validating the weights.)
+# returned successfully. Its presence means a download WE performed (the explicit download
+# flow) finished completely — an interrupted/partial download never leaves it behind. Models
+# fetched by faster-whisper's own first-use auto-download have NO marker and are deliberately
+# NOT treated as ready (Option A): offline acquisition must go through download_model, so the
+# UI state, progress/error/retry handling, and readiness all stay consistent.
 COMPLETE_MARKER = ".vt_complete"
 
 # A complete, *usable* faster-whisper (CTranslate2) model needs the weights AND the

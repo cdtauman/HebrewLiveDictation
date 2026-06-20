@@ -16,6 +16,8 @@ from hebrew_live_dictation.bridge.sidecar import (
     injection_target_label,
     list_microphones,
     make_callbacks,
+    offline_is_primary_engine,
+    offline_model_required,
     recent_history,
 )
 
@@ -128,6 +130,47 @@ class HealthTests(unittest.TestCase):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))
         with mock.patch("hebrew_live_dictation.models.model_status", side_effect=RuntimeError("x")):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))   # unknown -> not ready
+
+
+class OfflineGateTests(unittest.TestCase):
+    """Option A: starting dictation must never silently trigger faster-whisper's first-use
+    auto-download. These helpers encode the start-refusal decision the sidecar's start paths
+    (hotkey_start / startDictation / idle toggleDictation) gate on."""
+
+    def test_offline_is_primary_only_when_local_engine_actually_runs(self):
+        # mode=local with Whisper enabled -> the factory forces whisper_local: primary offline.
+        self.assertTrue(offline_is_primary_engine(
+            _FakeConfig({"stt.mode": "local", "providers.whisper.enabled": True})))
+        # explicit whisper_local provider + enabled -> primary offline.
+        self.assertTrue(offline_is_primary_engine(
+            _FakeConfig({"stt.provider": "whisper_local", "providers.whisper.enabled": True})))
+        # local selected but Whisper NOT enabled -> the factory falls back to the cloud default,
+        # so no local download happens: NOT primary offline.
+        self.assertFalse(offline_is_primary_engine(
+            _FakeConfig({"stt.mode": "local", "providers.whisper.enabled": False})))
+        # auto_fallback's live path is the cloud provider (local is only a mid-session backup).
+        self.assertFalse(offline_is_primary_engine(
+            _FakeConfig({"stt.mode": "auto_fallback", "providers.whisper.enabled": True})))
+        # plain cloud config.
+        self.assertFalse(offline_is_primary_engine(
+            _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api"})))
+
+    def test_offline_model_required_only_when_primary_and_no_model(self):
+        primary = {"stt.mode": "local", "providers.whisper.enabled": True}
+        with mock.patch.object(sidecar, "model_downloaded", return_value=False):
+            self.assertTrue(offline_model_required(_FakeConfig(dict(primary))))   # refuse + route
+        with mock.patch.object(sidecar, "model_downloaded", return_value=True):
+            self.assertFalse(offline_model_required(_FakeConfig(dict(primary))))  # model present -> start
+        with mock.patch.object(sidecar, "model_downloaded", return_value=False):
+            # Cloud engine missing a model is irrelevant: never blocks a cloud start.
+            self.assertFalse(offline_model_required(_FakeConfig({"stt.provider": "google_v2"})))
+
+    def test_offline_model_required_safe_on_error(self):
+        # A failure deciding readiness must not raise into the start path (fail-open, never block
+        # a start spuriously) — the helper swallows and returns False.
+        with mock.patch.object(sidecar, "model_downloaded", side_effect=RuntimeError("x")):
+            self.assertFalse(offline_model_required(
+                _FakeConfig({"stt.mode": "local", "providers.whisper.enabled": True})))
 
 
 class ModelDownloadTests(unittest.TestCase):

@@ -119,7 +119,18 @@ public sealed partial class EnginePage : Page
         try { if (await confirm.ShowAsync() != ContentDialogResult.Primary) return; } catch { return; }
 
         ModelDeleteBtn.IsEnabled = false;
-        try { await _host.Client.RpcAsync("deleteModel", new { confirm = true }); } catch { }
+        bool deleted = false;
+        try
+        {
+            var r = await _host.Client.RpcAsync("deleteModel", new { confirm = true });
+            deleted = r.TryGetProperty("deleted", out var d) && d.ValueKind == JsonValueKind.True;
+        }
+        catch { }
+        // Honest feedback: never let a failed delete look like it succeeded. A refusal here is
+        // usually a download in flight or a file lock — both are recoverable.
+        if (!deleted)
+            await ShowMessageAsync("לא ניתן למחוק את המודל כעת.",
+                "ייתכן שהורדה פעילה או שהקובץ בשימוש. נסו שוב מאוחר יותר.");
         await RefreshModelStatusAsync();
     }
 

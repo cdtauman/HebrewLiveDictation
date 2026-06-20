@@ -53,6 +53,7 @@ Windows injection (Word COM / UI Automation / Unicode SendInput / clipboard), ta
 ## How to operate the new engine (quick)
 - Pick a mode/provider on the **Engine** settings page; enter Deepgram/Groq keys
   there (stored in the OS keyring) and use **Test**.
-- Offline: enable Whisper, pick a model, click **Download model** (or it
-  auto-downloads on first offline use).
+- Offline: enable Whisper, pick a model, click **Download model**. Offline dictation
+  requires an explicitly downloaded model; first-use auto-download is not a supported
+  readiness path (starting offline without an installed model is refused).
 - Updater: see `docs/updater.md` (off by default; sign with `scripts/sign_release.py`).

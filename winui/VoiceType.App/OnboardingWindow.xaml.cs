@@ -113,8 +113,9 @@ public sealed partial class OnboardingWindow : Window
     }
 
     /// <summary>Reflect offline-model readiness honestly. "ready" only when the model is on
-    /// disk; otherwise we offer the one-time download (recommended) and say plainly that,
-    /// failing that, it downloads on first offline use. Never a silent offline promise.</summary>
+    /// disk; otherwise we offer the one-time download (recommended). Offline dictation requires
+    /// the model to be installed via this explicit flow — it is NEVER silently auto-downloaded on
+    /// first use (Option A), so the copy never implies "just start and it will work".</summary>
     private void RenderOfflineReadiness(string state)
     {
         switch (state)
@@ -130,13 +131,13 @@ public sealed partial class OnboardingWindow : Window
                 DownloadRing.IsActive = true; DownloadRing.Visibility = Visibility.Visible;
                 break;
             case "error":
-                OfflineReadyNote.Text = "הורדת המודל נכשלה. אפשר לנסות שוב, או שהמודל יירד בפעם הראשונה שתשתמשו בהכתבה לא־מקוונת.";
+                OfflineReadyNote.Text = "הורדת המודל נכשלה. הכתבה לא־מקוונת דורשת התקנת המודל — נסו שוב.";
                 DownloadModelButton.Content = "נסו שוב";
                 DownloadModelButton.Visibility = Visibility.Visible;
                 DownloadRing.IsActive = false; DownloadRing.Visibility = Visibility.Collapsed;
                 break;
             default: // "absent"
-                OfflineReadyNote.Text = "הכתבה לא־מקוונת דורשת מודל (פעם אחת, דרוש אינטרנט). אפשר להתקין עכשיו, או שהוא יירד בפעם הראשונה שתשתמשו.";
+                OfflineReadyNote.Text = "הכתבה לא־מקוונת דורשת מודל (התקנה חד־פעמית, דרוש אינטרנט). התקינו אותו עכשיו כדי שההכתבה הלא־מקוונת תעבוד.";
                 DownloadModelButton.Content = "התקן מודל לא־מקוון עכשיו (מומלץ)";
                 DownloadModelButton.Visibility = Visibility.Visible;
                 DownloadRing.IsActive = false; DownloadRing.Visibility = Visibility.Collapsed;

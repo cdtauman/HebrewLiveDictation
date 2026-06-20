@@ -18,7 +18,7 @@ Both must be green before any release build.
 $env:PYTHONPATH="src"; python -m unittest discover -s tests -t . -p "test_*.py"
 ```
 
-Currently **256 tests** across 31 files. Beyond the engine coverage listed in
+Currently **259 tests** across 31 files. Beyond the engine coverage listed in
 [qa.md](qa.md), the WinUI seam adds:
 
 - `test_bridge_server.py`, `test_sidecar_lifecycle.py`, `test_sidecar_callbacks.py`,
@@ -72,10 +72,12 @@ Plus the shell surfaces:
 - **RTL** on every room + onboarding; mixed LTR tokens (model names) read correctly.
 - **DPI/monitors:** 100% and 150%, 2+ monitors mixed scaling — HUD/Remote placement.
 - **Onboarding:** finish AND skip/X both leave the app in a working *configuration* (a valid
-  offline engine selected), but offline **dictation** requires the Whisper model — which is
-  downloaded on first offline use or pre-fetched from the app. The wizard states this and
-  never claims offline is ready before the model is present. First-run flag set only once; a
-  failed save shows feedback and never advances.
+  offline engine selected), but offline **dictation** requires the Whisper model — which must
+  be **installed via the explicit download flow** (the onboarding card or the Engine room). It
+  is **never silently auto-downloaded on first use** (Option A): starting offline dictation
+  without an installed model is **refused** with a clear message that routes the user to the
+  download flow. The wizard never claims offline is ready before the model is present.
+  First-run flag set only once; a failed save shows feedback and never advances.
 - **Tray:** show / start / stop / exit; hide-to-tray vs exit honors the Settings choice.
 
 ## Packaging status — NOT yet shippable
@@ -124,3 +126,14 @@ zero-byte `model.bin` all report not-ready. `getModelStatus` and `compute_health
 the same check after the download returns — emitting `done` only if the model is genuinely
 usable, otherwise `error`. The UI never claims offline works before a model is actually,
 completely present.
+
+**Option A — explicit acquisition only.** Offline model acquisition goes through the explicit
+`downloadModel` flow exclusively. faster-whisper's first-use auto-download is **not** a
+readiness path: such a cache has no completion marker and is reported not-ready. When offline
+is the *live* engine (mode `local`, or provider `whisper_local`, with Whisper enabled) but no
+model is installed, the sidecar **refuses** to start dictation (`hotkey_start` / `startDictation`
+/ idle `toggleDictation`) and emits a `status` event with `state:"error"` and `needsModel:true`.
+The shell brings the console forward and routes to the Engine room's download card. This keeps
+honest UI state, progress/error/retry handling, a real completion marker, and consistent
+`getModelStatus` / `compute_health` — with no hidden "usable but not installed" state.
+`deleteModel` is refused while a download is in flight.

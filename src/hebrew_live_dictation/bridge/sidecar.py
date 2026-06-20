@@ -103,7 +103,13 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
         send({"kind": "text", "text": text, "final": bool(final), "outputMode": output_mode})
 
     def on_error(message):
-        send({"kind": "error", "message": message})
+        event = {"kind": "error", "message": message}
+        # If the offline provider refused for a missing model (e.g. auto_fallback switched to
+        # local mid-session), flag it so the shell can route the user to the explicit download
+        # flow — the same routing the start gate uses, applied to a mid-session surface.
+        if is_offline_model_missing_status(message):
+            event["needsModel"] = True
+        send(event)
 
     def on_command(action, result):
         send({"kind": "command", "action": action})
@@ -171,6 +177,22 @@ def is_target_changed_status(message) -> bool:
         return False
     text = str(message).lower()
     return any(marker.lower() in text for marker in _TARGET_CHANGED_MARKERS)
+
+
+# Marker for the WhisperLocalStream's "offline model not installed" error. The offline provider
+# emits this (instead of auto-downloading) when no explicitly-downloaded model is present — most
+# importantly on the auto_fallback mid-session switch, which the start gate cannot pre-empt. We
+# match a stable substring of WhisperLocalStream.OFFLINE_MODEL_MISSING_MESSAGE so the shell can
+# route the user to the explicit download flow even when the failure surfaces mid-session.
+_OFFLINE_MODEL_MISSING_MARKERS = ("offline model not installed",)
+
+
+def is_offline_model_missing_status(message) -> bool:
+    """True when an error message is the offline provider's missing-model refusal."""
+    if not message:
+        return False
+    text = str(message).lower()
+    return any(marker in text for marker in _OFFLINE_MODEL_MISSING_MARKERS)
 
 
 def injection_target_label() -> str:
@@ -241,17 +263,31 @@ def offline_is_primary_engine(config) -> bool:
     silent first-use auto-download.
 
     Mirrors stt_factory's selection: stt.mode 'local' forces whisper_local, and an explicit
-    whisper_local provider is the live engine — but BOTH require providers.whisper.enabled to
-    actually run (else the factory falls back to the cloud default, so no local download would
-    happen). auto_fallback / smart_auto are deliberately NOT counted: their live path is the
-    cloud provider, and the local backup is reached (if at all) only mid-session — which the
-    sidecar cannot gate at the start boundary without touching protected STT modules.
+    whisper_local provider is the live engine. For 'smart_auto' we resolve the EFFECTIVE provider
+    the same way the factory does (stt.auto_select.select_provider) — if it would land on local
+    Whisper (only when no cloud credentials exist and Whisper is enabled), that IS the live
+    engine and would auto-download without a model, so we count it. All paths require
+    providers.whisper.enabled to actually run (else the factory falls back to the cloud default).
+
+    'auto_fallback' is deliberately NOT counted here: its live path is the cloud provider and the
+    local backup is reached (if at all) only MID-SESSION, which the start boundary cannot gate.
+    That path is closed at the WhisperLocalStream load boundary instead (no implicit download).
     """
+    whisper_enabled = bool(config.get("providers.whisper.enabled", False))
+    if not whisper_enabled:
+        return False
     mode = config.get("stt.mode", "api") or "api"
     provider = config.get("stt.provider", "google_v2") or "google_v2"
-    whisper_enabled = bool(config.get("providers.whisper.enabled", False))
-    selects_local = (mode == "local") or (provider == "whisper_local")
-    return selects_local and whisper_enabled
+    if mode == "local" or provider == "whisper_local":
+        return True
+    if mode == "smart_auto":
+        try:
+            from ..stt.auto_select import select_provider
+            return select_provider(config) == "whisper_local"
+        except Exception:
+            logger.error("smart_auto provider resolution failed:\n%s", traceback.format_exc())
+            return False
+    return False
 
 
 def offline_model_required(config) -> bool:

@@ -18,7 +18,7 @@ Both must be green before any release build.
 $env:PYTHONPATH="src"; python -m unittest discover -s tests -t . -p "test_*.py"
 ```
 
-Currently **259 tests** across 31 files. Beyond the engine coverage listed in
+Currently **264 tests** across 31 files. Beyond the engine coverage listed in
 [qa.md](qa.md), the WinUI seam adds:
 
 - `test_bridge_server.py`, `test_sidecar_lifecycle.py`, `test_sidecar_callbacks.py`,
@@ -129,11 +129,23 @@ completely present.
 
 **Option A — explicit acquisition only.** Offline model acquisition goes through the explicit
 `downloadModel` flow exclusively. faster-whisper's first-use auto-download is **not** a
-readiness path: such a cache has no completion marker and is reported not-ready. When offline
-is the *live* engine (mode `local`, or provider `whisper_local`, with Whisper enabled) but no
-model is installed, the sidecar **refuses** to start dictation (`hotkey_start` / `startDictation`
-/ idle `toggleDictation`) and emits a `status` event with `state:"error"` and `needsModel:true`.
-The shell brings the console forward and routes to the Engine room's download card. This keeps
-honest UI state, progress/error/retry handling, a real completion marker, and consistent
-`getModelStatus` / `compute_health` — with no hidden "usable but not installed" state.
-`deleteModel` is refused while a download is in flight.
+readiness path: such a cache has no completion marker and is reported not-ready. The hole is
+closed at **two** layers so *every* effective-Whisper path is covered:
+
+1. **Start boundary (best UX).** When offline is the *live* engine but no model is installed,
+   the sidecar **refuses** to start (`hotkey_start` / `startDictation` / idle `toggleDictation`)
+   and emits a `status` with `state:"error"` + `needsModel:true`. "Live engine" is the effective
+   provider, not just the literal config: mode `local` or provider `whisper_local` (with Whisper
+   enabled), **and** `smart_auto` when it resolves to `whisper_local` (the sidecar runs the same
+   `stt.auto_select.select_provider` the factory uses). The shell brings the console forward and
+   routes to the Engine room's download card.
+2. **`WhisperLocalStream` load boundary (universal safety net).** Before loading, the offline
+   provider checks `is_downloaded` and, if absent, emits a clear `error` instead of letting
+   `WhisperModel(...)` auto-download. This is the single choke point every Whisper path flows
+   through — crucially the **`auto_fallback` mid-session switch to local**, which the start
+   boundary cannot pre-empt (cloud is primary there). The sidecar tags that error `needsModel`
+   so the shell routes to download even when it surfaces mid-session.
+
+Together these keep honest UI state, progress/error/retry handling, a real completion marker,
+and consistent `getModelStatus` / `compute_health` — with no hidden "usable but not installed"
+state and no implicit download anywhere. `deleteModel` is refused while a download is in flight.

@@ -71,7 +71,7 @@
                                 <StackPanel Spacing="2">
                                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="לא־מקוון" />
                                     <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
-                                               Text="פרטי, פועל ללא חיבור לאינטרנט. מומלץ להתחלה." />
+                                               Text="פרטי. לאחר התקנת המודל הלא־מקוון — עובד ללא חיבור לאינטרנט. מומלץ להתחלה." />
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="OptRecommended" GroupName="Engine" Tag="recommended"

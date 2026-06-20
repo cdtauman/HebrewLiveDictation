@@ -29,9 +29,10 @@ public sealed class AppHost
     public string CurrentMessage { get; private set; } = "";
     public event Action<string, string>? StatusChanged;
 
-    /// <summary>Local-model download progress (state = "running"|"done"|"error", message).
-    /// Raised on the UI thread so the onboarding/Engine surfaces can reflect it live.</summary>
-    public event Action<string, string>? ModelDownloadChanged;
+    /// <summary>Local-model download progress (state = "running"|"done"|"error", model name,
+    /// message). The model name is carried through so the surfaces stay correct under future
+    /// multi-model support. Raised on the UI thread.</summary>
+    public event Action<string, string, string>? ModelDownloadChanged;
 
     /// <summary>Raised when a dictation start was refused because offline is the live engine but
     /// no model is installed (Option A: no silent auto-download). Handled by the console to route
@@ -285,19 +286,24 @@ public sealed class AppHost
                     break;
                 case "error":
                     string em = e.TryGetProperty("message", out var me) ? me.GetString() ?? "" : "";
+                    bool errNeedsModel = e.TryGetProperty("needsModel", out var enm) && enm.ValueKind == JsonValueKind.True;
                     CurrentState = "error";
                     CurrentMessage = em;
                     ApplyEngineState("error", em);
                     _main?.Log("error: " + em);
                     StatusChanged?.Invoke("error", em);
+                    // The offline provider refused for a missing model (e.g. auto_fallback
+                    // switched to local mid-session): route to the explicit download flow.
+                    if (errNeedsModel) { ShowConsole(); OfflineModelRequired?.Invoke(); }
                     break;
                 case "hotkey":
                     _main?.Log("hotkey: " + (e.TryGetProperty("edge", out var ed) ? ed.GetString() : ""));
                     break;
                 case "modelDownload":
                     string mdState = e.TryGetProperty("state", out var mds) ? mds.GetString() ?? "" : "";
+                    string mdName = e.TryGetProperty("name", out var mdn) ? mdn.GetString() ?? "" : "";
                     string mdMsg = e.TryGetProperty("message", out var mdm) ? mdm.GetString() ?? "" : "";
-                    ModelDownloadChanged?.Invoke(mdState, mdMsg);
+                    ModelDownloadChanged?.Invoke(mdState, mdName, mdMsg);
                     break;
             }
         });

@@ -31,7 +31,7 @@
                         <RadioButton x:Name="OptOffline" GroupName="engine" Tag="offline" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="לא־מקוון · Whisper" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="פרטי לחלוטין. עובד בלי חיבור לאינטרנט ובלי הגדרות."
+                                <TextBlock Text="פרטי לחלוטין. לאחר התקנת המודל הלא־מקוון — עובד בלי חיבור לאינטרנט."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>

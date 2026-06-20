@@ -164,7 +164,7 @@ public sealed partial class OnboardingWindow : Window
     /// <summary>Live download progress from the engine. On "done" we re-query the authoritative
     /// model status rather than assume ready — so the ready copy can never show if the model is
     /// somehow still missing.</summary>
-    private async void OnModelDownloadChanged(string state, string message)
+    private async void OnModelDownloadChanged(string state, string name, string message)
     {
         if (state == "done")
         {

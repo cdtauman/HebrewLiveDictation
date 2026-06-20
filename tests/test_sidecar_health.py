@@ -172,6 +172,49 @@ class OfflineGateTests(unittest.TestCase):
             self.assertFalse(offline_model_required(
                 _FakeConfig({"stt.mode": "local", "providers.whisper.enabled": True})))
 
+    def test_smart_auto_counts_as_primary_only_when_it_resolves_to_whisper(self):
+        cfg = _FakeConfig({"stt.mode": "smart_auto", "providers.whisper.enabled": True})
+        with mock.patch("hebrew_live_dictation.stt.auto_select.select_provider", return_value="whisper_local"):
+            self.assertTrue(offline_is_primary_engine(cfg))   # only Whisper available -> offline live
+        with mock.patch("hebrew_live_dictation.stt.auto_select.select_provider", return_value="google_v2"):
+            self.assertFalse(offline_is_primary_engine(cfg))  # resolves to cloud -> not offline live
+        # Whisper disabled short-circuits before resolution (the factory would use the cloud default).
+        with mock.patch("hebrew_live_dictation.stt.auto_select.select_provider",
+                        return_value="whisper_local") as m:
+            self.assertFalse(offline_is_primary_engine(_FakeConfig({"stt.mode": "smart_auto"})))
+            m.assert_not_called()
+
+    def test_smart_auto_missing_model_is_refused(self):
+        # Must-Fix #1: smart_auto that would land on whisper_local with no model must be refused
+        # at the start boundary (needsModel), never enter Whisper (which would auto-download).
+        cfg = _FakeConfig({"stt.mode": "smart_auto", "providers.whisper.enabled": True})
+        with mock.patch("hebrew_live_dictation.stt.auto_select.select_provider", return_value="whisper_local"):
+            with mock.patch.object(sidecar, "model_downloaded", return_value=False):
+                self.assertTrue(offline_model_required(cfg))
+            with mock.patch.object(sidecar, "model_downloaded", return_value=True):
+                self.assertFalse(offline_model_required(cfg))
+
+    def test_offline_model_missing_marker_matches_whisper_refusal(self):
+        # Mirrors WhisperLocalStream.OFFLINE_MODEL_MISSING_MESSAGE so the auto_fallback mid-session
+        # refusal can be detected and routed.
+        from hebrew_live_dictation.stt.whisper_local import OFFLINE_MODEL_MISSING_MESSAGE
+        self.assertTrue(sidecar.is_offline_model_missing_status(OFFLINE_MODEL_MISSING_MESSAGE))
+        self.assertTrue(sidecar.is_offline_model_missing_status("OFFLINE MODEL NOT INSTALLED now"))
+        self.assertFalse(sidecar.is_offline_model_missing_status("Local transcription error: boom"))
+        self.assertFalse(sidecar.is_offline_model_missing_status(""))
+        self.assertFalse(sidecar.is_offline_model_missing_status(None))
+
+    def test_on_error_flags_needs_model_for_missing_offline_model(self):
+        # Must-Fix #2: when auto_fallback's switch to local refuses for a missing model, the error
+        # surfaces mid-session; the sidecar tags it needsModel so the shell routes to download.
+        server = _RecordingServer()
+        from hebrew_live_dictation.stt.whisper_local import OFFLINE_MODEL_MISSING_MESSAGE
+        _, _, on_error, _ = make_callbacks(_FakeHotkeys(), lambda: server)
+        on_error(OFFLINE_MODEL_MISSING_MESSAGE)
+        on_error("Some other engine error")
+        self.assertTrue(server.events[0].get("needsModel"))
+        self.assertNotIn("needsModel", server.events[1])
+
 
 class ModelDownloadTests(unittest.TestCase):
     def test_successful_download_emits_running_then_done_when_validated(self):

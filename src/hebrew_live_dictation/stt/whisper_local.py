@@ -24,6 +24,17 @@ from .segmenter import SilenceSegmenter, is_speech
 
 logger = logging.getLogger("WhisperLocalStream")
 
+# Option A: the offline provider must NEVER trigger faster-whisper's implicit first-use
+# download. If no explicitly-downloaded model is present, refuse to load and surface this clear,
+# recoverable error instead of silently pulling hundreds of MB. This is the single choke point
+# through which every effective-Whisper path flows (direct offline, smart_auto, AND the
+# auto_fallback mid-session switch), so it closes the implicit-download hole everywhere. The
+# leading phrase is a stable marker the sidecar matches to route the user to the explicit
+# download flow — keep it in sync with sidecar.is_offline_model_missing_status.
+OFFLINE_MODEL_MISSING_MESSAGE = (
+    "Offline model not installed — download it in the app (Engine room) to use offline dictation."
+)
+
 
 class WhisperLocalStream(SpeechClientBase):
     capabilities = ProviderCapabilities(
@@ -51,6 +62,18 @@ class WhisperLocalStream(SpeechClientBase):
         from .. import models
 
         return models.ram_preflight(self.config.get("providers.whisper.model", "small"))
+
+    def _model_available(self) -> bool:
+        """Whether a usable, explicitly-downloaded model is present on disk. Option A: offline
+        model acquisition goes ONLY through the app's explicit download flow, so this provider
+        never lets ``WhisperModel(...)`` auto-download a missing model. Overridable for tests."""
+        try:
+            from .. import models
+
+            name = self.config.get("providers.whisper.model", "small")
+            return bool(models.is_downloaded(name, models.default_storage_dir(self.config)))
+        except Exception:
+            return False
 
     def _load_model(self):
         from faster_whisper import WhisperModel
@@ -106,6 +129,14 @@ class WhisperLocalStream(SpeechClientBase):
             ok, msg = self._ram_preflight()
             if not ok:
                 self._emit_event({"type": "error", "message": msg})
+                self.active = False
+                return
+
+            # Option A gate: never auto-download a missing model. Refuse with a clear, routable
+            # error instead — this also covers the auto_fallback mid-session switch to local,
+            # which the start boundary cannot gate (cloud is primary there).
+            if not self._model_available():
+                self._emit_event({"type": "error", "message": OFFLINE_MODEL_MISSING_MESSAGE})
                 self.active = False
                 return
 

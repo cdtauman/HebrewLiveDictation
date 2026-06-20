@@ -134,11 +134,11 @@ public sealed partial class EnginePage : Page
         await RefreshModelStatusAsync();
     }
 
-    private async void OnModelDownloadChanged(string state, string message)
+    private async void OnModelDownloadChanged(string state, string name, string message)
     {
         if (state == "done") { await RefreshModelStatusAsync(); return; }
         DispatcherQueue.TryEnqueue(() => RenderModel(
-            state switch { "running" => "downloading", "error" => "error", _ => "absent" }));
+            state switch { "running" => "downloading", "error" => "error", _ => "absent" }, name));
     }
 
     // ---- runtime self-test hooks (render only; no RPC) ----

@@ -34,6 +34,7 @@ class _FakeModel:
 def _make_stream(config, model):
     stream = WhisperLocalStream(config, on_event_callback=None)
     stream._ram_preflight = lambda: (True, "")
+    stream._model_available = lambda: True   # a model is present (download flow done)
     stream._load_model = lambda: model
     return stream
 
@@ -112,6 +113,7 @@ class WhisperLocalProviderTests(unittest.TestCase):
         events = []
         stream = WhisperLocalStream(config, on_event_callback=events.append)
         stream._ram_preflight = lambda: (False, "not enough memory")
+        stream._model_available = lambda: True
         stream._load_model = lambda: _FakeModel()  # should never be called
 
         q = queue.Queue()
@@ -121,6 +123,32 @@ class WhisperLocalProviderTests(unittest.TestCase):
         stream.thread.join(timeout=5.0)
 
         self.assertTrue(any(e["type"] == "error" for e in events))
+        self.assertFalse(any(e["type"] == "final" for e in events))
+
+    def test_missing_model_refuses_and_never_loads(self):
+        # Option A: with no explicitly-downloaded model, the provider must surface a clear,
+        # routable error and NEVER call _load_model (which is where WhisperModel(...) would
+        # implicitly auto-download). This is the choke point that also covers auto_fallback.
+        from hebrew_live_dictation.stt import whisper_local as wl
+
+        config = self._config()
+        events = []
+        loaded = []
+        stream = WhisperLocalStream(config, on_event_callback=events.append)
+        stream._ram_preflight = lambda: (True, "")
+        stream._model_available = lambda: False                 # model NOT installed
+        stream._load_model = lambda: loaded.append(True)        # must never run
+
+        q = queue.Queue()
+        q.put(_speech_chunk())
+        q.put(None)
+        stream.start(q)
+        stream.thread.join(timeout=5.0)
+
+        self.assertEqual(loaded, [])                            # no implicit download attempt
+        errs = [e for e in events if e["type"] == "error"]
+        self.assertTrue(errs)
+        self.assertEqual(errs[0]["message"], wl.OFFLINE_MODEL_MISSING_MESSAGE)
         self.assertFalse(any(e["type"] == "final" for e in events))
 
 

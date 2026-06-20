@@ -23,8 +23,118 @@ public sealed partial class EnginePage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         _host = e.Parameter as AppHost;
+        if (_host != null) _host.ModelDownloadChanged += OnModelDownloadChanged;
         _ = LoadAsync();
+        _ = RefreshModelStatusAsync();
     }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        if (_host != null) _host.ModelDownloadChanged -= OnModelDownloadChanged;
+    }
+
+    // ---- offline model management (status / download / delete) ----
+
+    private async Task RefreshModelStatusAsync()
+    {
+        bool downloaded = false;
+        string name = "";
+        if (_host?.Client != null)
+        {
+            try
+            {
+                var r = await _host.Client.RpcAsync("getModelStatus");
+                downloaded = r.TryGetProperty("downloaded", out var d) && d.ValueKind == JsonValueKind.True;
+                name = r.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            }
+            catch { }
+        }
+        DispatcherQueue.TryEnqueue(() => RenderModel(downloaded ? "ready" : "absent", name));
+    }
+
+    /// <summary>Honest model state: ready only when the model is actually on disk. Download is
+    /// offered when absent/failed; delete only when present; the ring shows while downloading.</summary>
+    private void RenderModel(string state, string name = "")
+    {
+        switch (state)
+        {
+            case "ready":
+                ModelStatusText.Text = string.IsNullOrEmpty(name)
+                    ? "המודל מותקן ✓ — הכתבה לא־מקוונת מוכנה."
+                    : $"המודל מותקן ✓ ({name}) — הכתבה לא־מקוונת מוכנה.";
+                ModelDownloadBtn.Visibility = Visibility.Collapsed;
+                ModelDeleteBtn.Visibility = Visibility.Visible;
+                ModelDeleteBtn.IsEnabled = true;
+                ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
+                break;
+            case "downloading":
+                ModelStatusText.Text = "מוריד מודל לא־מקוון… (פעם אחת, דרוש אינטרנט).";
+                ModelDownloadBtn.Visibility = Visibility.Collapsed;
+                ModelDeleteBtn.Visibility = Visibility.Collapsed;
+                ModelRing.IsActive = true; ModelRing.Visibility = Visibility.Visible;
+                break;
+            case "error":
+                ModelStatusText.Text = "הורדת המודל נכשלה. אפשר לנסות שוב.";
+                ModelDownloadBtn.Content = "נסו שוב";
+                ModelDownloadBtn.Visibility = Visibility.Visible;
+                ModelDeleteBtn.Visibility = Visibility.Collapsed;
+                ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
+                break;
+            default: // absent
+                ModelStatusText.Text = "המודל אינו מותקן. הכתבה לא־מקוונת דורשת הורדה חד־פעמית (דרוש אינטרנט).";
+                ModelDownloadBtn.Content = "הורד מודל";
+                ModelDownloadBtn.Visibility = Visibility.Visible;
+                ModelDeleteBtn.Visibility = Visibility.Collapsed;
+                ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
+                break;
+        }
+    }
+
+    private async void OnDownloadModel(object sender, RoutedEventArgs e)
+    {
+        RenderModel("downloading");
+        if (_host?.Client == null) { RenderModel("error"); return; }
+        try
+        {
+            var r = await _host.Client.RpcAsync("downloadModel");
+            bool started = r.TryGetProperty("started", out var s) && s.GetBoolean();
+            bool busy = r.TryGetProperty("busy", out var b) && b.GetBoolean();
+            if (!started && !busy) await RefreshModelStatusAsync();
+        }
+        catch { RenderModel("error"); }
+    }
+
+    private async void OnDeleteModel(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Client == null) return;
+        var confirm = new ContentDialog
+        {
+            Title = "למחוק את המודל הלא־מקוון?",
+            Content = "הכתבה לא־מקוונת לא תעבוד עד להורדה מחדש.",
+            PrimaryButtonText = "מחק",
+            CloseButtonText = "ביטול",
+            XamlRoot = this.XamlRoot,
+            FlowDirection = FlowDirection.RightToLeft,
+        };
+        try { if (await confirm.ShowAsync() != ContentDialogResult.Primary) return; } catch { return; }
+
+        ModelDeleteBtn.IsEnabled = false;
+        try { await _host.Client.RpcAsync("deleteModel", new { confirm = true }); } catch { }
+        await RefreshModelStatusAsync();
+    }
+
+    private async void OnModelDownloadChanged(string state, string message)
+    {
+        if (state == "done") { await RefreshModelStatusAsync(); return; }
+        DispatcherQueue.TryEnqueue(() => RenderModel(
+            state switch { "running" => "downloading", "error" => "error", _ => "absent" }));
+    }
+
+    // ---- runtime self-test hooks (render only; no RPC) ----
+    internal void RenderModelForTest(string state) => RenderModel(state);
+    internal bool ModelDownloadVisibleForTest => ModelDownloadBtn.Visibility == Visibility.Visible;
+    internal bool ModelDeleteVisibleForTest => ModelDeleteBtn.Visibility == Visibility.Visible;
+    internal bool ModelRingActiveForTest => ModelRing.IsActive;
 
     private async Task LoadAsync()
     {

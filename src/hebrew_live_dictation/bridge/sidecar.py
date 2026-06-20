@@ -299,6 +299,19 @@ class ModelDownloadManager:
             logger.error("model download event emit failed:\n%s", traceback.format_exc())
 
 
+def delete_model(config, name=None) -> dict:
+    """Remove a local model from disk (Engine-room model management). Returns
+    {deleted, name}. Safe-empty on failure; the caller guards with a confirm flag."""
+    try:
+        from .. import models
+        name = name or config.get("providers.whisper.model", models.DEFAULT_MODEL)
+        removed = models.delete_model(name, models.default_storage_dir(config))
+        return {"deleted": bool(removed), "name": name}
+    except Exception:
+        logger.error("delete_model failed:\n%s", traceback.format_exc())
+        return {"deleted": False, "name": name or ""}
+
+
 def compute_health(config) -> dict:
     """Home health strip: engine label, microphone availability, offline readiness.
 
@@ -688,6 +701,11 @@ def run(pipe_name: str | None = None) -> int:
         if method == "downloadModel":
             # Runs off this thread; progress arrives as {"kind":"modelDownload",...} events.
             return model_downloads.start(config, params.get("name"))
+        if method == "deleteModel":
+            # Destructive: require an explicit confirmation flag at the RPC boundary.
+            if not params.get("confirm"):
+                return {"deleted": False, "error": "confirmation required"}
+            return delete_model(config, params.get("name"))
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":

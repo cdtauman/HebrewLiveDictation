@@ -71,6 +71,24 @@
                 </Grid>
             </Border>
 
+            <!-- Offline model management. Offline dictation needs a local model; we report its
+                 real on-disk status and let the user download or remove it. Never claims ready
+                 unless the model is actually, completely present. -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="מודל לא־מקוון" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock x:Name="ModelStatusText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" Text="בודק מצב מודל…" />
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <Button x:Name="ModelDownloadBtn" Content="הורד מודל" Click="OnDownloadModel" />
+                        <Button x:Name="ModelDeleteBtn" Content="מחק מודל" Click="OnDeleteModel"
+                                Visibility="Collapsed" />
+                        <ProgressRing x:Name="ModelRing" IsActive="False" Visibility="Collapsed"
+                                      Width="20" Height="20" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
         </StackPanel>
     </ScrollViewer>
 </Page>

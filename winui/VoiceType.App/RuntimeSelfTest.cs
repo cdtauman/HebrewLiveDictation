@@ -306,6 +306,22 @@ internal static class RuntimeSelfTest
             }
             catch (Exception ex) { Check("onboarding.offline_readiness", false, ex.Message); }
 
+            // 6i) Engine-room offline model management: download offered when absent, delete
+            //     offered when present, ring while downloading (render only — no RPC/download).
+            try
+            {
+                var ep = new Views.EnginePage();
+                ep.RenderModelForTest("absent");
+                bool absentOk = ep.ModelDownloadVisibleForTest && !ep.ModelDeleteVisibleForTest;
+                ep.RenderModelForTest("ready");
+                bool readyOk = !ep.ModelDownloadVisibleForTest && ep.ModelDeleteVisibleForTest;
+                ep.RenderModelForTest("downloading");
+                bool dlOk = ep.ModelRingActiveForTest && !ep.ModelDownloadVisibleForTest;
+                Check("engine.model_management", absentOk && readyOk && dlOk,
+                      "download when absent, delete when present, ring while downloading");
+            }
+            catch (Exception ex) { Check("engine.model_management", false, ex.Message); }
+
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).
             try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }

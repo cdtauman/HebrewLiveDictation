@@ -181,6 +181,16 @@ class ModelDownloadTests(unittest.TestCase):
         self.assertIn("network down", events[-1]["message"])
         self.assertIsNone(mgr.active)   # cleared even on failure
 
+    def test_delete_model_passthrough_and_safe(self):
+        with mock.patch("hebrew_live_dictation.models.delete_model", return_value=True):
+            self.assertEqual(sidecar.delete_model(_FakeConfig({"providers.whisper.model": "small"})),
+                             {"deleted": True, "name": "small"})
+        with mock.patch("hebrew_live_dictation.models.delete_model", return_value=False):
+            self.assertEqual(sidecar.delete_model(_FakeConfig({}), name="base"),
+                             {"deleted": False, "name": "base"})
+        with mock.patch("hebrew_live_dictation.models.delete_model", side_effect=RuntimeError("x")):
+            self.assertFalse(sidecar.delete_model(_FakeConfig({"providers.whisper.model": "small"}))["deleted"])
+
     def test_second_download_while_busy_is_refused_not_queued(self):
         import threading
         release = threading.Event()

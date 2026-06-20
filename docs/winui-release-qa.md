@@ -18,7 +18,7 @@ Both must be green before any release build.
 $env:PYTHONPATH="src"; python -m unittest discover -s tests -t . -p "test_*.py"
 ```
 
-Currently **255 tests** across 31 files. Beyond the engine coverage listed in
+Currently **256 tests** across 31 files. Beyond the engine coverage listed in
 [qa.md](qa.md), the WinUI seam adds:
 
 - `test_bridge_server.py`, `test_sidecar_lifecycle.py`, `test_sidecar_callbacks.py`,
@@ -33,7 +33,7 @@ The adapter rule holds: no engine module is modified; the sidecar only wraps the
 VoiceType.exe --selftest    # writes winui/winui_runtime_report.txt ; "result: N/N passed"
 ```
 
-Currently **36 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
+Currently **37 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
 risk register:
 
 | Self-test checks | §13 risk verified |
@@ -48,6 +48,7 @@ risk register:
 | `hud.starts_hidden/surface.states/words.preserved` | overlay lifecycle + state morphing |
 | `hud.target.reassurance/safe_state/changed`, `hud.fallback.notice` | §10 state model surfaced honestly from real engine signals |
 | `onboarding.navigation/engine_map/flag_after_baseline` | §6 first-run wizard: nav, offline-safe engine map, flag ordering |
+| `bridge.getModelStatus`, `onboarding.offline_readiness`, `engine.model_management` | honest offline-model readiness + download/delete management |
 
 ## Manual QA (cannot be automated)
 

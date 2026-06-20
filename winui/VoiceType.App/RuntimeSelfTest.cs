@@ -185,6 +185,7 @@ internal static class RuntimeSelfTest
             string targetSafeState = "";
             bool fallbackShown = false;
             bool fallbackClearedOnStop = true;
+            bool targetChangedOk = false;
             try
             {
                 foreach (var hs in new[] { "connecting", "idle", "listening", "stopping", "error", "disconnected" })
@@ -196,6 +197,11 @@ internal static class RuntimeSelfTest
                 hudSurface.SetTarget("");                // unknown/unsafe target -> non-claiming state, not a wrong claim
                 targetSafeState = hudSurface.CurrentTargetForTest;
                 hudSurface.SetTarget("Word");            // back to a known target
+                hudSurface.SetTargetChanged(true);       // window detached -> amber "target changed"
+                bool targetChangedShown = hudSurface.TargetChangedForTest;
+                hudSurface.SetTargetChanged(false);      // transient: next normal status clears it
+                bool targetChangedCleared = !hudSurface.TargetChangedForTest && hudSurface.CurrentTargetForTest == "יעד: Word";
+                targetChangedOk = targetChangedShown && targetChangedCleared;
                 hudSurface.SetFallback(true);            // cloud dropped -> offline backup notice
                 hudSurface.SetState("listening");        // repeated status refresh must NOT wipe them
                 fallbackShown = hudSurface.FallbackVisibleForTest;   // latched + still shown
@@ -222,6 +228,8 @@ internal static class RuntimeSelfTest
                   $"shows target while listening, cleared on stop (got '{targetWhileListening}')");
             Check("hud.target.safe_state", targetSafeState == "יעד לא זוהה",
                   $"unknown/unsafe target shows a non-claiming state, never a destination claim (got '{targetSafeState}')");
+            Check("hud.target.changed", targetChangedOk,
+                  "target-changed shows amber warning, reverts to the target on the next status");
             Check("hud.fallback.notice", fallbackShown && fallbackClearedOnStop,
                   "offline-backup notice latches while listening, cleared on stop");
             hudSurface.Window.Close();

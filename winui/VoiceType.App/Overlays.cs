@@ -118,6 +118,8 @@ public sealed class HudWindow
     private Storyboard? _pulse;
     private string _state = "idle";
     private bool _fallbackActive;
+    private string _targetApp = "";
+    private bool _targetChanged;
 
     public HudWindow()
     {
@@ -195,10 +197,11 @@ public sealed class HudWindow
         _status.Foreground = dot;
         _status.Text = label;
 
-        // The target reassurance and fallback notice only make sense while listening;
-        // clear both otherwise. While listening they're driven by the status event.
+        // The target line and fallback notice only make sense while listening; clear both
+        // otherwise. While listening they're driven by the status event.
         if (_state != "listening")
         {
+            _targetApp = ""; _targetChanged = false;
             _target.Text = ""; _target.Visibility = Visibility.Collapsed;
             _fallbackActive = false; _fallback.Visibility = Visibility.Collapsed;
         }
@@ -233,12 +236,30 @@ public sealed class HudWindow
         else StopPulse();
     }
 
-    /// <summary>Show where text will land while listening — the focus-safety promise made
+    /// <summary>Record where text will land while listening — the focus-safety promise made
     /// visible. The engine sends the app name only when it matches the injector's real,
     /// safe target; when that's unknown/unsafe/self/blocked it sends "", and we show the
-    /// non-claiming "יעד לא זוהה" — never implying a destination we haven't verified.
-    /// Hidden when not listening.</summary>
+    /// non-claiming "יעד לא זוהה" — never implying a destination we haven't verified.</summary>
     public void SetTarget(string app)
+    {
+        _targetApp = app ?? "";
+        RenderTarget();
+    }
+
+    /// <summary>Mark that the injector found the target window changed/detached mid-session
+    /// and the text was kept in preview, not written (§10 "Target changed"). The target line
+    /// turns amber and says so — calm, recovery-oriented. Transient: cleared by the engine on
+    /// the next normal status and on stop.</summary>
+    public void SetTargetChanged(bool changed)
+    {
+        _targetChanged = changed;
+        RenderTarget();
+    }
+
+    /// <summary>Render the single target line from the current state: hidden when not
+    /// listening; an amber "target changed — not written" warning when the target detached;
+    /// otherwise the muted destination (verified app name or the non-claiming fallback).</summary>
+    private void RenderTarget()
     {
         if (_state != "listening")
         {
@@ -246,7 +267,16 @@ public sealed class HudWindow
             _target.Visibility = Visibility.Collapsed;
             return;
         }
-        _target.Text = string.IsNullOrWhiteSpace(app) ? "יעד לא זוהה" : "יעד: " + app;
+        if (_targetChanged)
+        {
+            _target.Text = "יעד הכתיבה השתנה — לא נכתב";
+            _target.Foreground = Palette.Attention(true);
+        }
+        else
+        {
+            _target.Text = string.IsNullOrWhiteSpace(_targetApp) ? "יעד לא זוהה" : "יעד: " + _targetApp;
+            _target.Foreground = Overlays.Muted;
+        }
         _target.Visibility = Visibility.Visible;
     }
 
@@ -262,6 +292,9 @@ public sealed class HudWindow
 
     /// <summary>Current target line — for the runtime self-test.</summary>
     internal string CurrentTargetForTest => _target.Text;
+
+    /// <summary>Whether the target line is currently showing the "target changed" warning.</summary>
+    internal bool TargetChangedForTest => _targetChanged && _target.Visibility == Visibility.Visible;
 
     /// <summary>Whether the fallback notice is currently shown — for the runtime self-test.</summary>
     internal bool FallbackVisibleForTest => _fallback.Visibility == Visibility.Visible;

@@ -44,7 +44,7 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
     # reused for every later listening-status refresh, so the displayed target can never
     # change mid-session. `fallback` latches when the engine reports the cloud provider
     # dropped to local mid-session (auto_fallback). Both reset the moment listening ends.
-    session = {"listening": False, "target": "", "fallback": False}
+    session = {"listening": False, "target": "", "fallback": False, "target_changed": False}
 
     def send(event):
         server = server_ref()
@@ -58,7 +58,9 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
         hotkeys.set_listening_state(state == "listening")
 
         # Capture the injection target exactly once, on the transition into listening.
-        # Latch the offline-fallback notice if the engine reports it mid-session.
+        # Latch the offline-fallback notice if the engine reports it mid-session. The
+        # target-changed notice is transient: set on the detached-preview status and
+        # cleared by the next normal status.
         if state == "listening":
             if not session["listening"]:
                 session["listening"] = True
@@ -66,10 +68,12 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
                 session["fallback"] = False
             if is_fallback_status(message):
                 session["fallback"] = True
+            session["target_changed"] = is_target_changed_status(message)
         else:
             session["listening"] = False
             session["target"] = ""
             session["fallback"] = False
+            session["target_changed"] = False
         # Session ended: append the accumulated finals to history. The legacy app
         # did this in qt_app (_flush_session_history); the sidecar must replicate it
         # or completed WinUI sessions never reach history / Home recent activity.
@@ -88,6 +92,8 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
             event["target"] = session["target"]
             if session["fallback"]:
                 event["fallback"] = True
+            if session["target_changed"]:
+                event["targetChanged"] = True
         send(event)
 
     def on_text(text, final, output_mode):
@@ -149,6 +155,21 @@ def is_fallback_status(message) -> bool:
         return False
     text = str(message).lower()
     return any(marker in text for marker in _FALLBACK_STATUS_MARKERS)
+
+
+# Markers for the engine's "target changed" notice. The controller emits a status with
+# tr(..., "target_detached_preview") when the injector finds the captured window gone and
+# keeps the text in preview instead of writing it. The message is localized (he/en), so we
+# match a stable substring of each known translation (i18n.py).
+_TARGET_CHANGED_MARKERS = ("target changed", "יעד הכתיבה השתנה")
+
+
+def is_target_changed_status(message) -> bool:
+    """True when a listening status message is the engine's target-detached notice."""
+    if not message:
+        return False
+    text = str(message).lower()
+    return any(marker.lower() in text for marker in _TARGET_CHANGED_MARKERS)
 
 
 def injection_target_label() -> str:

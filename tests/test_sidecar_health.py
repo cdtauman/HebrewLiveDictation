@@ -297,6 +297,28 @@ class HudTargetTests(unittest.TestCase):
         self.assertFalse(sidecar.is_fallback_status(""))
         self.assertFalse(sidecar.is_fallback_status(None))
 
+    def test_target_changed_is_transient_set_on_detach_cleared_next_status(self):
+        # The detached-preview status sets targetChanged for THAT event only; the next
+        # normal status clears it (the target may have been re-pointed). Not sticky.
+        server = _RecordingServer()
+        on_status = self._status_cb(server)
+        with mock.patch.object(sidecar, "injection_target_label", lambda: "Word"):
+            on_status("listening", "recording", "external")                          # normal
+            on_status("listening", "יעד הכתיבה השתנה. הטקסט נשמר בתצוגה ולא נכתב לחלון.", "external")  # detached
+            on_status("listening", "recording", "external")                          # recovered
+            on_status("idle", "", "external")
+        self.assertNotIn("targetChanged", server.events[0])
+        self.assertTrue(server.events[1].get("targetChanged"))
+        self.assertNotIn("targetChanged", server.events[2])   # transient: cleared next status
+        self.assertNotIn("targetChanged", server.events[3])   # not listening
+
+    def test_is_target_changed_status_matches_both_locales(self):
+        self.assertTrue(sidecar.is_target_changed_status("Target changed. Text is kept in preview and was not written."))
+        self.assertTrue(sidecar.is_target_changed_status("יעד הכתיבה השתנה. הטקסט נשמר בתצוגה ולא נכתב לחלון."))
+        self.assertFalse(sidecar.is_target_changed_status("recording"))
+        self.assertFalse(sidecar.is_target_changed_status(""))
+        self.assertFalse(sidecar.is_target_changed_status(None))
+
     @unittest.skipUnless(sys.platform == "win32", "Win32 target selection")
     def test_injection_target_label_uses_injector_selection_and_safety_gate(self):
         class _T:

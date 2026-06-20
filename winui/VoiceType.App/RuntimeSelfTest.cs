@@ -180,14 +180,21 @@ internal static class RuntimeSelfTest
             bool hiddenAtStart = !hudSurface.Window.AppWindow.IsVisible;   // constructed hidden (no startup flash)
             bool hudStates = true;
             string wordsAfterRefresh = "";
+            string targetWhileListening = "";
+            string targetAfterStop = "x";
             try
             {
                 foreach (var hs in new[] { "connecting", "idle", "listening", "stopping", "error", "disconnected" })
                     hudSurface.SetState(hs, hs == "error" ? "בדיקה" : "");
                 hudSurface.SetState("listening");        // fresh session
                 hudSurface.SetWords("שלום עולם");        // live words stream in
+                hudSurface.SetTarget("Word");            // "→ {app}" reassurance
+                targetWhileListening = hudSurface.CurrentTargetForTest;
                 hudSurface.SetState("listening");        // repeated status refresh must NOT wipe them
                 wordsAfterRefresh = hudSurface.CurrentWordsForTest;
+                hudSurface.SetState("idle");             // leaving listening clears the target
+                targetAfterStop = hudSurface.CurrentTargetForTest;
+                hudSurface.SetState("listening");        // restore for the no-steal/visibility checks below
             }
             catch { hudStates = false; }
 
@@ -202,6 +209,8 @@ internal static class RuntimeSelfTest
             Check("hud.surface.states", hudStates, "SetState morphs through all states + words");
             Check("hud.words.preserved", wordsAfterRefresh == "שלום עולם",
                   $"live words survive a repeated 'listening' refresh (got '{wordsAfterRefresh}')");
+            Check("hud.target.reassurance", targetWhileListening == "יעד: Word" && targetAfterStop == "",
+                  $"shows target while listening, cleared on stop (got '{targetWhileListening}')");
             hudSurface.Window.Close();
 
             // 6d) Production tray path: a top-level (broadcast-capable) window + health orb

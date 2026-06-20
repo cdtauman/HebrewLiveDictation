@@ -113,6 +113,7 @@ public sealed class HudWindow
     private readonly Ellipse _dot;
     private readonly TextBlock _status;
     private readonly TextBlock _words;
+    private readonly TextBlock _target;
     private Storyboard? _pulse;
     private string _state = "idle";
 
@@ -142,9 +143,19 @@ public sealed class HudWindow
             Foreground = Overlays.Light, HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
         };
+        // Target reassurance ("→ {app}") — where the text will land. Hidden until listening
+        // with a known target, so the user sees we will type into the right window.
+        _target = new TextBlock
+        {
+            Text = "", FontSize = 12, Foreground = Overlays.Muted,
+            HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center,
+            Visibility = Visibility.Collapsed,
+        };
+
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(head);
         panel.Children.Add(_words);
+        panel.Children.Add(_target);
 
         var border = new Border
         {
@@ -171,6 +182,10 @@ public sealed class HudWindow
         _dot.Fill = dot;
         _status.Foreground = dot;
         _status.Text = label;
+
+        // The target reassurance only makes sense while listening; clear it otherwise.
+        // While listening it's populated by SetTarget from the status event.
+        if (_state != "listening") { _target.Text = ""; _target.Visibility = Visibility.Collapsed; }
 
         switch (_state)
         {
@@ -201,6 +216,25 @@ public sealed class HudWindow
         if (pulse) StartPulse();
         else StopPulse();
     }
+
+    /// <summary>Show where text will land ("יעד: {app}") while listening — the focus-safety
+    /// promise made visible. Hidden when not listening or the target is unknown/suppressed.</summary>
+    public void SetTarget(string app)
+    {
+        if (_state == "listening" && !string.IsNullOrWhiteSpace(app))
+        {
+            _target.Text = "יעד: " + app;
+            _target.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            _target.Text = "";
+            _target.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>Current target line — for the runtime self-test.</summary>
+    internal string CurrentTargetForTest => _target.Text;
 
     /// <summary>Live words while listening (ignored in non-speaking states).</summary>
     public void SetWords(string w)

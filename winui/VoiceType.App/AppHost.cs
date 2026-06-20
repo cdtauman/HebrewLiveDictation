@@ -230,9 +230,11 @@ public sealed class AppHost
                 case "status":
                     string state = e.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "";
                     string msg = e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+                    string target = e.TryGetProperty("target", out var tg) ? tg.GetString() ?? "" : "";
                     CurrentState = string.IsNullOrEmpty(state) ? CurrentState : state;
                     CurrentMessage = msg;
                     ApplyEngineState(CurrentState, CurrentMessage);
+                    _hud?.SetTarget(target);   // "→ {app}" reassurance while listening
                     _main?.Log($"status: {state} {msg}");
                     StatusChanged?.Invoke(CurrentState, CurrentMessage);
                     break;

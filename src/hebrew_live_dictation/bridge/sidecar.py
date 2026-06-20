@@ -51,6 +51,7 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
         # the legacy Qt app did (qt_app.py: set_listening_state on every status).
         # Without this, F8 toggle starts but never stops.
         hotkeys.set_listening_state(state == "listening")
+        target = foreground_app_name() if state == "listening" else ""
         # Session ended: append the accumulated finals to history. The legacy app
         # did this in qt_app (_flush_session_history); the sidecar must replicate it
         # or completed WinUI sessions never reach history / Home recent activity.
@@ -62,7 +63,10 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
                     on_session_end(transcript)
                 except Exception:
                     logger.error("session history append failed:\n%s", traceback.format_exc())
-        send({"kind": "status", "state": state, "message": message, "outputMode": output_mode})
+        event = {"kind": "status", "state": state, "message": message, "outputMode": output_mode}
+        if target:
+            event["target"] = target   # where text will land — the HUD's "→ {app}" reassurance
+        send(event)
 
     def on_text(text, final, output_mode):
         if final and text and text.strip():
@@ -76,6 +80,76 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
         send({"kind": "command", "action": action})
 
     return on_status, on_text, on_error, on_command
+
+
+# Friendly labels for the HUD's "→ {app}" target reassurance. The map covers the apps
+# Hebrew professionals dictate into most; anything else falls back to the executable's
+# base name. Our own shell is suppressed so a console-triggered start doesn't read
+# "→ VoiceType".
+_APP_NAMES = {
+    "winword.exe": "Word", "excel.exe": "Excel", "powerpnt.exe": "PowerPoint",
+    "outlook.exe": "Outlook", "onenote.exe": "OneNote", "notepad.exe": "Notepad",
+    "wordpad.exe": "WordPad", "chrome.exe": "Chrome", "msedge.exe": "Edge",
+    "firefox.exe": "Firefox", "whatsapp.exe": "WhatsApp", "telegram.exe": "Telegram",
+    "slack.exe": "Slack", "teams.exe": "Teams", "code.exe": "VS Code",
+    "explorer.exe": "Explorer", "acrobat.exe": "Acrobat",
+}
+_SELF_APPS = {"voicetype.exe"}
+
+
+def friendly_app_name(proc: str) -> str:
+    """Map a foreground process executable name to a friendly app label for the HUD.
+    Returns "" for our own shell (suppressed) or an unusable name; otherwise falls back
+    to the base name without its .exe extension."""
+    if not proc:
+        return ""
+    key = proc.strip().lower()
+    if not key or key in _SELF_APPS:
+        return ""
+    if key in _APP_NAMES:
+        return _APP_NAMES[key]
+    base = key[:-4] if key.endswith(".exe") else key
+    return base[:1].upper() + base[1:] if base else ""
+
+
+def _foreground_process_name() -> str:
+    """Executable name of the current foreground window's process (Windows only). Our
+    overlays are no-activate, so at listening-start the foreground window is the user's
+    actual target app."""
+    if sys.platform != "win32":
+        return ""
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return ""
+        pid = ctypes.c_ulong(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if not pid.value:
+            return ""
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        if not handle:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(260)
+            size = ctypes.c_ulong(260)
+            if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                return os.path.basename(buf.value)
+            return ""
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return ""
+
+
+def foreground_app_name() -> str:
+    """Friendly label for the current foreground app, or "" when unknown/suppressed."""
+    try:
+        return friendly_app_name(_foreground_process_name())
+    except Exception:
+        return ""
 
 
 _MODEL_PRETTY = {

@@ -9,6 +9,7 @@ from hebrew_live_dictation.bridge.sidecar import (
     command_reference,
     compute_health,
     engine_label,
+    friendly_app_name,
     full_history,
     list_microphones,
     recent_history,
@@ -203,6 +204,13 @@ class HealthTests(unittest.TestCase):
         with mock.patch("hebrew_live_dictation.audio_stream.AudioStream.list_devices", return_value=[]):
             list_microphones(cfg)
         self.assertEqual(cfg.get("audio.microphone_device"), 5)
+
+    def test_friendly_app_name_maps_known_and_falls_back(self):
+        self.assertEqual(friendly_app_name("WINWORD.EXE"), "Word")    # case-insensitive map
+        self.assertEqual(friendly_app_name("chrome.exe"), "Chrome")
+        self.assertEqual(friendly_app_name("MyEditor.exe"), "Myeditor")  # fallback: strip .exe, cap
+        self.assertEqual(friendly_app_name(""), "")
+        self.assertEqual(friendly_app_name("VoiceType.exe"), "")     # our own shell suppressed
 
 
 if __name__ == "__main__":

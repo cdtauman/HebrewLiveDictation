@@ -256,6 +256,25 @@ internal static class RuntimeSelfTest
             }
             catch (Exception ex) { Check("onboarding.navigation", false, ex.Message); }
 
+            // 6f) Engine mapping (pure, no writes): Offline must be truly local, and
+            //     Recommended must keep the offline backup — never plain cloud (api) without
+            //     credentials. This is the single source of truth ApplyEngine uses.
+            try
+            {
+                var off = new Dictionary<string, object>();
+                foreach (var (k, v) in OnboardingWindow.EngineConfig("offline")) off[k] = v;
+                var rec = new Dictionary<string, object>();
+                foreach (var (k, v) in OnboardingWindow.EngineConfig("recommended")) rec[k] = v;
+
+                bool offlineSafe = off.TryGetValue("stt.mode", out var om) && (string)om == "local"
+                                   && off.TryGetValue("stt.provider", out var op) && (string)op == "whisper_local";
+                bool recommendedSafe = rec.TryGetValue("stt.mode", out var rm) && (string)rm == "auto_fallback"
+                                       && rec.TryGetValue("providers.whisper.enabled", out var rw) && (bool)rw;
+                Check("onboarding.engine_map", offlineSafe && recommendedSafe,
+                      "Offline=local; Recommended keeps offline backup (never cloud without a key)");
+            }
+            catch (Exception ex) { Check("onboarding.engine_map", false, ex.Message); }
+
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).
             try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }

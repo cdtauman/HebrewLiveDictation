@@ -77,9 +77,9 @@
                             <RadioButton x:Name="OptRecommended" GroupName="Engine" Tag="recommended"
                                          Checked="OnEngineChoice">
                                 <StackPanel Spacing="2">
-                                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="מומלץ — Google Chirp 3" />
+                                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="מומלץ — Google Chirp 3 (להגדרה בהמשך)" />
                                     <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
-                                               Text="עברית מצוינת. צריך מפתח Google — נגדיר אותו בהמשך בחדר ‘מנוע’. עד אז ההכתבה תעבוד לא־מקוון." />
+                                               Text="עברית מצוינת, אך צריך מפתח Google. עד שתגדירו אותו בחדר ‘מנוע’, ההכתבה תעבוד לא־מקוון (Whisper) — לא נטען ש‑Google פעיל לפני שהוגדר." />
                                 </StackPanel>
                             </RadioButton>
                         </StackPanel>
@@ -96,6 +96,8 @@
                             <RadioButton x:Name="ModePtt" GroupName="Mode" Tag="push_to_talk" Checked="OnModeChanged"
                                          Content="החזקה מקליטה, שחרור עוצר (Push-to-talk)" />
                             <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
+                                       Text="שינוי אופן ההפעלה ייכנס לתוקף בהפעלה הבאה של התוכנה." />
+                            <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
                                        Text="החיווי הקולי יופיע מעל החלון הפעיל ברגע שתתחילו להכתיב." />
                         </StackPanel>
                     </Border>
@@ -105,9 +107,9 @@
                 <StackPanel x:Name="Step4" Spacing="16" Visibility="Collapsed">
                     <Border Style="{StaticResource CardStyle}">
                         <StackPanel Spacing="10">
-                            <TextBlock Style="{StaticResource DisplayTextStyle}" Text="הכול מוכן" />
+                            <TextBlock Style="{StaticResource DisplayTextStyle}" Text="כמעט מוכן" />
                             <TextBlock Style="{StaticResource PageSubtitleStyle}" TextWrapping="Wrap"
-                                       Text="לחצו F8 בכל מקום כדי להכתיב — Word, דפדפן, וואטסאפ. אפשר לשנות הכול בחדרים שבתפריט." />
+                                       Text="לחצו ‘סיום’ — ואז אפשר להכתיב בכל מקום עם F8 (Word, דפדפן, וואטסאפ). אפשר לשנות הכול בחדרים שבתפריט." />
                         </StackPanel>
                     </Border>
                 </StackPanel>

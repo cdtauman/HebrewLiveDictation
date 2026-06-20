@@ -96,8 +96,8 @@ public sealed partial class OnboardingWindow : Window
             SelectMic(mic);
 
             // First run defaults to the offline-first path (works with no setup), so a user
-            // who skips lands on a working product. Picking Recommended upgrades to Google
-            // while keeping the offline backup, so they are never broken either way.
+            // who skips lands on a working product. Both engine choices run offline now;
+            // Google is configured later in the Engine room, never claimed working here.
             OptOffline.IsChecked = true;
 
             if (hkMode == "push_to_talk") ModePtt.IsChecked = true; else ModeToggle.IsChecked = true;
@@ -341,10 +341,19 @@ public sealed partial class OnboardingWindow : Window
     {
         _busy = busy;
         bool on = !busy;
+        // Navigation.
         BackButton.IsEnabled = on;
         NextButton.IsEnabled = on;
         FinishButton.IsEnabled = on;
         SkipButton.IsEnabled = on;
+        // Step inputs too, so a visible selection can't change on top of an in-flight save
+        // (and so the shown value never diverges from what is actually being persisted).
+        LanguageCombo.IsEnabled = on;
+        MicCombo.IsEnabled = on;
+        OptOffline.IsEnabled = on;
+        OptRecommended.IsEnabled = on;
+        ModeToggle.IsEnabled = on;
+        ModePtt.IsEnabled = on;
     }
 
     private async Task ShowError()

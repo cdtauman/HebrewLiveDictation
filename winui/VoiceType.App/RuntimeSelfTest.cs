@@ -256,9 +256,10 @@ internal static class RuntimeSelfTest
             }
             catch (Exception ex) { Check("onboarding.navigation", false, ex.Message); }
 
-            // 6f) Engine mapping (pure, no writes): Offline must be truly local, and
-            //     Recommended must keep the offline backup — never plain cloud (api) without
-            //     credentials. This is the single source of truth ApplyEngine uses.
+            // 6f) Engine mapping (pure, no writes): BOTH choices must run truly offline
+            //     (whisper_local/local) — Recommended must NOT persist api/auto_fallback
+            //     before credentials, since the cloud provider throws at startup. This is the
+            //     single source of truth ApplyEngine uses.
             try
             {
                 var off = new Dictionary<string, object>();
@@ -266,14 +267,20 @@ internal static class RuntimeSelfTest
                 var rec = new Dictionary<string, object>();
                 foreach (var (k, v) in OnboardingWindow.EngineConfig("recommended")) rec[k] = v;
 
-                bool offlineSafe = off.TryGetValue("stt.mode", out var om) && (string)om == "local"
-                                   && off.TryGetValue("stt.provider", out var op) && (string)op == "whisper_local";
-                bool recommendedSafe = rec.TryGetValue("stt.mode", out var rm) && (string)rm == "auto_fallback"
-                                       && rec.TryGetValue("providers.whisper.enabled", out var rw) && (bool)rw;
-                Check("onboarding.engine_map", offlineSafe && recommendedSafe,
-                      "Offline=local; Recommended keeps offline backup (never cloud without a key)");
+                bool Local(Dictionary<string, object> m) =>
+                    m.TryGetValue("stt.mode", out var mode) && (string)mode == "local"
+                    && m.TryGetValue("stt.provider", out var prov) && (string)prov == "whisper_local";
+                bool recNotCloud = rec.TryGetValue("stt.mode", out var rm) && (string)rm != "api" && (string)rm != "auto_fallback";
+                Check("onboarding.engine_map", Local(off) && Local(rec) && recNotCloud,
+                      "Offline and Recommended both run local; Recommended never cloud without a key");
             }
             catch (Exception ex) { Check("onboarding.engine_map", false, ex.Message); }
+
+            // 6g) Completion ordering invariant: the first-run flag may be written ONLY after
+            //     the safe baseline persisted (regression guard for the ordering bug).
+            Check("onboarding.flag_after_baseline",
+                  !OnboardingWindow.MayMarkComplete(false) && OnboardingWindow.MayMarkComplete(true),
+                  "first_run_completed gated on a successful offline baseline");
 
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).

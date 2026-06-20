@@ -28,6 +28,7 @@ public sealed partial class OnboardingWindow : Window
     private bool _engineApplied;   // did the user explicitly choose an engine?
     private bool _completing;      // re-entrancy guard for finish/skip/close
     private bool _done;            // completion succeeded -> a real close is allowed
+    private bool _busy;            // a save is in flight (single-writer guard)
     private int _step;
 
     private FrameworkElement[] _steps = Array.Empty<FrameworkElement>();
@@ -129,32 +130,35 @@ public sealed partial class OnboardingWindow : Window
     /// <summary>The X button funnels through the same completion as Skip, so closing can
     /// never leave a half-set state: we cancel the raw close, ensure a working offline
     /// baseline + the first-run flag persist, and only then close for real. If persistence
-    /// fails the window stays open (not marked complete) and the user is told.</summary>
+    /// fails — or a per-control save is still in flight — the window stays open (not marked
+    /// complete) and the user can retry.</summary>
     private async void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (_done) return;            // a real close after successful completion
         args.Cancel = true;
+        if (_busy || _completing) return;   // a save is in flight; don't race a second writer
         await CompleteAsync();
     }
 
     /// <summary>Finish / skip / close: guarantee a working engine (offline baseline if the
-    /// user never chose one), then mark first-run complete. Only closes if BOTH persist;
-    /// otherwise it reports the failure, resyncs from disk, and stays open so onboarding is
-    /// never falsely marked done.</summary>
+    /// user never chose one) and ONLY THEN mark first-run complete. The flag is written
+    /// strictly after the baseline persists — if the baseline (or the flag) fails to save we
+    /// report it, resync from disk, and stay open, so onboarding is never falsely marked done
+    /// and the user is never left on a non-working engine.</summary>
     private async Task CompleteAsync()
     {
-        if (_completing) return;
+        if (_completing || _busy) return;
         _completing = true;
         SetBusy(true);
         try
         {
-            bool ok = _engineApplied || await ApplyOffline();
-            ok = await Save("app.first_run_completed", true) && ok;
-            if (!ok)
-            {
-                await ResyncAsync();
-                return;               // stays open, NOT marked complete
-            }
+            // 1) Safe baseline first. MayMarkComplete encodes the ordering invariant.
+            bool baselineOk = _engineApplied || await ApplyOffline();
+            if (!MayMarkComplete(baselineOk)) { await ResyncAsync(); return; }
+
+            // 2) Only now the first-run flag.
+            if (!await Save("app.first_run_completed", true)) { await ResyncAsync(); return; }
+
             _done = true;
             try { this.Close(); } catch { }
         }
@@ -165,6 +169,10 @@ public sealed partial class OnboardingWindow : Window
         }
     }
 
+    /// <summary>The first-run flag may be written ONLY after the safe baseline persisted.
+    /// Pure + exposed so the self-test can pin the ordering against regressions.</summary>
+    internal static bool MayMarkComplete(bool baselineSaved) => baselineSaved;
+
     private async void OnLanguageChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading) return;
@@ -172,10 +180,12 @@ public sealed partial class OnboardingWindow : Window
         {
             string lang = (LanguageCombo.SelectedItem as FrameworkElement)?.Tag as string ?? "iw-IL";
             (string pack, string name) = LangPack.TryGetValue(lang, out var p) ? p : ("he", "עברית");
-            bool ok = await Save("languages.primary", lang);
-            ok = await Save("languages.command_pack", pack) && ok;   // pack follows language
-            if (ok) PackLabel.Text = "פקודות קוליות: " + name;
-            return ok;
+            // Stop on the first failure so we don't push a second key on top of an already
+            // failed write; Guarded() then resyncs the UI from the actually-saved config.
+            if (!await Save("languages.primary", lang)) return false;
+            if (!await Save("languages.command_pack", pack)) return false;   // pack follows language
+            PackLabel.Text = "פקודות קוליות: " + name;
+            return true;
         });
     }
 
@@ -207,13 +217,13 @@ public sealed partial class OnboardingWindow : Window
     private Task<bool> ApplyRecommended() => ApplyEngine("recommended");
     private Task<bool> ApplyOffline() => ApplyEngine("offline");
 
-    /// <summary>Apply an engine choice from the single-source-of-truth map (EngineConfig).</summary>
+    /// <summary>Apply an engine choice from the single-source-of-truth map (EngineConfig),
+    /// stopping on the first failed write to minimize partial state.</summary>
     private async Task<bool> ApplyEngine(string tag)
     {
-        bool ok = true;
         foreach (var (key, value) in EngineConfig(tag))
-            ok = await Save(key, value) && ok;
-        return ok;
+            if (!await Save(key, value)) return false;
+        return true;
     }
 
     private async void OnModeChanged(object sender, RoutedEventArgs e)
@@ -306,11 +316,12 @@ public sealed partial class OnboardingWindow : Window
         return ok;
     }
 
-    /// <summary>Run a control's persistence with the wizard buttons disabled (no advancing
-    /// mid-write); on failure, resync every control from the actually-saved config so the UI
-    /// never shows a value the engine rejected.</summary>
+    /// <summary>Run a control's persistence as the single writer (no overlapping saves, and
+    /// no advancing mid-write); on failure, resync every control from the actually-saved
+    /// config so the UI never shows a value the engine rejected.</summary>
     private async Task Guarded(Func<Task<bool>> action)
     {
+        if (_busy || _completing) return;
         SetBusy(true);
         try
         {
@@ -328,6 +339,7 @@ public sealed partial class OnboardingWindow : Window
     /// finish, or skip on top of a pending (or failed) save.</summary>
     private void SetBusy(bool busy)
     {
+        _busy = busy;
         bool on = !busy;
         BackButton.IsEnabled = on;
         NextButton.IsEnabled = on;
@@ -358,9 +370,14 @@ public sealed partial class OnboardingWindow : Window
 
     /// <summary>The plain-language -> config mapping for an engine choice — the single source
     /// of truth used by both ApplyEngine and the self-test, so the assertion can't drift from
-    /// behavior. Offline is truly local; Recommended keeps the offline backup (auto_fallback +
-    /// Whisper), never plain cloud (api) without credentials.</summary>
+    /// behavior.
+    ///
+    /// BOTH choices run truly offline (whisper_local / local) right now. Recommended does NOT
+    /// switch to Google here: without credentials the cloud provider throws at startup before
+    /// auto_fallback can engage, so claiming offline-via-fallback would be false. Recommended
+    /// only pre-seeds the Google model so that when the user adds a key in the Engine room the
+    /// upgrade is one step. We never persist api/auto_fallback without credentials.</summary>
     internal static (string key, object value)[] EngineConfig(string tag) => tag == "recommended"
-        ? new (string, object)[] { ("stt.provider", "google_v2"), ("google.model", "chirp_3"), ("providers.whisper.enabled", true), ("stt.mode", "auto_fallback") }
+        ? new (string, object)[] { ("stt.provider", "whisper_local"), ("providers.whisper.enabled", true), ("stt.mode", "local"), ("google.model", "chirp_3") }
         : new (string, object)[] { ("stt.provider", "whisper_local"), ("providers.whisper.enabled", true), ("stt.mode", "local") };
 }

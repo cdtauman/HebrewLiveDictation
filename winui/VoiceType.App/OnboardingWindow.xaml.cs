@@ -82,6 +82,7 @@ public sealed partial class OnboardingWindow : Window
         int? mic = await GetNullableInt("audio.microphone_device");
 
         var mics = await LoadMicrophonesAsync();
+        bool modelReady = await IsOfflineModelReadyAsync();
 
         DispatcherQueue.TryEnqueue(() =>
         {
@@ -101,6 +102,13 @@ public sealed partial class OnboardingWindow : Window
             OptOffline.IsChecked = true;
 
             if (hkMode == "push_to_talk") ModePtt.IsChecked = true; else ModeToggle.IsChecked = true;
+
+            // Never claim offline is ready unless the model is actually on disk. If it isn't,
+            // say plainly that the first offline use downloads it (or it can be fetched ahead
+            // of time from the Engine room) — no silent offline-first promise.
+            OfflineReadyNote.Text = modelReady
+                ? "מודל לא־מקוון מותקן ✓ — הכתבה לא־מקוונת מוכנה."
+                : "להכתבה לא־מקוונת יורד מודל בפעם הראשונה (פעם אחת, דרוש אינטרנט). אפשר להוריד אותו מראש בהמשך מחדר ‘מנוע’.";
             _loading = false;
         });
     }
@@ -270,6 +278,20 @@ public sealed partial class OnboardingWindow : Window
         }
         catch { }
         return list;
+    }
+
+    /// <summary>Whether the local Whisper model is actually present on disk (getModelStatus).
+    /// The single source of truth for the offline-readiness note — a config flag never proves
+    /// offline works. Unknown (bridge issue) reads as not-ready, so we never over-promise.</summary>
+    private async Task<bool> IsOfflineModelReadyAsync()
+    {
+        if (_host?.Client == null) return false;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getModelStatus");
+            return r.TryGetProperty("downloaded", out var d) && d.ValueKind == JsonValueKind.True;
+        }
+        catch { return false; }
     }
 
     private async Task<string> GetConfigString(string key, string fallback)

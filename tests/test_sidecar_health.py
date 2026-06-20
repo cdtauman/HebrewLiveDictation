@@ -70,28 +70,55 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(engine_label(_FakeConfig({"stt.provider": "groq"})), "Groq")
 
     def test_health_offline_ready(self):
-        # Ready requires BOTH fallback configured AND the local Whisper engine enabled.
-        self.assertTrue(compute_health(
-            _FakeConfig({"stt.mode": "auto_fallback", "providers.whisper.enabled": True}))["offline"]["ready"])
-        self.assertTrue(compute_health(
-            _FakeConfig({"stt.mode": "local", "providers.whisper.enabled": True}))["offline"]["ready"])
-        # auto_fallback WITHOUT Whisper = configured but NOT ready (the overclaim fix).
-        cfg = compute_health(_FakeConfig({"stt.mode": "auto_fallback"}))
-        self.assertFalse(cfg["offline"]["ready"])
-        self.assertTrue(cfg["offline"]["configured"])
-        # Whisper enabled but no fallback configured (mode=api) = not ready, not configured.
-        notcfg = compute_health(_FakeConfig({"providers.whisper.enabled": True}))
-        self.assertFalse(notcfg["offline"]["ready"])
-        self.assertFalse(notcfg["offline"]["configured"])
-        # Nothing set = not ready.
-        self.assertFalse(compute_health(_FakeConfig({}))["offline"]["ready"])
+        # Ready requires fallback configured AND Whisper enabled AND the model on disk.
+        with mock.patch.object(sidecar, "model_downloaded", return_value=True):
+            self.assertTrue(compute_health(
+                _FakeConfig({"stt.mode": "auto_fallback", "providers.whisper.enabled": True}))["offline"]["ready"])
+            self.assertTrue(compute_health(
+                _FakeConfig({"stt.mode": "local", "providers.whisper.enabled": True}))["offline"]["ready"])
+            # Configured + enabled but no fallback mode = not configured.
+            notcfg = compute_health(_FakeConfig({"providers.whisper.enabled": True}))
+            self.assertFalse(notcfg["offline"]["ready"])
+            self.assertFalse(notcfg["offline"]["configured"])
+        with mock.patch.object(sidecar, "model_downloaded", return_value=False):
+            # Configured + enabled but model NOT downloaded = configured but NOT ready.
+            cfg = compute_health(_FakeConfig({"stt.mode": "local", "providers.whisper.enabled": True}))
+            self.assertFalse(cfg["offline"]["ready"])
+            self.assertTrue(cfg["offline"]["configured"])
+            self.assertFalse(cfg["offline"]["model_ready"])
+            # auto_fallback WITHOUT Whisper = configured but NOT ready (the overclaim fix).
+            cfg2 = compute_health(_FakeConfig({"stt.mode": "auto_fallback"}))
+            self.assertFalse(cfg2["offline"]["ready"])
+            self.assertTrue(cfg2["offline"]["configured"])
+            # Nothing set = not ready.
+            self.assertFalse(compute_health(_FakeConfig({}))["offline"]["ready"])
 
     def test_health_shape(self):
-        h = compute_health(_FakeConfig({"stt.provider": "google_v2", "google.model": "chirp_2"}))
+        with mock.patch.object(sidecar, "model_downloaded", return_value=False):
+            h = compute_health(_FakeConfig({"stt.provider": "google_v2", "google.model": "chirp_2"}))
         self.assertEqual(h["engine"]["label"], "Google · Chirp 2")
         self.assertIn("ok", h["microphone"])
         self.assertIn("ready", h["offline"])
         self.assertIn("configured", h["offline"])
+        self.assertIn("model_ready", h["offline"])
+
+    def test_model_status_passthrough_and_safe(self):
+        fake = {"name": "small", "downloaded": True, "path": "/models"}
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value=fake):
+            self.assertEqual(sidecar.model_status(_FakeConfig({})), fake)
+        # Any failure degrades to a safe not-downloaded shape, never raises.
+        with mock.patch("hebrew_live_dictation.models.model_status", side_effect=RuntimeError("x")):
+            s = sidecar.model_status(_FakeConfig({}))
+            self.assertFalse(s["downloaded"])
+            self.assertEqual(set(s.keys()), {"name", "downloaded", "path"})
+
+    def test_model_downloaded_reflects_real_presence(self):
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": True}):
+            self.assertTrue(sidecar.model_downloaded(_FakeConfig({})))
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": False}):
+            self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))
+        with mock.patch("hebrew_live_dictation.models.model_status", side_effect=RuntimeError("x")):
+            self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))   # unknown -> not ready
 
     def test_recent_history_empty_and_safe(self):
         # Empty config dir -> no history file -> empty list, never raises.

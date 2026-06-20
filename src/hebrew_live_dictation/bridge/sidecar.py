@@ -215,13 +215,34 @@ def engine_label(config) -> str:
     return str(provider)
 
 
+def model_downloaded(config) -> bool:
+    """Whether the configured local Whisper model is actually present on disk. The single
+    source of truth for offline readiness — a flag/config alone never proves offline works."""
+    try:
+        from .. import models
+        return bool(models.model_status(config).get("downloaded"))
+    except Exception:
+        return False
+
+
+def model_status(config) -> dict:
+    """Local-model state for the UI (Onboarding/Engine): {name, downloaded, path}. Read-only;
+    no heavy import (presence is an on-disk check), so safe to call on any status query."""
+    try:
+        from .. import models
+        return models.model_status(config)
+    except Exception:
+        logger.error("model_status failed:\n%s", traceback.format_exc())
+        return {"name": "", "downloaded": False, "path": ""}
+
+
 def compute_health(config) -> dict:
     """Home health strip: engine label, microphone availability, offline readiness.
 
-    Offline backup is "ready" only when it is BOTH configured (stt.mode is local or
-    auto_fallback) AND the local Whisper engine is actually enabled. Being configured
-    for fallback without enabling Whisper does not make offline backup work, so we
-    never claim it does — `configured` is reported separately from `ready`.
+    Offline is "ready" only when it is configured (stt.mode is local or auto_fallback), the
+    local Whisper engine is enabled, AND the model is actually downloaded. Enabling Whisper
+    without the model on disk does NOT make offline work, so we never claim it does —
+    `configured` and `model_ready` are reported separately from `ready`.
     """
     try:
         from ..audio_stream import AudioStream
@@ -231,11 +252,12 @@ def compute_health(config) -> dict:
     mode = config.get("stt.mode", "api")
     whisper_enabled = bool(config.get("providers.whisper.enabled", False))
     offline_configured = mode in ("local", "auto_fallback")
-    offline_ready = offline_configured and whisper_enabled
+    has_model = model_downloaded(config)
+    offline_ready = offline_configured and whisper_enabled and has_model
     return {
         "engine": {"label": engine_label(config)},
         "microphone": {"ok": mic_ok},
-        "offline": {"ready": offline_ready, "configured": offline_configured},
+        "offline": {"ready": offline_ready, "configured": offline_configured, "model_ready": has_model},
     }
 
 
@@ -591,6 +613,8 @@ def run(pipe_name: str | None = None) -> int:
             return command_reference(config)
         if method == "listMicrophones":
             return list_microphones(config)
+        if method == "getModelStatus":
+            return model_status(config)
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":

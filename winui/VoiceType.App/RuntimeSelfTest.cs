@@ -95,6 +95,14 @@ internal static class RuntimeSelfTest
                 Check("bridge.listMicrophones", micItems,
                       $"items[] returned ({(micItems ? mi.GetArrayLength() : 0)} input devices)");
 
+                // Honest offline readiness: real on-disk model presence (not a config flag).
+                var modelStat = await client.RpcAsync("getModelStatus");
+                bool msShape = modelStat.TryGetProperty("downloaded", out var dl)
+                               && (dl.ValueKind == JsonValueKind.True || dl.ValueKind == JsonValueKind.False)
+                               && modelStat.TryGetProperty("name", out _) && modelStat.TryGetProperty("path", out _);
+                Check("bridge.getModelStatus", msShape,
+                      $"model status returned (downloaded={(msShape && dl.ValueKind == JsonValueKind.True)})");
+
                 // Destructive-RPC guard: clearHistory WITHOUT a confirm flag must refuse
                 // (so this is safe to run — it never wipes the real store).
                 var clr = await client.RpcAsync("clearHistory");

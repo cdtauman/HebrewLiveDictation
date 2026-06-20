@@ -71,7 +71,7 @@
                                 <StackPanel Spacing="2">
                                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="לא־מקוון" />
                                     <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
-                                               Text="פרטי, עובד מיד ללא הגדרה. מומלץ להתחלה." />
+                                               Text="פרטי, פועל ללא חיבור לאינטרנט. מומלץ להתחלה." />
                                 </StackPanel>
                             </RadioButton>
                             <RadioButton x:Name="OptRecommended" GroupName="Engine" Tag="recommended"
@@ -83,6 +83,12 @@
                                 </StackPanel>
                             </RadioButton>
                         </StackPanel>
+                    </Border>
+                    <!-- Honest offline readiness: both choices run local now, which needs a
+                         model. We never claim offline is ready unless the model is on disk. -->
+                    <Border Style="{StaticResource CardStyle}">
+                        <TextBlock x:Name="OfflineReadyNote" Style="{StaticResource CaptionMutedStyle}"
+                                   TextWrapping="Wrap" Text="בודק מצב מודל לא־מקוון…" />
                     </Border>
                 </StackPanel>
 

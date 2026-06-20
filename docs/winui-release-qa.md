@@ -18,7 +18,7 @@ Both must be green before any release build.
 $env:PYTHONPATH="src"; python -m unittest discover -s tests -t . -p "test_*.py"
 ```
 
-Currently **247 tests** across 31 files. Beyond the engine coverage listed in
+Currently **255 tests** across 31 files. Beyond the engine coverage listed in
 [qa.md](qa.md), the WinUI seam adds:
 
 - `test_bridge_server.py`, `test_sidecar_lifecycle.py`, `test_sidecar_callbacks.py`,
@@ -33,7 +33,7 @@ The adapter rule holds: no engine module is modified; the sidecar only wraps the
 VoiceType.exe --selftest    # writes winui/winui_runtime_report.txt ; "result: N/N passed"
 ```
 
-Currently **34 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
+Currently **36 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
 risk register:
 
 | Self-test checks | §13 risk verified |
@@ -114,8 +114,12 @@ These are settled, not open:
 ### Honest offline readiness (authoritative completion signal)
 
 `models.is_downloaded()` reports a model ready **only** when a matching cache dir contains
-either the authoritative `COMPLETE_MARKER` (`.vt_complete`, written by `download_model` as
-the last step of a successful download) or a non-trivially-sized `model.bin`. An empty,
-partial (`*.incomplete` blobs only), or zero-byte cache reports not-ready. `getModelStatus`
-and `compute_health` (offline.ready / offline.model_ready) derive from this, so the UI never
-claims offline works before a model is actually, completely present.
+ALL of: the authoritative `COMPLETE_MARKER` (`.vt_complete`, written by `download_model` as
+the last step of a successful download), a non-trivially-sized `model.bin`, AND a
+config/vocabulary file the runtime needs to load it. The marker alone is **not** enough. An
+empty cache, a marker without weights, a partial download (`*.incomplete` blobs only), or a
+zero-byte `model.bin` all report not-ready. `getModelStatus` and `compute_health`
+(offline.ready / offline.model_ready) derive from this, and `downloadModel` re-validates with
+the same check after the download returns — emitting `done` only if the model is genuinely
+usable, otherwise `error`. The UI never claims offline works before a model is actually,
+completely present.

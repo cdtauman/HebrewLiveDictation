@@ -276,7 +276,13 @@ class ModelDownloadManager:
         try:
             download = self._downloader or (lambda cfg, nm: models.download_model(cfg, nm))
             download(config, name)
-            self._emit("done", name, downloaded=True)
+            # Do NOT trust the downloader returning. Re-validate with the strong readiness
+            # check: only report done if the model is now actually complete and usable.
+            if models.model_status(config, name).get("downloaded"):
+                self._emit("done", name, downloaded=True)
+            else:
+                self._emit("error", name,
+                           message="Download finished but the model is incomplete or unusable.")
         except Exception as e:
             logger.error("model download failed:\n%s", traceback.format_exc())
             self._emit("error", name, message=str(e))

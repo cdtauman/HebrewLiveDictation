@@ -160,11 +160,19 @@ public sealed partial class OnboardingWindow : Window
         catch { RenderOfflineReadiness("error"); }
     }
 
-    /// <summary>Live download progress from the engine (raised on the UI thread).</summary>
-    private void OnModelDownloadChanged(string state, string message)
+    /// <summary>Live download progress from the engine. On "done" we re-query the authoritative
+    /// model status rather than assume ready — so the ready copy can never show if the model is
+    /// somehow still missing.</summary>
+    private async void OnModelDownloadChanged(string state, string message)
     {
+        if (state == "done")
+        {
+            bool ready = await IsOfflineModelReadyAsync();
+            DispatcherQueue.TryEnqueue(() => RenderOfflineReadiness(ready ? "ready" : "absent"));
+            return;
+        }
         DispatcherQueue.TryEnqueue(() => RenderOfflineReadiness(
-            state switch { "done" => "ready", "running" => "downloading", "error" => "error", _ => "absent" }));
+            state switch { "running" => "downloading", "error" => "error", _ => "absent" }));
     }
 
     private void ShowStep(int index)

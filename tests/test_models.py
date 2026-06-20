@@ -7,9 +7,20 @@ from hebrew_live_dictation.config import Config
 
 
 def _write_weights(model_dir, size=2048):
-    """Write a non-trivial model.bin so the dir looks like a complete model."""
+    """Write a non-trivial model.bin (weights only — NOT a complete model on its own)."""
     with open(os.path.join(model_dir, "model.bin"), "wb") as f:
         f.write(b"\x00" * size)
+
+
+def _write_complete_model(model_dir, size=2048):
+    """Write a complete, loadable layout: real weights + a config file + the completion
+    marker — the three signals readiness now requires."""
+    os.makedirs(model_dir, exist_ok=True)
+    _write_weights(model_dir, size)
+    with open(os.path.join(model_dir, "config.json"), "w") as f:
+        f.write("{}")
+    with open(os.path.join(model_dir, models.COMPLETE_MARKER), "w") as f:
+        f.write("ok")
 
 
 class ModelsTests(unittest.TestCase):
@@ -84,54 +95,74 @@ class ModelsTests(unittest.TestCase):
             self.assertFalse(status["downloaded"])
             self.assertEqual(status["path"], os.path.join(tmp, "models"))
             # A bare matching directory is NOT downloaded — only a complete model is.
-            os.makedirs(os.path.join(tmp, "models", "models--small"))
+            model_dir = os.path.join(tmp, "models", "models--small")
+            os.makedirs(model_dir)
             self.assertFalse(models.model_status(config, "small")["downloaded"])
-            _write_weights(os.path.join(tmp, "models", "models--small"))
+            _write_complete_model(model_dir)
             self.assertTrue(models.model_status(config, "small")["downloaded"])
 
-    def test_is_downloaded_requires_complete_model(self):
+    def test_is_downloaded_requires_marker_weights_and_aux(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertFalse(models.is_downloaded("small", tmp))               # nothing
             model_dir = os.path.join(tmp, "models--Systran--faster-whisper-small")
             os.makedirs(model_dir)
             self.assertFalse(models.is_downloaded("small", tmp))               # bare dir
-            # Partial HF download: only an *.incomplete blob, no real weights -> not ready.
+            # Partial HF download: only an *.incomplete blob -> not ready.
             with open(os.path.join(model_dir, "model.bin.incomplete"), "wb") as f:
                 f.write(b"\x00" * 4096)
             self.assertFalse(models.is_downloaded("small", tmp))
-            # Corrupt/zero-byte weights -> not ready.
-            open(os.path.join(model_dir, "model.bin"), "wb").close()
-            self.assertFalse(models.is_downloaded("small", tmp))
-            # Real (non-trivial) weights -> ready.
+            # Weights + aux but NO completion marker -> not ready (interrupted before commit).
             _write_weights(model_dir)
+            with open(os.path.join(model_dir, "config.json"), "w") as f:
+                f.write("{}")
+            self.assertFalse(models.is_downloaded("small", tmp))
+            # Add the marker -> now complete and usable -> ready.
+            with open(os.path.join(model_dir, models.COMPLETE_MARKER), "w") as f:
+                f.write("ok")
             self.assertTrue(models.is_downloaded("small", tmp))
             self.assertTrue(models.delete_model("small", tmp))
             self.assertFalse(os.path.isdir(model_dir))
 
-    def test_completion_marker_alone_means_ready(self):
-        # A model fetched by our download_model leaves the authoritative marker even before we
-        # second-guess the weights layout; the marker alone makes it ready.
+    def test_marker_alone_is_not_ready(self):
+        # The authoritative marker is necessary but NOT sufficient: without real weights and
+        # config, a marker-only cache must report not-ready.
         with tempfile.TemporaryDirectory() as tmp:
             model_dir = os.path.join(tmp, "models--small")
             os.makedirs(model_dir)
-            self.assertFalse(models.is_downloaded("small", tmp))
             with open(os.path.join(model_dir, models.COMPLETE_MARKER), "w") as f:
                 f.write("ok")
-            self.assertTrue(models.is_downloaded("small", tmp))
+            self.assertFalse(models.is_downloaded("small", tmp))
+            # Even with the marker, zero-byte weights is corrupt -> still not ready.
+            open(os.path.join(model_dir, "model.bin"), "wb").close()
+            with open(os.path.join(model_dir, "config.json"), "w") as f:
+                f.write("{}")
+            self.assertFalse(models.is_downloaded("small", tmp))
 
-    def test_download_model_writes_completion_marker(self):
+    def test_download_model_writes_marker_but_files_still_required(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
             config.update({"providers.whisper.model": "small"})
 
-            def fake_downloader(name, cache_dir=None, revision=None):
+            def empty_downloader(name, cache_dir=None, revision=None):
                 path = os.path.join(cache_dir, f"models--{name}")
-                os.makedirs(path, exist_ok=True)   # weights not written, but download "succeeded"
+                os.makedirs(path, exist_ok=True)   # "succeeds" but writes no real model files
                 return path
 
+            models.download_model(config, downloader=empty_downloader)
+            # Marker was written, but with no weights/config the model is NOT usable.
+            self.assertTrue(os.path.exists(
+                os.path.join(tmp, "models", "models--small", models.COMPLETE_MARKER)))
             self.assertFalse(models.model_status(config, "small")["downloaded"])
-            models.download_model(config, downloader=fake_downloader)
-            # Marker written -> truthfully ready even though the fake wrote no weights.
+
+            def real_downloader(name, cache_dir=None, revision=None):
+                path = os.path.join(cache_dir, f"models--{name}")
+                os.makedirs(path, exist_ok=True)
+                _write_weights(path)                       # real weights
+                with open(os.path.join(path, "config.json"), "w") as f:
+                    f.write("{}")                          # + config
+                return path                                # download_model adds the marker
+
+            models.download_model(config, downloader=real_downloader)
             self.assertTrue(models.model_status(config, "small")["downloaded"])
 
 

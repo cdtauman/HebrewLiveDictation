@@ -100,10 +100,12 @@ def _matches(entry: str, name: str) -> bool:
 # own first-use auto-download — no marker — readiness falls back to validating the weights.)
 COMPLETE_MARKER = ".vt_complete"
 
-# The CTranslate2 weights file every faster-whisper model has. A complete model has it
-# present and non-trivially sized; a partial HF download leaves only ``*.incomplete`` blobs.
-_WEIGHTS_FILE = "model.bin"
-_MIN_WEIGHTS_BYTES = 1024  # guard against zero/placeholder files
+# A complete, *usable* faster-whisper (CTranslate2) model needs the weights AND the
+# accompanying config/vocabulary so the runtime can actually load it. We require all three
+# signals — the completion marker is necessary but NOT sufficient on its own.
+_WEIGHTS_FILE = "model.bin"          # the CT2 weights; partial HF downloads leave *.incomplete
+_MIN_WEIGHTS_BYTES = 1024            # guard against zero/placeholder files
+_AUX_FILES = {"config.json", "tokenizer.json", "vocabulary.txt", "vocabulary.json"}
 
 
 def download_model(config, name=None, downloader=None):
@@ -146,13 +148,16 @@ def model_status(config, name=None):
 
 
 def is_downloaded(name, storage_dir) -> bool:
-    """Whether a COMPLETE model is present — not just a matching cache entry.
+    """Whether a COMPLETE, USABLE model is present — not just a matching cache entry or a
+    stray marker.
 
-    An empty, partial, or corrupt cache must report False. We accept the model only if a
-    matching cache dir contains either our authoritative COMPLETE_MARKER (a download we
-    finished) or a non-trivially-sized ``model.bin`` (e.g. faster-whisper's own first-use
-    download). A bare directory, an interrupted download (only ``*.incomplete`` blobs), or a
-    zero-byte weights file all report False.
+    A model is ready only if a matching cache dir contains ALL of:
+      * our authoritative COMPLETE_MARKER (a download we finished), AND
+      * a non-trivially-sized ``model.bin`` (real weights, not a zero/placeholder), AND
+      * at least one config/vocabulary file the runtime needs to load it.
+
+    A bare directory, a marker with no weights, an interrupted download (only
+    ``*.incomplete`` blobs), or a zero-byte weights file all report False.
     """
     if not storage_dir or not os.path.isdir(storage_dir):
         return False
@@ -165,22 +170,28 @@ def is_downloaded(name, storage_dir) -> bool:
 
 
 def _entry_is_complete(root) -> bool:
-    """True if a matched cache entry holds a finished model: our marker, or real weights."""
+    """True only if a matched cache entry holds a finished AND loadable model: our completion
+    marker, real weights, and the supporting config/vocabulary. The marker alone is never
+    enough."""
     try:
         if not os.path.isdir(root):
             return False
+        has_marker = has_weights = has_aux = False
         for dirpath, _dirs, files in os.walk(root):
-            if COMPLETE_MARKER in files:
-                return True
-            if _WEIGHTS_FILE in files:
+            fileset = set(files)
+            if COMPLETE_MARKER in fileset:
+                has_marker = True
+            if _WEIGHTS_FILE in fileset:
                 try:
                     if os.path.getsize(os.path.join(dirpath, _WEIGHTS_FILE)) >= _MIN_WEIGHTS_BYTES:
-                        return True
+                        has_weights = True
                 except OSError:
-                    continue
+                    pass
+            if fileset & _AUX_FILES:
+                has_aux = True
+        return has_marker and has_weights and has_aux
     except Exception:
         return False
-    return False
 
 
 def delete_model(name, storage_dir) -> bool:

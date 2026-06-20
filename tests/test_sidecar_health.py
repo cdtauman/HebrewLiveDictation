@@ -131,7 +131,7 @@ class HealthTests(unittest.TestCase):
 
 
 class ModelDownloadTests(unittest.TestCase):
-    def test_successful_download_emits_running_then_done(self):
+    def test_successful_download_emits_running_then_done_when_validated(self):
         events = []
         seen = []
 
@@ -140,12 +140,31 @@ class ModelDownloadTests(unittest.TestCase):
             return "/models/" + name
 
         mgr = sidecar.ModelDownloadManager(events.append, downloader=downloader)
-        res = mgr.start(_FakeConfig({"providers.whisper.model": "small"}))
-        self.assertEqual(res, {"started": True, "name": "small"})
-        _join_threads("ModelDownload")
+        # done is emitted only because the post-download validation says the model is complete.
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": True}):
+            res = mgr.start(_FakeConfig({"providers.whisper.model": "small"}))
+            self.assertEqual(res, {"started": True, "name": "small"})
+            _join_threads("ModelDownload")
         self.assertEqual(seen, ["small"])
         states = [(e["state"], e.get("downloaded")) for e in events]
         self.assertEqual(states, [("running", None), ("done", True)])
+        self.assertIsNone(mgr.active)
+
+    def test_download_returning_but_incomplete_emits_error_not_done(self):
+        # Must-Fix: do NOT trust the downloader returning. If post-download validation says the
+        # model is not actually usable, emit error/not-ready, never done.
+        events = []
+
+        def downloader(config, name):
+            return "/models/" + name   # "succeeds" but produced an incomplete/corrupt cache
+
+        mgr = sidecar.ModelDownloadManager(events.append, downloader=downloader)
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": False}):
+            mgr.start(_FakeConfig({}), name="small")
+            _join_threads("ModelDownload")
+        self.assertEqual(events[0]["state"], "running")
+        self.assertEqual(events[-1]["state"], "error")
+        self.assertNotIn("done", [e["state"] for e in events])
         self.assertIsNone(mgr.active)
 
     def test_failed_download_emits_error_and_clears_active(self):

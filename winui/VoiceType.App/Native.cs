@@ -49,6 +49,40 @@ internal static class Native
         SetWindowLongPtr(hWnd, GWL_EXSTYLE, new IntPtr(ex));
     }
 
+    // ---- True no-activate for an INTERACTIVE overlay (Remote) ----------------
+    // WS_EX_NOACTIVATE alone does NOT stop a WinUI window from taking foreground when its XAML
+    // content (a Button) is clicked — which makes the shell the foreground target and breaks
+    // dictation-target capture (the injector then targets the wrong window). Subclassing to return
+    // MA_NOACTIVATE for WM_MOUSEACTIVATE makes the window receive the click but never activate, so
+    // starting dictation from the Remote leaves the user's real target (e.g. Notepad) in foreground.
+    public const uint WM_MOUSEACTIVATE = 0x0021;
+    public const int MA_NOACTIVATE = 3;
+
+    public delegate IntPtr SubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam,
+                                        IntPtr uIdSubclass, IntPtr dwRefData);
+
+    [DllImport("comctl32.dll", SetLastError = true)]
+    private static extern bool SetWindowSubclass(IntPtr hWnd, SubclassProc pfnSubclass,
+                                                 IntPtr uIdSubclass, IntPtr dwRefData);
+
+    [DllImport("comctl32.dll")]
+    private static extern IntPtr DefSubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam);
+
+    // Held for the process lifetime so the native side never calls a collected delegate.
+    private static readonly SubclassProc _noActivateProc = NoActivateSubclass;
+
+    private static IntPtr NoActivateSubclass(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam,
+                                             IntPtr uIdSubclass, IntPtr dwRefData)
+    {
+        if (uMsg == WM_MOUSEACTIVATE)
+            return new IntPtr(MA_NOACTIVATE);   // deliver the click, but do NOT activate/foreground
+        return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+    }
+
+    /// <summary>Make an interactive window receive clicks WITHOUT ever taking activation/foreground.</summary>
+    public static void MakeNoActivate(IntPtr hWnd) =>
+        SetWindowSubclass(hWnd, _noActivateProc, new IntPtr(1), IntPtr.Zero);
+
     // ---- DPI ----------------------------------------------------------------
     [DllImport("user32.dll")]
     public static extern uint GetDpiForWindow(IntPtr hWnd);

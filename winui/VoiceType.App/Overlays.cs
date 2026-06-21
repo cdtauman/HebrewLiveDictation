@@ -388,6 +388,10 @@ public sealed class RemoteWindow
         };
 
         Overlays.Configure(Window, Hwnd, clickThrough: false, 220, 76, OverlayAnchor.BottomRight);
+        // The Remote is interactive but must NEVER steal foreground — otherwise starting dictation
+        // from it makes the shell the foreground and the injector captures the wrong target. WS_EX_NOACTIVATE
+        // (set by Configure) is not enough for a clicked XAML Button; this makes it truly no-activate.
+        Native.MakeNoActivate(Hwnd);
     }
 
     private void OnPrimary()

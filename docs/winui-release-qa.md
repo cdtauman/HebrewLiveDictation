@@ -397,6 +397,24 @@ start are machine-checkable (both confirmed). Resume the §matrix only after thi
 (engine), `%APPDATA%\VoiceType\shell.log` (WinUI shell, new), the package-root `winui_runtime_report.txt`,
 and any `%LOCALAPPDATA%\CrashDumps\VoiceType.exe.*.dmp`.
 
+**Pre-smoke round 1 (CI artifact `1e4a5e4`) — partial fail (Remote-start target capture).** Good: offline
+model, start/stop, STT, final-only insertion, history, Hebrew punctuation/newline all worked. **Failure:**
+starting from the floating **Remote** with **Notepad** as the intended target, the transcript appeared in
+the app/history but text did **not** land in Notepad. Engine log root cause:
+```
+EditingBackend - Using z-order external target instead of foreground target:
+  foreground=…process=voicetype.exe title=שלט        (the Remote took foreground)
+  target=…process=explorer.exe title=VoiceType-winui-beta-unsigned - סייר הקבצים   (File Explorer)
+```
+The Remote (interactive, `WS_EX_NOACTIVATE`) still **activated on the XAML button-click**, so the shell
+became foreground. The shell self-target denylist correctly blocked self-injection, but
+`capture_best_target`'s **z-order fallback then picked the topmost OTHER external window** (the File
+Explorer window showing the extracted beta folder), not Notepad — so text went there. F8 works because
+Notepad is already foreground (captured directly). Home/Tray share the same root cause (shell foreground at
+capture). **Fix:** `Native.MakeNoActivate()` subclasses the Remote to return `MA_NOACTIVATE` on
+`WM_MOUSEACTIVATE`, so clicking it delivers the click but never takes foreground → the user's real target
+stays foreground and is captured directly. (Build-verified; the focus behavior itself needs a human re-smoke.)
+
 Per-target focus matrix below remains **unfilled** — re-run manual P5 against the **rebuilt** artifact
 after the pre-smoke. The cloud→offline routing, startup recovery, shell self-target block, hotkey rebind,
 and logging are build-verified + unit-tested, but the end-to-end voice path still needs a human pass.

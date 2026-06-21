@@ -375,10 +375,31 @@ text insertion + the full STT pipeline are proven by the 2026-06-17 dev-app log;
 Verification of the fixes: Python 267/267; WinUI build 0 errors; dev self-test 39/39; beta rebuilt (544 MB);
 `verify_beta.ps1` PASSED (positive 39/39, negative hard-gate FAIL); engine log confirmed persisting.
 
-Per-target focus matrix below remains **unfilled** — re-run manual P5 against the **rebuilt** artifact:
-in the Engine room pick Offline + download the model (it resumes the partial download and completes
-`model.bin` + marker), set the hotkey to F8 in Controls, then dictate. The cloud→offline routing and the
-hotkey rebind are build-verified but the end-to-end voice path still needs a human pass.
+**Audit reconciliation (2026-06-21, two external audits) — status vs HEAD + action.**
+
+| # | Item | Status at HEAD | Evidence | Action |
+|---|---|---|---|---|
+| 1 | Shell self-injection (WinUI shell is a separate PID from the engine) | **Still broken** | `editing_backend.is_current_process()` compares to `os.getpid()` = the *engine* pid; the shell (`VoiceType.exe`, different pid) passed `is_usable_external()` | Sidecar adds `"voicetype.exe"` to `BLOCKED_TARGET_PROCESSES` (no protected-module edit) → all shell/HUD/Remote/tray windows are non-targets. Regression test added. |
+| 2 | Frozen-engine audio deterministic (PortAudio) | **Already functional; made deterministic** | `dist\engine\_internal\_sounddevice_data\portaudio-binaries\libportaudio64bit.dll` present; engine log shows `AudioStream … started … vad=True` today from packaged runs | Added `sounddevice` to the REQUIRED `collect_all` in `engine.spec` so PortAudio no longer depends on the auto-hook. |
+| 3 | Real end-to-end smoke before the full matrix | **Was undocumented** | 39/39 self-test proves launch/PRI/launch-mode, not voice | Added the **required P5 pre-smoke** below (manual voice path; only non-voice parts are checkable). |
+| 4 | Stale/unconfigured cloud config | **Partially fixed** | Engine room already routes cloud→Offline (prior commit), but a returning user who never opens it still started on the cloud path | Added **startup recovery** `recover_unconfigured_cloud()`: an unconfigured cloud engine (empty/dangling Google creds, no key) is switched to offline at engine start. Configured cloud + `smart_auto`/local left untouched. Tests added. |
+| 5 | Persist shell-side diagnostics | **Still broken** (in-memory only) | `AppLog` was a 400-line RAM ring buffer | `AppLog` now also appends to **`%APPDATA%\VoiceType\shell.log`** (rotated at 1 MB). Engine stdout/stderr (`"sidecar: …"`) + bridge launch failures already flow through `AppLog`, so they persist. |
+| 6 | Triage the `VoiceType.exe` crash dump | **Not actionable in our code** | Application Error 1000: faulting module **`igd10umt64xe.DLL`** (Intel iGPU driver), `0xc0000005`, in the **Debug** build at 00:52 | GPU-driver access violation during WinUI render, not our code. Mitigation: update the Intel graphics driver; re-collect if it recurs in the **Release/packaged** build. |
+
+**Required P5 pre-smoke (must pass before resuming the full focus-safety matrix):** with the rebuilt
+artifact — (1) Engine room → **Offline** → **download model** → wait for "מותקן ✓"; (2) put the cursor in
+**Notepad**, press the hotkey, speak one Hebrew phrase, stop; (3) confirm the transcript appears via
+History / `getTranscripts`; (4) confirm the text lands **once** in Notepad and the shell/HUD/Remote never
+took focus. The voice path cannot be faked; only mic enumeration and the packaged engine's audio-stream
+start are machine-checkable (both confirmed). Resume the §matrix only after this smoke passes.
+
+**Diagnostics / which files to send for support:** `%APPDATA%\VoiceType\hebrew_live_dictation.log`
+(engine), `%APPDATA%\VoiceType\shell.log` (WinUI shell, new), the package-root `winui_runtime_report.txt`,
+and any `%LOCALAPPDATA%\CrashDumps\VoiceType.exe.*.dmp`.
+
+Per-target focus matrix below remains **unfilled** — re-run manual P5 against the **rebuilt** artifact
+after the pre-smoke. The cloud→offline routing, startup recovery, shell self-target block, hotkey rebind,
+and logging are build-verified + unit-tested, but the end-to-end voice path still needs a human pass.
 
 ### Packaging decisions (agreed)
 

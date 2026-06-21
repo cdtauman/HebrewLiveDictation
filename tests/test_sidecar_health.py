@@ -67,6 +67,69 @@ class _FakeConfig:
         return True
 
 
+class CloudRecoveryTests(unittest.TestCase):
+    """recover_unconfigured_cloud: route an unconfigured cloud engine to offline (the WinUI beta has
+    no cloud-credential setup UI), but leave a configured cloud engine and the local path untouched."""
+
+    def _no_adc(self):
+        return mock.patch.dict(os.environ, {k: v for k, v in os.environ.items()
+                                            if k != "GOOGLE_APPLICATION_CREDENTIALS"}, clear=True)
+
+    def test_unconfigured_google_routes_to_offline(self):
+        # Fresh/default: google_v2 + api with an EMPTY credentials path -> switch to offline.
+        cfg = _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api",
+                           "google.credential_mode": "service_account_json", "google.credentials_path": ""})
+        with self._no_adc():
+            self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
+        self.assertEqual(cfg.get("stt.mode"), "local")
+        self.assertTrue(cfg.get("providers.whisper.enabled"))
+
+    def test_dangling_google_path_routes_to_offline(self):
+        # Stale dev config: a credentials PATH that does not exist on disk is unusable -> offline.
+        cfg = _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api",
+                           "google.credential_mode": "service_account_json",
+                           "google.credentials_path": r"C:\nope\missing-key.json"})
+        with self._no_adc():
+            self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
+
+    def test_configured_google_left_untouched(self):
+        # A real, existing credentials file -> Google is usable -> no change.
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            cfg = _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api",
+                               "google.credential_mode": "service_account_json", "google.credentials_path": path})
+            self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
+            self.assertEqual(cfg.get("stt.provider"), "google_v2")
+        finally:
+            os.unlink(path)
+
+    def test_offline_and_smart_auto_are_noops(self):
+        for d in ({"stt.provider": "whisper_local", "stt.mode": "local"},
+                  {"stt.provider": "google_v2", "stt.mode": "smart_auto", "google.credentials_path": ""}):
+            cfg = _FakeConfig(dict(d))
+            self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
+            self.assertEqual(cfg.get("stt.provider"), d["stt.provider"])
+
+
+class ShellSelfTargetBlockTests(unittest.TestCase):
+    """The WinUI shell (VoiceType.exe) runs in a SEPARATE process from the engine, so the injector's
+    own-pid guard no longer covers it. The sidecar adds 'voicetype.exe' to the injector denylist so a
+    shell-owned window (different pid) can never be chosen as an insertion target."""
+
+    def test_voicetype_target_is_blocked_even_with_foreign_pid(self):
+        from hebrew_live_dictation import editing_backend
+        editing_backend.BLOCKED_TARGET_PROCESSES.add("voicetype.exe")   # what the sidecar does at startup
+        t = editing_backend.WindowTarget(hwnd=1, process_id=999999, process_name="VoiceType.exe", title="VoiceType")
+        # Isolate the denylist effect from window-validity/own-pid checks:
+        t.is_valid = lambda: True
+        t.is_current_process = lambda: False   # different pid than the engine
+        self.assertTrue(t.is_blocked_system_target())
+        self.assertFalse(t.is_usable_external())   # blocked purely by the shell denylist
+
+
 class HealthTests(unittest.TestCase):
     def test_engine_label_google_pretty(self):
         c = _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api", "google.model": "chirp_3"})

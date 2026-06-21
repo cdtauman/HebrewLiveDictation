@@ -672,6 +672,56 @@ def _parse_pipe_arg(argv) -> str:
     return DEFAULT_PIPE_NAME
 
 
+_CLOUD_PROVIDERS = ("google_v2", "deepgram", "groq")
+
+
+def _cloud_provider_usable(config, provider) -> bool:
+    """Whether a cloud provider has usable credentials configured, reusing the engine's own
+    credential checks (stt.auto_select). Safe-True on error so we never wrongly downgrade."""
+    try:
+        from ..stt import auto_select
+        if provider == "google_v2":
+            if not auto_select._google_available(config):
+                return False
+            # Stricter than the factory: a configured service-account credentials PATH must actually
+            # exist on disk to count as usable. A dangling path (stale dev config) is unusable -> route
+            # to offline rather than fail at first dictation.
+            mode = config.get("google.credential_mode", "service_account_json")
+            if mode == "service_account_json":
+                path = config.get("google.credentials_path", "") or config.get("google_credentials_path", "")
+                if path and not os.path.exists(path):
+                    return False
+            return True
+        if provider in ("deepgram", "groq"):
+            return bool(auto_select._has_key(config, provider))
+    except Exception:
+        return True
+    return True
+
+
+def recover_unconfigured_cloud(config) -> bool:
+    """Beta honesty: this build has no cloud-credential setup UI, so a returning user whose saved
+    config selects a cloud provider with NO usable credentials would hit a dead cloud path. If the
+    live engine is such an unconfigured cloud provider, switch to offline Whisper at startup. A
+    validly-configured cloud provider (real key/credentials file) is left untouched; 'smart_auto'
+    is left to the factory, which already resolves to local when no cloud credentials exist.
+    Returns True iff it changed the engine."""
+    provider = config.get("stt.provider", "google_v2") or "google_v2"
+    mode = config.get("stt.mode", "api")
+    if mode not in ("api", "auto_fallback"):
+        return False
+    if provider not in _CLOUD_PROVIDERS:
+        return False
+    if _cloud_provider_usable(config, provider):
+        return False
+    config.set("stt.provider", "whisper_local")
+    config.set("stt.mode", "local")
+    config.set("providers.whisper.enabled", True)
+    logger.info("Beta recovery: cloud provider '%s' has no usable credentials; switched to "
+                "offline (whisper_local).", provider)
+    return True
+
+
 def run(pipe_name: str | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -711,6 +761,24 @@ def run(pipe_name: str | None = None) -> int:
         app_logging.setup_logging(config_dir)
     except Exception:
         logger.error("file logging setup failed:\n%s", traceback.format_exc())
+
+    # Focus-safety: the WinUI shell (VoiceType.exe) is a SEPARATE process from this engine, so the
+    # injector's own-process guard (is_current_process == os.getpid(), the engine's pid) no longer
+    # covers it. Add the shell's process name to the injector denylist so NONE of its windows (main,
+    # HUD, Remote, tray host, hidden) can ever be chosen as an insertion target — preventing the
+    # shell from being self-injected when dictation starts from the Home/Tray/Remote buttons.
+    try:
+        from .. import editing_backend
+        editing_backend.BLOCKED_TARGET_PROCESSES.add("voicetype.exe")
+    except Exception:
+        logger.error("could not extend injector denylist:\n%s", traceback.format_exc())
+
+    # Beta honesty: route an unconfigured cloud engine to offline so the user never starts on a dead
+    # cloud path (this build has no cloud-credential setup UI). No-op for a configured/local engine.
+    try:
+        recover_unconfigured_cloud(config)
+    except Exception:
+        logger.error("cloud->offline recovery failed:\n%s", traceback.format_exc())
 
     # Clear a stale saved microphone before any dictation can start, so the engine falls
     # back to the Windows default rather than trying a device that no longer exists —

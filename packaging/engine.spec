@@ -55,10 +55,13 @@ hiddenimports = [
     "psutil",
 ]
 
-# REQUIRED ML deps for offline Whisper — collect FAIL-FAST. If any of these can't be collected,
-# the resulting engine.exe could not actually run offline dictation; failing the build here is far
-# better than shipping a silently broken freeze (the previous blanket try/except hid exactly that).
-for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "huggingface_hub"):
+# REQUIRED deps — collect FAIL-FAST. If any of these can't be collected, the resulting engine.exe
+# could not actually run dictation; failing the build here is far better than shipping a silently
+# broken freeze (the previous blanket try/except hid exactly that). 'sounddevice' is included
+# explicitly so the PortAudio runtime DLL (_sounddevice_data/portaudio-binaries/libportaudio64bit.dll)
+# is collected deterministically rather than relying on PyInstaller's bundled hook — without it the
+# package launches and self-tests but CANNOT capture microphone audio.
+for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "huggingface_hub", "sounddevice"):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b

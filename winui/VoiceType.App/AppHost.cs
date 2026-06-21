@@ -55,6 +55,9 @@ public sealed class AppHost
     {
         _ui = DispatcherQueue.GetForCurrentThread();
 
+        // Durable session marker (always written, so shell.log exists for support even on a clean run).
+        AppLog.Add($"shell session start — engine launch mode: {RepoPaths.EngineLaunchMode()}");
+
         // Per-launch unique pipe: the client can only ever attach to the sidecar we
         // spawn here, never a stale/orphan one. stdout/stderr are drained into AppLog.
         var (pipeShort, pipeFull) = RepoPaths.NewPipe();

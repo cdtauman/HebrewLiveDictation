@@ -1,0 +1,133 @@
+# Reproducible UNSIGNED WinUI beta artifact (P4).
+#
+# This is the CI equivalent of the local `packaging\build_beta.ps1` proof: it freezes the Python
+# sidecar into engine.exe, publishes the self-contained unpackaged WinUI shell, recovers VoiceType.pri
+# (the unpackaged-publish gap), assembles the same dist\beta\VoiceType-beta layout, runs the packaged
+# self-test (positive + negative hard-gate) and uploads the package as a workflow artifact.
+#
+# It deliberately does NOT touch the legacy build-release.yml pipeline (old Qt app, main + v* tags).
+# The package is UNSIGNED -> SmartScreen "unknown publisher" applies. Not a final release.
+name: WinUI beta (unsigned)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - feature/winui-redesign-migration
+    tags:
+      - 'beta-v*'
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: '3.12'
+  DOTNET_VERSION: '9.0.x'
+
+jobs:
+  build-beta:
+    name: Build & verify unsigned beta
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Gate 1: the engine's own test suite (same as the legacy workflow's test job).
+      - name: Python unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests
+
+      # Builds the WinUI shell (dotnet publish, self-contained), freezes engine.exe (build_engine.ps1),
+      # recovers VoiceType.pri, and assembles dist\beta\VoiceType-beta. CI has no .venv, so build_engine.ps1
+      # falls back to the runner's `python` (which has the deps installed above).
+      - name: Build unsigned beta layout
+        shell: pwsh
+        run: ./packaging/build_beta.ps1
+
+      # Gate 2: packaged hard-gate. Copies the beta OUT-OF-REPO, runs --selftest --expect-packaged-engine
+      # (positive: all checks pass + package-root winui_runtime_report.txt written), then renames engine.exe
+      # away and asserts engine.launch.mode FAILS (negative). This launches the WinUI GUI in --selftest mode;
+      # if a headless runner cannot create the XAML windows, this step is the one that needs a real run to
+      # confirm green (see docs/winui-release-qa.md "CI").
+      - name: Verify packaged beta (positive self-test + negative hard-gate)
+        shell: pwsh
+        run: ./packaging/verify_beta.ps1
+
+      # Always collect the self-test report (from the out-of-repo verify copy) so a failed verify is inspectable.
+      - name: Stage self-test report
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $report = Join-Path $env:TEMP 'vt-beta-verify\winui_runtime_report.txt'
+          if (Test-Path $report) {
+            Copy-Item $report (Join-Path 'artifacts' 'winui_runtime_report.txt') -Force
+            Write-Host "Staged self-test report."
+          } else {
+            Write-Host "No self-test report found at $report (verify may not have reached the self-test)."
+          }
+
+      - name: Upload self-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: winui-beta-selftest-report
+          path: artifacts/winui_runtime_report.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload beta package
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceType-winui-beta-unsigned
+          path: dist/beta/VoiceType-beta
+          if-no-files-found: error
+          retention-days: 14
+
+  # Tag-gated PRERELEASE attachment. Dormant until a `beta-v*` tag is pushed; never runs on a normal push.
+  # Prepared but unsigned -- see docs for what remains (signing, release notes review) before this is "real".
+  prerelease:
+    name: Attach unsigned beta to GitHub prerelease
+    needs: build-beta
+    if: startsWith(github.ref, 'refs/tags/beta-v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download beta package
+        uses: actions/download-artifact@v4
+        with:
+          name: VoiceType-winui-beta-unsigned
+          path: VoiceType-beta
+
+      - name: Zip beta package
+        shell: pwsh
+        run: Compress-Archive -Path 'VoiceType-beta\*' -DestinationPath "VoiceType-winui-beta-${{ github.ref_name }}.zip" -Force
+
+      - name: Create GitHub prerelease (unsigned)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "VoiceType-winui-beta-${{ github.ref_name }}.zip" `
+            --title "VoiceType WinUI beta ${{ github.ref_name }} (UNSIGNED)" `
+            --prerelease `
+            --notes "UNSIGNED local-shape WinUI beta produced by CI. Windows SmartScreen will show an 'unknown publisher' warning (More info -> Run anyway). Not code-signed, not a final release. Offline Whisper model is NOT bundled; install it from the app (Engine room)."

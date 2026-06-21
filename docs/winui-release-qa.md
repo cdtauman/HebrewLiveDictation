@@ -127,9 +127,11 @@ tree. The frozen engine is built by `packaging\engine.spec` / `packaging\build_e
 the packaged launch is gated by the `--expect-packaged-engine` self-test above.
 
 What remains before a beta: ~~assemble the two-artifact package~~ (done — see "Local unsigned beta
-layout" below), make that artifact reproducible via GitHub Actions / GitHub Release, and run the
-real-hardware focus-safety matrix on the packaged build. The local PyInstaller/publish proof on a
-dev machine is **not** the release — the shippable artifact must come from CI.
+layout" below), ~~make that artifact reproducible via GitHub Actions~~ (workflow added — see
+"Reproducible beta in CI" below; **a real Actions run is still pending**), wire GitHub Release
+attachment (prepared, tag-gated, dormant), and run the real-hardware focus-safety matrix on the
+packaged build. The local PyInstaller/publish proof on a dev machine is **not** the release — the
+shippable artifact must come from CI.
 
 ### Local unsigned beta layout (P3 — proof of package shape, NOT a release)
 
@@ -186,6 +188,35 @@ Already in place (reusable, from the prior app): a signed-manifest updater
 (`updater.py`, `docs/updater.md`) with `test_updater.py`, `test_sign_release.py`,
 `test_verify.py`. The two-artifact model needs the updater extended to update **both** the
 shell and the engine atomically.
+
+### Reproducible beta in CI (P4 — GitHub Actions artifact)
+
+The same beta layout is reproduced in CI by **`.github/workflows/winui-beta.yml`** (separate from
+the legacy `build-release.yml`, which is the old Qt app on `main` + `v*` tags — untouched).
+
+- **Triggers:** `workflow_dispatch` (manual), `push` to `feature/winui-redesign-migration`, and
+  `push` of a `beta-v*` tag. It cannot fire the legacy pipeline (`beta-v*` does not match `v*`).
+- **`build-beta` job (`windows-latest`):** Python 3.12 + .NET 9 → `pip install -r requirements.txt`
+  (this also pulls `comtypes`, a transitive dep of `uiautomation`, so the freeze's insertion deps are
+  present) → **Python unit tests** → **`packaging\build_beta.ps1`** (publishes the self-contained
+  shell, recovers `VoiceType.pri`, freezes `engine.exe`, assembles `dist\beta\VoiceType-beta`; CI has
+  no `.venv`, so `build_engine.ps1` falls back to the runner's `python`) → **`packaging\verify_beta.ps1`**
+  (out-of-repo positive `--selftest --expect-packaged-engine` + negative engine-rename hard-gate) →
+  upload artifacts.
+- **Artifacts:** **`VoiceType-winui-beta-unsigned`** = the full `dist\beta\VoiceType-beta` package
+  (~544 MB), and **`winui-beta-selftest-report`** = the package-root `winui_runtime_report.txt`
+  (uploaded with `if: always()` so a failed verify is still inspectable). Retention 14 days.
+- **GitHub Release (prepared, dormant):** the tag-gated **`prerelease`** job runs only on a `beta-v*`
+  tag; it zips the package and `gh release create … --prerelease` (unsigned). It is wired but has
+  **not** been exercised — pushing the first `beta-v*` tag is what proves it.
+- **CI caveat (needs a real run to confirm green):** `verify_beta.ps1` launches the WinUI GUI in
+  `--selftest` mode, which constructs real XAML windows. Whether a GitHub-hosted `windows-latest`
+  session can create those windows headlessly is unverified until the first actual Actions run. If it
+  cannot, that step is where it will surface (the package + report still upload via `if: always()`),
+  and the verify step would move to `continue-on-error` with the GUI gate run on self-hosted/interactive
+  hardware instead. Everything up to and including `build_beta.ps1` is runner-safe.
+- **Still UNSIGNED:** the CI artifact carries the same SmartScreen "unknown publisher" limitation as the
+  local layout; CI does not sign. Signing is a later phase.
 
 ### Packaging decisions (agreed)
 

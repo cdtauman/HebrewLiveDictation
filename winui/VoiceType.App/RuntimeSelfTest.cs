@@ -36,10 +36,28 @@ internal static class RuntimeSelfTest
         var (pipeShort, pipeFull) = RepoPaths.NewPipe("voicetype-selftest");
         try
         {
-            // 1) Spawn the Python engine bridge on a unique pipe (stdout/stderr drained).
+            // 1) Spawn the engine bridge on a unique pipe (stdout/stderr drained).
             bridge = RepoPaths.StartSidecar(repoRoot, pipeFull);
             Check("bridge.spawn", bridge != null && !bridge.HasExited,
                   bridge != null ? $"pid={bridge.Id}" : "failed to start");
+
+            // 1b) Launch-mode parity (P2): the process the shell ACTUALLY spawned must match the
+            //     mode RepoPaths selected. Packaged layout (engine\engine.exe present) must run the
+            //     bundled engine.exe; dev tree must run the python -m fallback. This is a HARD gate:
+            //     a packaged build that silently fell back to python — or whose bundled engine
+            //     failed to launch — fails here. Self-adapting, so the same selftest binary passes
+            //     in dev (python) and packaged (engine.exe). Read the name while the child is alive.
+            string expectMode = RepoPaths.EngineLaunchMode();   // "packaged" iff engine\engine.exe present
+            string spawned = "";
+            try { if (bridge is { HasExited: false }) spawned = bridge.ProcessName; } catch { }
+            bool isEngineExe = spawned.Equals("engine", StringComparison.OrdinalIgnoreCase);
+            bool isPython = spawned.StartsWith("python", StringComparison.OrdinalIgnoreCase);
+            bool modeOk = expectMode == "packaged" ? isEngineExe : isPython;
+            Check("engine.launch.mode", modeOk,
+                  $"expected={expectMode}, spawned='{spawned}' " +
+                  (expectMode == "packaged"
+                      ? $"(must be the bundled engine.exe at {RepoPaths.PackagedEnginePath()})"
+                      : "(dev python -m fallback)"));
 
             // 2) Connect the C# client and exercise the contract from the WinUI side.
             using var client = new BridgeClient(pipeShort);

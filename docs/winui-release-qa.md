@@ -33,12 +33,13 @@ The adapter rule holds: no engine module is modified; the sidecar only wraps the
 VoiceType.exe --selftest    # writes winui/winui_runtime_report.txt ; "result: N/N passed"
 ```
 
-Currently **37 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
+Currently **38 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
 risk register:
 
 | Self-test checks | §13 risk verified |
 | --- | --- |
 | `bridge.spawn/connect/ping/getStatus/event.stream/client/disconnect` | #1,#10,#11 IPC seam replaces AppBridge; clean reconnect |
+| `engine.launch.mode` | #16 packaging — the shell launches the bundled `engine.exe` when packaged, else the dev `python -m` fallback (hard, self-adapting) |
 | `bridge.settings.boundary`, `bridge.engine.config` | #11 engine is the single config writer (round-trip) |
 | `bridge.getCommands/getTranscripts/listMicrophones/clearHistory.guard` | #9,#12 mic + history + commands over IPC |
 | `focus.no_steal`, `hud.surface.no_steal` | **#7 focus-safety — the highest-priority invariant** |
@@ -49,6 +50,34 @@ risk register:
 | `hud.target.reassurance/safe_state/changed`, `hud.fallback.notice` | §10 state model surfaced honestly from real engine signals |
 | `onboarding.navigation/engine_map/flag_after_baseline` | §6 first-run wizard: nav, offline-safe engine map, flag ordering |
 | `bridge.getModelStatus`, `onboarding.offline_readiness`, `engine.model_management` | honest offline-model readiness + download/delete management |
+
+#### Dev vs packaged-layout self-test
+
+The same `--selftest` binary runs in both layouts; `engine.launch.mode` self-adapts and is a
+**hard** gate either way (it reads the process the shell actually spawned and asserts it matches
+the mode `RepoPaths` selected — so a packaged build that silently fell back to `python`, or whose
+bundled engine failed to launch, fails).
+
+**Dev (python -m fallback)** — run from the shell build output (no `engine\` folder present):
+
+```powershell
+$out = "winui\VoiceType.App\bin\x64\Debug\net9.0-windows10.0.19041.0\win-x64"
+& "$out\VoiceType.exe" --selftest          # engine.launch.mode -> expected=dev, spawned='python'
+Get-Content winui\winui_runtime_report.txt | Select-Object -First 3
+```
+
+**Packaged layout (bundled engine.exe)** — freeze the engine, stage it next to `VoiceType.exe`
+as an `engine\` subfolder, then run the same command:
+
+```powershell
+$out = "winui\VoiceType.App\bin\x64\Debug\net9.0-windows10.0.19041.0\win-x64"
+powershell -File packaging\build_engine.ps1 -StageInto $out   # builds dist\engine, copies -> $out\engine
+& "$out\VoiceType.exe" --selftest          # engine.launch.mode -> expected=packaged, spawned='engine'
+Get-Content winui\winui_runtime_report.txt | Select-Object -First 3
+```
+
+The bundled engine lives at `$out\engine\engine.exe` (the path `RepoPaths.PackagedEnginePath()`
+resolves). Both runs must report `result: 38/38 passed`.
 
 ## Manual QA (cannot be automated)
 

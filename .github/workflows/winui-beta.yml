@@ -67,6 +67,46 @@ jobs:
           Write-Host "Pinned SDK; 'dotnet --version' now resolves to:"
           dotnet --version
 
+      # The WindowsAppSDK 1.7 PRI generation task (ExpandPriContent, in Microsoft.Build.Packaging.Pri.Tasks.dll)
+      # is a Visual Studio MSBuild component, NOT part of the base .NET SDK. The runner's clean dotnet SDK
+      # (9 or 10) lacks it under <sdk>\Microsoft\VisualStudio\v17.0\AppxPackage\, so `dotnet publish` fails
+      # with MSB4062. This step DIAGNOSES where the DLL lives on the runner (VS 2022 MSBuild) and, if found,
+      # provisions the AppxPackage tasks into the SDK's expected folder so the SDK's MSBuild can load them.
+      # Non-fatal: it prints diagnostics and never throws (so the build still runs and we learn the layout).
+      - name: Provision WindowsAppSDK PRI task into the .NET SDK (CI workaround)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $sdkVer = (& dotnet --version).Trim()
+          $sdkDir = Join-Path "$env:ProgramFiles\dotnet\sdk" $sdkVer
+          $target = Join-Path $sdkDir 'Microsoft\VisualStudio\v17.0\AppxPackage'
+          $dll = 'Microsoft.Build.Packaging.Pri.Tasks.dll'
+          Write-Host "SDK: $sdkVer"
+          Write-Host "Target AppxPackage dir: $target (exists: $(Test-Path $target))"
+          $found = $null
+          foreach ($ed in 'Enterprise','Professional','Community','BuildTools') {
+            foreach ($pf in "$env:ProgramFiles","${env:ProgramFiles(x86)}") {
+              $c = Join-Path $pf "Microsoft Visual Studio\2022\$ed\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage"
+              if (Test-Path (Join-Path $c $dll)) { Write-Host "FOUND: $c"; if (-not $found) { $found = $c } }
+            }
+          }
+          if (-not $found) {
+            Write-Host "Direct candidates missed; bounded recursive search..."
+            foreach ($r in "$env:ProgramFiles\Microsoft Visual Studio\2022","$env:ProgramFiles\dotnet\sdk") {
+              if (Test-Path $r) {
+                Get-ChildItem -Path $r -Recurse -Filter $dll -ErrorAction SilentlyContinue |
+                  Select-Object -First 5 | ForEach-Object { Write-Host "  located: $($_.FullName)"; if (-not $found) { $found = $_.DirectoryName } }
+              }
+            }
+          }
+          if ($found) {
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Copy-Item -Force -Recurse (Join-Path $found '*') $target
+            Write-Host "Provisioned AppxPackage tasks: '$found' -> '$target' (present now: $(Test-Path (Join-Path $target $dll)))"
+          } else {
+            Write-Host "WARNING: $dll not found on the runner; dotnet publish PRI generation will still fail (will pivot to VS MSBuild)."
+          }
+
       # Builds the WinUI shell (dotnet publish, self-contained), freezes engine.exe (build_engine.ps1),
       # recovers VoiceType.pri, and assembles dist\beta\VoiceType-beta. CI has no .venv, so build_engine.ps1
       # falls back to the runner's `python` (which has the deps installed above).

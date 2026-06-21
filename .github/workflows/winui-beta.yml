@@ -54,6 +54,19 @@ jobs:
           PYTHONPATH: src
         run: python -m unittest discover -s tests
 
+      # WindowsAppSDK 1.7 PRI generation (MrtCore.PriGen) is INCOMPATIBLE with the runner's preinstalled
+      # .NET 10 SDK: the publish dies with MSB4062 (the ExpandPriContent task DLL is missing from the .NET 10
+      # SDK's AppxPackage folder). setup-dotnet installs 9.0.x but the highest installed SDK (10) wins unless
+      # pinned. Pin the build to .NET 9 via a WORKSPACE-ONLY global.json (NOT committed -> local builds on
+      # .NET 9 or 10 are unaffected). latestFeature selects the highest 9.0.x present and never rolls to 10.
+      - name: Pin .NET 9 SDK for the WinUI build (workspace global.json)
+        shell: pwsh
+        run: |
+          $json = '{ "sdk": { "version": "9.0.100", "rollForward": "latestFeature", "allowPrerelease": false } }'
+          Set-Content -Path global.json -Value $json -Encoding UTF8
+          Write-Host "Pinned SDK; 'dotnet --version' now resolves to:"
+          dotnet --version
+
       # Builds the WinUI shell (dotnet publish, self-contained), freezes engine.exe (build_engine.ps1),
       # recovers VoiceType.pri, and assembles dist\beta\VoiceType-beta. CI has no .venv, so build_engine.ps1
       # falls back to the runner's `python` (which has the deps installed above).

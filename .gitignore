@@ -82,3 +82,8 @@ updater_private*
 
 # WinUI runtime self-test report (generated artifact)
 winui/*_runtime_report.txt
+
+# .NET SDK pin is written ephemerally by the CI WinUI-beta workflow (pins .NET 9 for WindowsAppSDK
+# PRI generation; the runner's preinstalled .NET 10 SDK fails MrtCore PriGen). Intentionally NOT
+# committed so local builds are not forced onto a specific SDK; ignore it to avoid an accidental commit.
+global.json

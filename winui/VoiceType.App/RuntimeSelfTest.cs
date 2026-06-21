@@ -40,7 +40,14 @@ internal static class RuntimeSelfTest
         Process? bridge = null;
         var events = new List<JsonElement>();
         string repoRoot = RepoPaths.FindRoot();
-        string reportPath = Path.Combine(repoRoot, "winui", "winui_runtime_report.txt");
+        // Report path that works in BOTH layouts: a dev tree keeps the existing gitignored
+        // <repo>\winui\ location (that folder exists); a packaged beta has no winui\ subfolder, so
+        // write into the package ROOT (<package>\winui_runtime_report.txt) — never into a missing
+        // subfolder. WriteReport also creates the dir and surfaces any write failure (no swallow).
+        string winuiDir = Path.Combine(repoRoot, "winui");
+        string reportPath = Directory.Exists(winuiDir)
+            ? Path.Combine(winuiDir, "winui_runtime_report.txt")
+            : Path.Combine(repoRoot, "winui_runtime_report.txt");
 
         var (pipeShort, pipeFull) = RepoPaths.NewPipe("voicetype-selftest");
         try
@@ -422,9 +429,39 @@ internal static class RuntimeSelfTest
         sb.AppendLine("VoiceType WinUI runtime self-test");
         sb.AppendLine($"timestamp: {DateTime.Now:O}");
         sb.AppendLine($"result: {pass}/{Results.Count} passed");
+        sb.AppendLine($"report: {path}");
         sb.AppendLine(new string('-', 60));
         foreach (var (name, ok, detail) in Results)
             sb.AppendLine($"[{(ok ? "PASS" : "FAIL")}] {name}{(detail.Length > 0 ? " — " + detail : "")}");
-        try { File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true)); } catch { }
+        string body = sb.ToString();
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, body, new UTF8Encoding(true));
+        }
+        catch (Exception ex)
+        {
+            // Do NOT swallow: a missing/locked/unwritable report path must be visible, or packaged
+            // verification could "run" while leaving nothing to inspect. Fall back to TEMP with a
+            // loud header AND drop a breadcrumb next to the exe so the failure can't be silent.
+            bool fbOk = false;
+            string fb = Path.Combine(Path.GetTempPath(), "winui_runtime_report.txt");
+            try
+            {
+                File.WriteAllText(fb,
+                    $"PRIMARY REPORT WRITE FAILED for '{path}': {ex.GetType().Name}: {ex.Message}\r\n\r\n{body}",
+                    new UTF8Encoding(true));
+                fbOk = true;
+            }
+            catch { }
+            try
+            {
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "SELFTEST-REPORT-WRITE-FAILED.txt"),
+                    $"Could not write the self-test report to '{path}'.\r\n{ex}\r\n" +
+                    $"Fallback: {(fbOk ? fb : "ALSO FAILED")}\r\n", new UTF8Encoding(true));
+            }
+            catch { }
+        }
     }
 }

@@ -36,6 +36,9 @@ Write-Host "Building engine.exe with PyInstaller..." -ForegroundColor Cyan
 # read-only attribute and succeeds, so we remove them here and DON'T pass --clean.
 foreach ($d in @((Join-Path $repo "build\engine"), (Join-Path $repo "dist\engine"))) {
   if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+  # Fail loudly if a stale dir survives (locked file / running engine.exe) rather than letting
+  # PyInstaller fail later with a confusing WinError 5 mid-build.
+  if (Test-Path $d) { throw "Could not remove stale '$d' (locked?). Close any running engine.exe and retry." }
 }
 
 # PyInstaller writes progress to stderr; under ErrorActionPreference=Stop, Windows PowerShell 5.1

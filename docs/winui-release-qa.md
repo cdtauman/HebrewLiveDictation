@@ -149,16 +149,26 @@ the .NET runtime AND the Windows App Runtime), (2) freezes the engine (`build_en
 - **Size:** ~544 MB on disk. Heavy contributors: the frozen engine (~374 MB — PySide6 + faster-whisper
   + ctranslate2 + grpc), and the self-contained .NET + Windows App Runtime in the shell (~150 MB+).
 - **Contents (top level):** `VoiceType.exe`, `VoiceType.dll`, `VoiceType.pri` (see PRI note), the
-  .NET + WinAppSDK runtime DLLs, `Microsoft.UI*.pri`, `resources\`, `engine\` (engine.exe + `_internal\`),
-  `READ-ME-BETA.txt`.
+  .NET + WinAppSDK runtime DLLs, `Microsoft.UI*.pri`, the WinAppSDK locale folders (`en-us\`, `he-IL\`,
+  … one per language), `Microsoft.UI.Xaml\`, `NpuDetect\`, `engine\` (engine.exe + `_internal\`), and
+  `READ-ME-BETA.txt`. (There is no top-level `resources\` folder.)
 - **Run:** double-click `VoiceType.exe`, or from a terminal.
-- **Verify (must pass) — out-of-repo packaged self-test:**
+- **Verify (automated, must pass):**
   ```powershell
-  & "dist\beta\VoiceType-beta\VoiceType.exe" --selftest --expect-packaged-engine   # result: 39/39 passed
+  powershell -File packaging\verify_beta.ps1     # copies the beta OUT-OF-REPO, runs positive + negative
   ```
-  Run it from a copy OUTSIDE the repo to prove no dev fallback is possible; the report is written to
-  `<folder>\winui\winui_runtime_report.txt`. Negative check: rename `engine\engine.exe` away and
-  re-run — `engine.launch.mode` must FAIL (`expected=packaged, spawned='python'`).
+  `verify_beta.ps1` copies the layout to `%TEMP%\vt-beta-verify` (so `RepoPaths` can't find the repo
+  and no dev fallback is possible), then runs the **positive** packaged self-test and the **negative**
+  (engine.exe renamed away) hard-gate check, asserting both. Equivalent manual commands:
+  ```powershell
+  & "<out-of-repo-copy>\VoiceType.exe" --selftest --expect-packaged-engine   # positive: result: 39/39 passed
+  # rename engine\engine.exe away, re-run -> engine.launch.mode FAILS (expected=packaged, spawned='python')
+  ```
+- **Self-test report path:** the report is written **inside the package** at
+  `<package>\winui_runtime_report.txt` (packaged layout has no `winui\` subfolder). In a dev repo tree
+  it stays at `<repo>\winui\winui_runtime_report.txt`. The chosen path is also echoed in the report's
+  `report:` header line, and a write failure is surfaced (TEMP fallback + a `SELFTEST-REPORT-WRITE-FAILED.txt`
+  breadcrumb next to the exe), never silently swallowed.
 
 **PRI note (real defect this layout caught):** `dotnet publish` for unpackaged WinUI drops the app's
 own compiled resource index `VoiceType.pri` from the publish folder. Without it, every page/window

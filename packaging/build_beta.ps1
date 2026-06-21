@@ -76,10 +76,16 @@ $engineSrc = Join-Path $repo "dist\engine"
 if (-not (Test-Path (Join-Path $engineSrc "engine.exe"))) { throw "engine build did not produce dist\engine\engine.exe" }
 
 # 3) Assemble the beta layout.
+# Deletion guard: only ever remove a directory that is EMPTY or that we recognize as a prior beta
+# layout by our own marker file (READ-ME-BETA.txt). VoiceType.exe alone is NOT sufficient — that
+# could be any app folder. This prevents a mistyped -OutDir from deleting an arbitrary user folder.
+$marker = "READ-ME-BETA.txt"
 if (Test-Path $beta) {
-  $hasVt = Test-Path (Join-Path $beta "VoiceType.exe")
   $isEmpty = -not (Get-ChildItem -Force $beta -ErrorAction SilentlyContinue | Select-Object -First 1)
-  if (-not $hasVt -and -not $isEmpty) { throw "Refusing to delete '$beta' (not empty and no VoiceType.exe)." }
+  $hasMarker = Test-Path (Join-Path $beta $marker)
+  if (-not $isEmpty -and -not $hasMarker) {
+    throw "Refusing to delete '$beta': not empty and not a prior beta layout (missing $marker). Pass an empty dir or a previously-built beta folder."
+  }
   Remove-Item -Recurse -Force $beta
 }
 New-Item -ItemType Directory -Force -Path $beta | Out-Null
@@ -110,7 +116,7 @@ Offline dictation
 Status
   Beta. Not signed. Not a final release.
 "@
-Set-Content -Path (Join-Path $beta "READ-ME-BETA.txt") -Value $readme -Encoding UTF8
+Set-Content -Path (Join-Path $beta $marker) -Value $readme -Encoding UTF8
 
 # 4) Report.
 $size = (Get-ChildItem -Recurse $beta | Measure-Object Length -Sum).Sum

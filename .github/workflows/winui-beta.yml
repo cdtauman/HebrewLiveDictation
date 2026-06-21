@@ -79,32 +79,44 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $sdkVer = (& dotnet --version).Trim()
           $sdkDir = Join-Path "$env:ProgramFiles\dotnet\sdk" $sdkVer
-          $target = Join-Path $sdkDir 'Microsoft\VisualStudio\v17.0\AppxPackage'
           $dll = 'Microsoft.Build.Packaging.Pri.Tasks.dll'
-          Write-Host "SDK: $sdkVer"
-          Write-Host "Target AppxPackage dir: $target (exists: $(Test-Path $target))"
+          Write-Host "SDK: $sdkVer ; SDK dir: $sdkDir"
+
+          # Enumerate the runner's real VS layout (vswhere) so we know exactly what MSBuild trees exist.
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $searchRoots = @()
+          if (Test-Path $vswhere) {
+            Write-Host "=== vswhere -all ==="
+            & $vswhere -all -prerelease -property installationPath | ForEach-Object {
+              Write-Host "VS instance: $_"; if ($_ -and (Test-Path $_)) { $searchRoots += (Join-Path $_ 'MSBuild') }
+            }
+          } else { Write-Host "vswhere not present at $vswhere" }
+          $searchRoots += @(
+            "$env:ProgramFiles\Microsoft Visual Studio",
+            "${env:ProgramFiles(x86)}\Microsoft Visual Studio",
+            "$env:ProgramFiles\dotnet\sdk",
+            "${env:ProgramFiles(x86)}\Windows Kits"
+          )
+
+          Write-Host "=== exhaustive search for $dll ==="
           $found = $null
-          foreach ($ed in 'Enterprise','Professional','Community','BuildTools') {
-            foreach ($pf in "$env:ProgramFiles","${env:ProgramFiles(x86)}") {
-              $c = Join-Path $pf "Microsoft Visual Studio\2022\$ed\MSBuild\Microsoft\VisualStudio\v17.0\AppxPackage"
-              if (Test-Path (Join-Path $c $dll)) { Write-Host "FOUND: $c"; if (-not $found) { $found = $c } }
+          foreach ($r in ($searchRoots | Select-Object -Unique)) {
+            if (Test-Path $r) {
+              Get-ChildItem -Path $r -Recurse -Filter $dll -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host "  located: $($_.FullName)"; if (-not $found) { $found = $_.DirectoryName } }
             }
           }
-          if (-not $found) {
-            Write-Host "Direct candidates missed; bounded recursive search..."
-            foreach ($r in "$env:ProgramFiles\Microsoft Visual Studio\2022","$env:ProgramFiles\dotnet\sdk") {
-              if (Test-Path $r) {
-                Get-ChildItem -Path $r -Recurse -Filter $dll -ErrorAction SilentlyContinue |
-                  Select-Object -First 5 | ForEach-Object { Write-Host "  located: $($_.FullName)"; if (-not $found) { $found = $_.DirectoryName } }
-              }
-            }
-          }
+
           if ($found) {
-            New-Item -ItemType Directory -Force -Path $target | Out-Null
-            Copy-Item -Force -Recurse (Join-Path $found '*') $target
-            Write-Host "Provisioned AppxPackage tasks: '$found' -> '$target' (present now: $(Test-Path (Join-Path $target $dll)))"
+            # Mirror the AppxPackage tasks into BOTH plausible SDK version folders (v17.0 for .NET 9, v18.0 for .NET 10).
+            foreach ($v in 'v17.0','v18.0') {
+              $target = Join-Path $sdkDir "Microsoft\VisualStudio\$v\AppxPackage"
+              New-Item -ItemType Directory -Force -Path $target | Out-Null
+              Copy-Item -Force -Recurse (Join-Path $found '*') $target
+              Write-Host "Provisioned -> $target (present: $(Test-Path (Join-Path $target $dll)))"
+            }
           } else {
-            Write-Host "WARNING: $dll not found on the runner; dotnet publish PRI generation will still fail (will pivot to VS MSBuild)."
+            Write-Host "RESULT: $dll is ABSENT from this runner (no VS MSIX/PRI build tasks). dotnet publish PRI generation will fail; this is a hosted-runner limitation."
           }
 
       # Builds the WinUI shell (dotnet publish, self-contained), freezes engine.exe (build_engine.ps1),

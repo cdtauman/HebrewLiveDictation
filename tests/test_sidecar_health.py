@@ -144,6 +144,23 @@ class HealthTests(unittest.TestCase):
         # A missing backend reports False (never raises) — the packaged smoke check then fails.
         self.assertFalse(any(caps["insertion"].values()))
 
+    def test_engine_capabilities_reports_comtypes_client_independently(self):
+        # The Word COM path needs comtypes.client specifically; a freeze can bundle the base
+        # comtypes package but miss the submodule. The probe must report it independently so the
+        # packaged gate (which requires comtypes_client) catches a missing Word backend.
+        import builtins
+        real = builtins.__import__
+
+        def only_client_missing(name, *a, **k):
+            if name == "comtypes.client":
+                raise ImportError("submodule not frozen")
+            return real(name, *a, **k)
+
+        with mock.patch("builtins.__import__", side_effect=only_client_missing):
+            ins = sidecar.engine_capabilities()["insertion"]
+        self.assertFalse(ins["comtypes_client"])   # the Word COM submodule -> reported False
+        self.assertTrue(ins["comtypes"])            # base package still importable, independently
+
     def test_model_downloaded_reflects_real_presence(self):
         with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": True}):
             self.assertTrue(sidecar.model_downloaded(_FakeConfig({})))

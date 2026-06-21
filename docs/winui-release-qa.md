@@ -18,7 +18,7 @@ Both must be green before any release build.
 $env:PYTHONPATH="src"; python -m unittest discover -s tests -t . -p "test_*.py"
 ```
 
-Currently **264 tests** across 31 files. Beyond the engine coverage listed in
+Currently **267 tests** across 31 files. Beyond the engine coverage listed in
 [qa.md](qa.md), the WinUI seam adds:
 
 - `test_bridge_server.py`, `test_sidecar_lifecycle.py`, `test_sidecar_callbacks.py`,
@@ -40,7 +40,7 @@ risk register:
 | --- | --- |
 | `bridge.spawn/connect/ping/getStatus/event.stream/client/disconnect` | #1,#10,#11 IPC seam replaces AppBridge; clean reconnect |
 | `engine.launch.mode` | #16 packaging — the shell launches the bundled `engine.exe` when packaged, else the dev `python -m` fallback. With `--expect-packaged-engine` it is a **forced** hard packaged gate (missing/broken engine.exe or a python fallback fails) |
-| `engine.insertion.deps` | #8,#16 the engine can import the dynamic insertion backends (`comtypes.client` Word COM, `uiautomation` UIA) — proves a packaged freeze bundled them |
+| `engine.insertion.deps` | #8,#16 the engine can import ALL dynamic insertion backends — `comtypes` + `comtypes.client` (Word COM) + `uiautomation` (UIA). `comtypes.client` is required separately because a freeze can bundle the base package but miss that submodule, leaving the Word backend dead while the proof "passes" |
 | `bridge.settings.boundary`, `bridge.engine.config` | #11 engine is the single config writer (round-trip) |
 | `bridge.getCommands/getTranscripts/listMicrophones/clearHistory.guard` | #9,#12 mic + history + commands over IPC |
 | `focus.no_steal`, `hud.surface.no_steal` | **#7 focus-safety — the highest-priority invariant** |
@@ -59,10 +59,16 @@ the layout-derived `EngineLaunchMode()`); the **packaged** run passes `--expect-
 which **forces** the expectation to `packaged` so it does NOT self-adapt — a missing/broken
 `engine.exe` (which would make `EngineLaunchMode()` read `dev`) or any python fallback fails hard.
 
-**Dev (python -m fallback)** — run from the shell build output, no `engine\` folder present:
+First build the self-contained shell (defines `$out`, the packaged output dir these commands use):
 
 ```powershell
+dotnet build winui\VoiceType.App\VoiceType.App.csproj -p:Platform=x64
 $out = "winui\VoiceType.App\bin\x64\Debug\net9.0-windows10.0.19041.0\win-x64"
+```
+
+**Dev (python -m fallback)** — run from `$out` with no `engine\` folder present:
+
+```powershell
 & "$out\VoiceType.exe" --selftest          # engine.launch.mode -> expected=dev, spawned='python'
 Get-Content winui\winui_runtime_report.txt | Select-Object -First 3
 ```

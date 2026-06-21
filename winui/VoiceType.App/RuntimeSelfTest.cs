@@ -131,11 +131,16 @@ internal static class RuntimeSelfTest
                 // real injection into Word/UIA targets works, not just engine startup. In dev the
                 // venv has them. A hard check either way.
                 var caps = await client.RpcAsync("getCapabilities");
+                bool True_(JsonElement o, string p) => o.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.True;
+                // The Word COM path specifically needs comtypes.client (a submodule a freeze can miss
+                // even when the base comtypes package is bundled), so require it ALONGSIDE comtypes and
+                // uiautomation — otherwise the proof could pass while the real Word backend is absent.
                 bool insOk = caps.TryGetProperty("insertion", out var ins)
-                             && ins.TryGetProperty("comtypes", out var ctv) && ctv.ValueKind == JsonValueKind.True
-                             && ins.TryGetProperty("uiautomation", out var uav) && uav.ValueKind == JsonValueKind.True;
+                             && True_(ins, "comtypes")
+                             && True_(ins, "comtypes_client")
+                             && True_(ins, "uiautomation");
                 Check("engine.insertion.deps", insOk,
-                      insOk ? "comtypes + uiautomation importable in the engine (Word COM + UIA paths)"
+                      insOk ? "comtypes + comtypes.client (Word COM) + uiautomation (UIA) importable in the engine"
                             : $"missing insertion backend(s): {caps.GetRawText()}");
 
                 // Destructive-RPC guard: clearHistory WITHOUT a confirm flag must refuse

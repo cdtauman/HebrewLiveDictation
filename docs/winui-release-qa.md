@@ -327,7 +327,39 @@ the **wrong place/target**, STOP and record it as a Must-Fix — do not continue
 | K | Offline model missing → download flow honest (no silent auto-download) | ☐ | |
 | L | Tray show / start / stop / exit + hide-to-tray | ☐ | |
 
-**Status: PENDING** — awaiting human execution on real hardware. Results recorded here as each target is run.
+**Status: BLOCKED (first pass, 2026-06-21) — beta blockers found; per-target dictation matrix not
+reachable because core dictation does not work for the tester.** Artifact under test:
+`VoiceType-winui-beta-unsigned` (run 27905256239 / `eb53c0b`) at `c:\tmp\vt-p5-artifact`.
+
+Diagnosis evidence (read from the live machine — the packaged engine does **not** persist a log, see
+finding 6, so evidence is settings + model cache + crash dump + source):
+- `%APPDATA%\VoiceType\settings.json` (shared with the dev/legacy app): `stt.provider=google_v2`,
+  `stt.mode=api`, `google.project_id=""`, `hotkeys.hotkey="copilot"`, `providers.whisper.enabled=true`.
+- `%APPDATA%\VoiceType\models\models--Systran--faster-whisper-small`: has `config.json` +
+  `tokenizer.json` + `vocabulary.txt` but **no `model.bin`** and **no `.vt_complete`** → `is_downloaded()`
+  = not-ready (interrupted ~480 MB weights download).
+- Crash dump `%LOCALAPPDATA%\CrashDumps\VoiceType.exe.19668.dmp` (2026-06-21 00:52).
+
+P5 Must-Fix beta blockers:
+1. **Default engine is Google but Google is unconfigurable.** Fresh `stt.provider` default is `google_v2`
+   with empty `project_id`; there is **no Google credential UI anywhere** (onboarding defers to the
+   Engine room; the Engine room only writes `google.model`). Onboarding's finish does apply offline
+   (`whisper_local`), but any user on the Google path (default config or this tester's stale config)
+   cannot make it work → dictation produces no transcripts.
+2. **Offline model download is not legible.** Progress is indeterminate (spinner + "מוריד…", no
+   %/bytes/size) and a partial/failed download leaves the model not-ready with no clear surfaced error;
+   the tester could not tell it was downloading, failing, or done.
+3. **Hotkey not changeable.** Controls room shows the hotkey as read-only text — no rebind UI. F8 is the
+   *default*, but this tester's stale config is `copilot`, so F8 did nothing and there was no recovery.
+4. **Engine logs are not persisted in the packaged build** (`run()` uses `logging.basicConfig`, never
+   `setup_logging`), so field diagnosis has no engine log to inspect.
+
+Working as designed (not blockers): UI/Tray/Remote start-stop buttons ARE wired to `startDictation`;
+text insertion + the full STT pipeline are proven by the 2026-06-17 dev-app log; packaged engine spawns
+(self-test 39/39). The failure is configuration + missing config UIs, not the start trigger or insertion.
+
+Per-target focus matrix below remains **unfilled** — it cannot be exercised until a tester can reliably
+start dictation and get transcripts. Re-run after the Must-Fix.
 
 ### Packaging decisions (agreed)
 

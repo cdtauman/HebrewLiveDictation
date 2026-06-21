@@ -40,6 +40,12 @@ hiddenimports = [
     "PySide6.QtCore",
     "PySide6.QtGui",
     "PySide6.QtWidgets",
+    # Dynamic text-insertion backends (editing_backend imports these LAZILY, so static analysis
+    # misses them): Word COM via comtypes.client, and the UIA path via uiautomation. Without these
+    # a packaged engine starts fine but cannot inject into Word / UIA targets. Mirrors the legacy spec.
+    "comtypes",
+    "comtypes.client",
+    "uiautomation",
     "keyring.backends.Windows",
     "keyring.backends.chainer",
     "cryptography.hazmat.primitives.asymmetric.ed25519",
@@ -49,9 +55,19 @@ hiddenimports = [
     "psutil",
 ]
 
-# Data-/binary-heavy ML deps (local Whisper) need their native libs + data files collected.
-# Guarded so a missing optional package never breaks the build.
-for _pkg in ("faster_whisper", "ctranslate2", "av", "tokenizers", "huggingface_hub", "onnxruntime"):
+# REQUIRED ML deps for offline Whisper — collect FAIL-FAST. If any of these can't be collected,
+# the resulting engine.exe could not actually run offline dictation; failing the build here is far
+# better than shipping a silently broken freeze (the previous blanket try/except hid exactly that).
+for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "huggingface_hub"):
+    _d, _b, _h = collect_all(_pkg)
+    datas += _d
+    binaries += _b
+    hiddenimports += _h
+
+# OPTIONAL/transitive deps — best-effort. faster-whisper runs without these in our usage (we feed
+# numpy PCM and use our own segmenter, not faster-whisper's onnx VAD or PyAV decode), so a missing
+# one must not break the build.
+for _pkg in ("av", "onnxruntime"):
     try:
         _d, _b, _h = collect_all(_pkg)
         datas += _d

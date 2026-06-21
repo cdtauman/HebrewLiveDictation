@@ -3,7 +3,7 @@
   Build the headless engine sidecar into a standalone engine.exe (PyInstaller onedir).
 
 .DESCRIPTION
-  Local packaged proof — NOT the final release. The final beta artifact must be reproducible
+  Local packaged proof -- NOT the final release. The final beta artifact must be reproducible
   through GitHub Actions / GitHub Release; this script is the dev-machine equivalent that
   validates the freeze + packaged launch seam.
 
@@ -14,6 +14,9 @@
 .PARAMETER StageInto
   Optional path to a shell output dir; if given, the built dist/engine is copied to
   <StageInto>\engine so a packaged-layout self-test can run immediately.
+
+  NOTE: ASCII-only on purpose. Windows PowerShell 5.1 mis-decodes non-ASCII (em dashes, smart
+  quotes) in a UTF-8 file and fails to parse, so keep this script ASCII.
 #>
 param(
   [string]$StageInto = ""
@@ -27,16 +30,37 @@ $py = Join-Path $repo ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }
 
 Write-Host "Building engine.exe with PyInstaller..." -ForegroundColor Cyan
+# PyInstaller writes progress to stderr; under ErrorActionPreference=Stop, Windows PowerShell 5.1
+# treats the first native-stderr line as a terminating error. Scope Continue around the call and
+# detect real failure via the exit code instead.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 & $py -m PyInstaller --noconfirm --clean "packaging\engine.spec"
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed (exit $LASTEXITCODE)" }
+$code = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
+if ($code -ne 0) { throw "PyInstaller failed (exit $code)" }
 
 $engineExe = Join-Path $repo "dist\engine\engine.exe"
 if (-not (Test-Path $engineExe)) { throw "Expected $engineExe not found" }
 Write-Host "Built: $engineExe" -ForegroundColor Green
 
 if ($StageInto -ne "") {
+  # Guardrails before any Remove-Item: only stage into a real shell output dir, and only delete a
+  # pre-existing engine\ we recognize as a prior staging (contains engine.exe), so a mistyped
+  # -StageInto can never recursively delete an unrelated 'engine' directory.
+  if (-not (Test-Path -PathType Container $StageInto)) {
+    throw "-StageInto '$StageInto' is not an existing directory."
+  }
+  if (-not (Test-Path (Join-Path $StageInto "VoiceType.exe"))) {
+    throw "-StageInto '$StageInto' does not contain VoiceType.exe; refusing to stage into a non-shell dir."
+  }
   $dest = Join-Path $StageInto "engine"
-  if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+  if (Test-Path $dest) {
+    if (-not (Test-Path (Join-Path $dest "engine.exe"))) {
+      throw "Refusing to delete '$dest': not a recognized engine staging dir (no engine.exe)."
+    }
+    Remove-Item -Recurse -Force $dest
+  }
   Copy-Item -Recurse -Force (Join-Path $repo "dist\engine") $dest
   Write-Host "Staged packaged engine into: $dest" -ForegroundColor Green
 }

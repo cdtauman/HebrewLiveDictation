@@ -22,8 +22,11 @@ public partial class App : Application
 
         if (Has("--selftest"))
         {
-            // Automated runtime verification, then exit.
-            DispatcherQueue.GetForCurrentThread().TryEnqueue(async () => await RuntimeSelfTest.RunAsync());
+            // Automated runtime verification, then exit. --expect-packaged-engine asserts the
+            // packaged launch HARD: the bundled engine.exe must be present and actually spawned;
+            // a missing/broken engine.exe (or a python fallback) fails the run.
+            bool expectPackaged = Has("--expect-packaged-engine");
+            DispatcherQueue.GetForCurrentThread().TryEnqueue(async () => await RuntimeSelfTest.RunAsync(expectPackaged));
             return;
         }
 

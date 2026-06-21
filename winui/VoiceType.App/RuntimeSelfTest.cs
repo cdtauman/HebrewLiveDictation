@@ -26,7 +26,7 @@ internal static class RuntimeSelfTest
     private static void Check(string name, bool ok, string detail = "")
         => Results.Add((name, ok, detail));
 
-    public static async Task RunAsync()
+    public static async Task RunAsync(bool expectPackaged = false)
     {
         Process? bridge = null;
         var events = new List<JsonElement>();
@@ -42,22 +42,25 @@ internal static class RuntimeSelfTest
                   bridge != null ? $"pid={bridge.Id}" : "failed to start");
 
             // 1b) Launch-mode parity (P2): the process the shell ACTUALLY spawned must match the
-            //     mode RepoPaths selected. Packaged layout (engine\engine.exe present) must run the
-            //     bundled engine.exe; dev tree must run the python -m fallback. This is a HARD gate:
-            //     a packaged build that silently fell back to python — or whose bundled engine
-            //     failed to launch — fails here. Self-adapting, so the same selftest binary passes
-            //     in dev (python) and packaged (engine.exe). Read the name while the child is alive.
-            string expectMode = RepoPaths.EngineLaunchMode();   // "packaged" iff engine\engine.exe present
+            //     expected mode. Packaged layout (engine\engine.exe present) must run the bundled
+            //     engine.exe; dev tree must run the python -m fallback.
+            //
+            //     The expectation comes from the EXPLICIT --expect-packaged-engine flag when given,
+            //     NOT from the layout. This is the key hardening: EngineLaunchMode() is derived from
+            //     whether engine.exe exists, so using it alone as "expected" would let a missing/
+            //     broken engine.exe silently read "dev" and pass through python. Forcing "packaged"
+            //     makes that case fail hard. Without the flag, the dev run self-adapts to the layout.
+            string derivedMode = RepoPaths.EngineLaunchMode();   // "packaged" iff engine\engine.exe present
+            string expectMode = expectPackaged ? "packaged" : derivedMode;
             string spawned = "";
             try { if (bridge is { HasExited: false }) spawned = bridge.ProcessName; } catch { }
             bool isEngineExe = spawned.Equals("engine", StringComparison.OrdinalIgnoreCase);
             bool isPython = spawned.StartsWith("python", StringComparison.OrdinalIgnoreCase);
             bool modeOk = expectMode == "packaged" ? isEngineExe : isPython;
             Check("engine.launch.mode", modeOk,
-                  $"expected={expectMode}, spawned='{spawned}' " +
-                  (expectMode == "packaged"
-                      ? $"(must be the bundled engine.exe at {RepoPaths.PackagedEnginePath()})"
-                      : "(dev python -m fallback)"));
+                  $"expected={expectMode}{(expectPackaged ? " (forced --expect-packaged-engine)" : "")}, " +
+                  $"spawned='{spawned}', derived={derivedMode}, " +
+                  $"packagedEngine={RepoPaths.PackagedEnginePath() ?? "(none)"}");
 
             // 2) Connect the C# client and exercise the contract from the WinUI side.
             using var client = new BridgeClient(pipeShort);
@@ -120,6 +123,20 @@ internal static class RuntimeSelfTest
                                && modelStat.TryGetProperty("name", out _) && modelStat.TryGetProperty("path", out _);
                 Check("bridge.getModelStatus", msShape,
                       $"model status returned (downloaded={(msShape && dl.ValueKind == JsonValueKind.True)})");
+
+                // Packaged insertion smoke check: the dynamic text-insertion backends
+                // (comtypes.client for Word COM, uiautomation for the UIA path) must be importable
+                // in the ENGINE process. In a packaged run this proves the freeze actually bundled
+                // them (editing_backend imports them lazily, so PyInstaller can't see them) — i.e.
+                // real injection into Word/UIA targets works, not just engine startup. In dev the
+                // venv has them. A hard check either way.
+                var caps = await client.RpcAsync("getCapabilities");
+                bool insOk = caps.TryGetProperty("insertion", out var ins)
+                             && ins.TryGetProperty("comtypes", out var ctv) && ctv.ValueKind == JsonValueKind.True
+                             && ins.TryGetProperty("uiautomation", out var uav) && uav.ValueKind == JsonValueKind.True;
+                Check("engine.insertion.deps", insOk,
+                      insOk ? "comtypes + uiautomation importable in the engine (Word COM + UIA paths)"
+                            : $"missing insertion backend(s): {caps.GetRawText()}");
 
                 // Destructive-RPC guard: clearHistory WITHOUT a confirm flag must refuse
                 // (so this is safe to run — it never wipes the real store).

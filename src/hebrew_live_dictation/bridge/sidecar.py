@@ -388,6 +388,32 @@ def delete_model(config, name=None) -> dict:
         return {"deleted": False, "name": name or ""}
 
 
+def engine_capabilities() -> dict:
+    """Best-effort import probe of the dynamic backends a packaged build must bundle.
+
+    text injection imports these lazily (editing_backend: comtypes.client for the Word COM path,
+    uiautomation for the UIA path), so PyInstaller can't see them by static analysis — they live
+    in engine.spec's hidden imports. A packaged-layout self-test calls this to PROVE the freeze
+    actually included them (a smoke test for real insertion), rather than discovering it only when
+    a user first dictates into Word. Importing here is cheap and side-effect-free beyond loading
+    the module; failures degrade to False, never raise.
+    """
+    def _can_import(mod) -> bool:
+        try:
+            __import__(mod)
+            return True
+        except Exception:
+            return False
+
+    return {
+        "insertion": {
+            "comtypes": _can_import("comtypes"),
+            "comtypes_client": _can_import("comtypes.client"),
+            "uiautomation": _can_import("uiautomation"),
+        },
+    }
+
+
 def compute_health(config) -> dict:
     """Home health strip: engine label, microphone availability, offline readiness.
 
@@ -781,6 +807,9 @@ def run(pipe_name: str | None = None) -> int:
             return config.as_dict()
         if method == "getHealth":
             return compute_health(config)
+        if method == "getCapabilities":
+            # Import probe of the dynamic insertion backends — used by the packaged smoke test.
+            return engine_capabilities()
         if method == "getCommands":
             return command_reference(config)
         if method == "listMicrophones":

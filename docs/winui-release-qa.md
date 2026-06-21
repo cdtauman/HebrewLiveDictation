@@ -33,13 +33,14 @@ The adapter rule holds: no engine module is modified; the sidecar only wraps the
 VoiceType.exe --selftest    # writes winui/winui_runtime_report.txt ; "result: N/N passed"
 ```
 
-Currently **38 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
+Currently **39 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
 risk register:
 
 | Self-test checks | §13 risk verified |
 | --- | --- |
 | `bridge.spawn/connect/ping/getStatus/event.stream/client/disconnect` | #1,#10,#11 IPC seam replaces AppBridge; clean reconnect |
-| `engine.launch.mode` | #16 packaging — the shell launches the bundled `engine.exe` when packaged, else the dev `python -m` fallback (hard, self-adapting) |
+| `engine.launch.mode` | #16 packaging — the shell launches the bundled `engine.exe` when packaged, else the dev `python -m` fallback. With `--expect-packaged-engine` it is a **forced** hard packaged gate (missing/broken engine.exe or a python fallback fails) |
+| `engine.insertion.deps` | #8,#16 the engine can import the dynamic insertion backends (`comtypes.client` Word COM, `uiautomation` UIA) — proves a packaged freeze bundled them |
 | `bridge.settings.boundary`, `bridge.engine.config` | #11 engine is the single config writer (round-trip) |
 | `bridge.getCommands/getTranscripts/listMicrophones/clearHistory.guard` | #9,#12 mic + history + commands over IPC |
 | `focus.no_steal`, `hud.surface.no_steal` | **#7 focus-safety — the highest-priority invariant** |
@@ -53,12 +54,12 @@ risk register:
 
 #### Dev vs packaged-layout self-test
 
-The same `--selftest` binary runs in both layouts; `engine.launch.mode` self-adapts and is a
-**hard** gate either way (it reads the process the shell actually spawned and asserts it matches
-the mode `RepoPaths` selected — so a packaged build that silently fell back to `python`, or whose
-bundled engine failed to launch, fails).
+The same `--selftest` binary runs in both layouts. The **dev** run self-adapts (its expectation is
+the layout-derived `EngineLaunchMode()`); the **packaged** run passes `--expect-packaged-engine`,
+which **forces** the expectation to `packaged` so it does NOT self-adapt — a missing/broken
+`engine.exe` (which would make `EngineLaunchMode()` read `dev`) or any python fallback fails hard.
 
-**Dev (python -m fallback)** — run from the shell build output (no `engine\` folder present):
+**Dev (python -m fallback)** — run from the shell build output, no `engine\` folder present:
 
 ```powershell
 $out = "winui\VoiceType.App\bin\x64\Debug\net9.0-windows10.0.19041.0\win-x64"
@@ -67,17 +68,19 @@ Get-Content winui\winui_runtime_report.txt | Select-Object -First 3
 ```
 
 **Packaged layout (bundled engine.exe)** — freeze the engine, stage it next to `VoiceType.exe`
-as an `engine\` subfolder, then run the same command:
+as an `engine\` subfolder, then run with the explicit packaged expectation:
 
 ```powershell
 $out = "winui\VoiceType.App\bin\x64\Debug\net9.0-windows10.0.19041.0\win-x64"
 powershell -File packaging\build_engine.ps1 -StageInto $out   # builds dist\engine, copies -> $out\engine
-& "$out\VoiceType.exe" --selftest          # engine.launch.mode -> expected=packaged, spawned='engine'
+& "$out\VoiceType.exe" --selftest --expect-packaged-engine    # FAILS if engine.exe missing or python used
 Get-Content winui\winui_runtime_report.txt | Select-Object -First 3
 ```
 
 The bundled engine lives at `$out\engine\engine.exe` (the path `RepoPaths.PackagedEnginePath()`
-resolves). Both runs must report `result: 38/38 passed`.
+resolves). Both runs must report `result: 39/39 passed`. To prove the packaged gate really is hard:
+delete `$out\engine\engine.exe` and re-run the packaged command — it must drop below 39/39
+(`engine.launch.mode` fails: `expected=packaged, spawned='python'`).
 
 ## Manual QA (cannot be automated)
 
@@ -109,12 +112,18 @@ Plus the shell surfaces:
   First-run flag set only once; a failed save shows feedback and never advances.
 - **Tray:** show / start / stop / exit; hide-to-tray vs exit honors the Settings choice.
 
-## Packaging status — NOT yet shippable
+## Packaging status — in progress (not yet a release)
 
-The shell builds self-contained (`SelfContained=true`, `win-x64`), **but the engine launch
-is dev-only**: `RepoPaths` locates the `src/`+`winui/` repo tree and spawns a `.venv` or
-system `python -m hebrew_live_dictation.bridge`. A shipped machine has none of that. Closing
-this is the remaining work.
+The shell builds self-contained (`SelfContained=true`, `win-x64`). The engine launch is **no
+longer dev-only**: `RepoPaths` spawns a bundled, frozen `engine\engine.exe` when present (the
+shipped path), and falls back to the dev `python -m hebrew_live_dictation.bridge` only on a repo
+tree. The frozen engine is built by `packaging\engine.spec` / `packaging\build_engine.ps1`, and
+the packaged launch is gated by the `--expect-packaged-engine` self-test above.
+
+What remains before a beta: assemble the two-artifact package (`VoiceType.exe` + `engine\` +
+WindowsAppRuntime) into an unsigned installer, make that artifact reproducible via GitHub Actions /
+GitHub Release, and run the real-hardware focus-safety matrix on the packaged build. The local
+PyInstaller proof on a dev machine is **not** the release — the shippable artifact must come from CI.
 
 Already in place (reusable, from the prior app): a signed-manifest updater
 (`updater.py`, `docs/updater.md`) with `test_updater.py`, `test_sign_release.py`,

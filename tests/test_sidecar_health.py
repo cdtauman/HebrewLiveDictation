@@ -123,6 +123,27 @@ class HealthTests(unittest.TestCase):
             self.assertFalse(s["downloaded"])
             self.assertEqual(set(s.keys()), {"name", "downloaded", "path"})
 
+    def test_engine_capabilities_shape_and_bools(self):
+        caps = sidecar.engine_capabilities()
+        self.assertIn("insertion", caps)
+        self.assertEqual(set(caps["insertion"]), {"comtypes", "comtypes_client", "uiautomation"})
+        for v in caps["insertion"].values():
+            self.assertIsInstance(v, bool)
+
+    def test_engine_capabilities_import_failure_degrades_to_false(self):
+        import builtins
+        real = builtins.__import__
+
+        def boom(name, *a, **k):
+            if name in ("comtypes", "comtypes.client", "uiautomation"):
+                raise ImportError("simulated missing freeze dep")
+            return real(name, *a, **k)
+
+        with mock.patch("builtins.__import__", side_effect=boom):
+            caps = sidecar.engine_capabilities()
+        # A missing backend reports False (never raises) — the packaged smoke check then fails.
+        self.assertFalse(any(caps["insertion"].values()))
+
     def test_model_downloaded_reflects_real_presence(self):
         with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": True}):
             self.assertTrue(sidecar.model_downloaded(_FakeConfig({})))

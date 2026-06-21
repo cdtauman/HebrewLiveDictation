@@ -68,20 +68,20 @@ public sealed partial class EnginePage : Page
                 ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
                 break;
             case "downloading":
-                ModelStatusText.Text = "מוריד מודל לא־מקוון… (פעם אחת, דרוש אינטרנט).";
+                ModelStatusText.Text = "מוריד מודל לא־מקוון (כ־500MB) — עשוי לקחת מספר דקות, דרוש אינטרנט. אפשר להמשיך לעבוד בינתיים; נעדכן כשיסתיים.";
                 ModelDownloadBtn.Visibility = Visibility.Collapsed;
                 ModelDeleteBtn.Visibility = Visibility.Collapsed;
                 ModelRing.IsActive = true; ModelRing.Visibility = Visibility.Visible;
                 break;
             case "error":
-                ModelStatusText.Text = "הורדת המודל נכשלה. אפשר לנסות שוב.";
+                ModelStatusText.Text = "הורדת המודל נכשלה — ייתכן ניתוק אינטרנט או הורדה חלקית. בדקו את החיבור ונסו שוב.";
                 ModelDownloadBtn.Content = "נסו שוב";
                 ModelDownloadBtn.Visibility = Visibility.Visible;
                 ModelDeleteBtn.Visibility = Visibility.Collapsed;
                 ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
                 break;
             default: // absent
-                ModelStatusText.Text = "המודל אינו מותקן. הכתבה לא־מקוונת דורשת הורדה חד־פעמית (דרוש אינטרנט).";
+                ModelStatusText.Text = "המודל אינו מותקן. הכתבה לא־מקוונת דורשת הורדה חד־פעמית (כ־500MB, דרוש אינטרנט).";
                 ModelDownloadBtn.Content = "הורד מודל";
                 ModelDownloadBtn.Visibility = Visibility.Visible;
                 ModelDeleteBtn.Visibility = Visibility.Collapsed;
@@ -180,29 +180,36 @@ public sealed partial class EnginePage : Page
     {
         if (_loading) return;
         string tag = (sender as FrameworkElement)?.Tag as string ?? "";
-        bool cloud = tag is "recommended" or "choose";
-        BackupCard.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
-        ChooseCard.Visibility = tag == "choose" ? Visibility.Visible : Visibility.Collapsed;
 
-        bool ok = true;
-        switch (tag)
+        if (tag is "recommended" or "choose")
         {
-            case "recommended":
-                ok &= await SetConfig("stt.provider", "google_v2");
-                ok &= await SetConfig("google.model", "chirp_3");
-                ok &= await ApplyCloudMode();
-                break;
-            case "offline":
-                ok &= await SetConfig("stt.provider", "whisper_local");
-                ok &= await SetConfig("providers.whisper.enabled", true);
-                ok &= await SetConfig("stt.mode", "local");
-                break;
-            default: // choose
-                ok &= await SetConfig("stt.provider", SelectedProvider());
-                ok &= await ApplyCloudMode();
-                break;
+            // Beta honesty: cloud providers (Google/Deepgram/Groq) need credentials, and this beta
+            // has no credential setup UI. Never leave the user on a dead cloud path — explain and
+            // route to the Offline engine, which works with no setup.
+            await ShowMessageAsync("חיבור לענן אינו זמין בגרסת הבטא",
+                "הגדרת מפתח/חשבון לספק ענן עדיין לא קיימת בגרסה זו. עוברים למנוע הלא־מקוון, שעובד ללא הגדרה — התקינו את המודל הלא־מקוון מטה כדי להתחיל.");
+            _loading = true;
+            OptOffline.IsChecked = true;
+            ChooseCard.Visibility = Visibility.Collapsed;
+            BackupCard.Visibility = Visibility.Collapsed;
+            _loading = false;
+            await Finish(await ApplyOffline());
+            return;
         }
-        if (!await Finish(ok)) return;
+
+        // offline
+        ChooseCard.Visibility = Visibility.Collapsed;
+        BackupCard.Visibility = Visibility.Collapsed;
+        await Finish(await ApplyOffline());
+    }
+
+    /// <summary>Apply the offline (local Whisper) engine — the only engine usable in this beta.</summary>
+    private async Task<bool> ApplyOffline()
+    {
+        bool ok = await SetConfig("stt.provider", "whisper_local");
+        ok &= await SetConfig("providers.whisper.enabled", true);
+        ok &= await SetConfig("stt.mode", "local");
+        return ok;
     }
 
     private async void OnBackupToggled(object sender, RoutedEventArgs e)

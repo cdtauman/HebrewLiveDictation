@@ -358,8 +358,27 @@ Working as designed (not blockers): UI/Tray/Remote start-stop buttons ARE wired 
 text insertion + the full STT pipeline are proven by the 2026-06-17 dev-app log; packaged engine spawns
 (self-test 39/39). The failure is configuration + missing config UIs, not the start trigger or insertion.
 
-Per-target focus matrix below remains **unfilled** — it cannot be exercised until a tester can reliably
-start dictation and get transcripts. Re-run after the Must-Fix.
+**Must-Fix resolution (2026-06-21) — fixes applied; manual re-test pending.**
+1. **Honest engine choice.** The Engine room now presents **Offline (Whisper) as "מומלץ בבטא"**; selecting
+   Google or "ספק ענן אחר" shows "חיבור לענן אינו זמין בגרסת הבטא" and **routes to Offline** (no dead cloud
+   path). Cloud captions say credential setup isn't available in this beta. ([EnginePage.xaml] / `OnEngineChoice`)
+2. **Legible offline download.** Download copy now states size + time ("~500MB — עשוי לקחת מספר דקות, דרוש
+   אינטרנט, אפשר להמשיך לעבוד") and a clearer failure message; states are downloading→done/failed with retry.
+   (Progress stays honest-indeterminate; HF gives no granular bytes.)
+3. **Hotkey rebind UI.** Controls now has a hotkey **picker** (F2–F12 + Copilot, plus whatever is saved)
+   that applies **immediately** via a new `reloadHotkeys` RPC (`HotkeyListener.update_settings()`), with a
+   conflict warning when the Copilot key is chosen. Fixes the "stuck on copilot, no recovery" trap.
+4. **Packaged engine now persists a log.** `run()` calls `app_logging.setup_logging(config_dir)` →
+   `%APPDATA%\VoiceType\hebrew_live_dictation.log`. Verified on the real FS: after a packaged verify run the
+   log gained today's entries (was last-written 2026-06-17).
+
+Verification of the fixes: Python 267/267; WinUI build 0 errors; dev self-test 39/39; beta rebuilt (544 MB);
+`verify_beta.ps1` PASSED (positive 39/39, negative hard-gate FAIL); engine log confirmed persisting.
+
+Per-target focus matrix below remains **unfilled** — re-run manual P5 against the **rebuilt** artifact:
+in the Engine room pick Offline + download the model (it resumes the partial download and completes
+`model.bin` + marker), set the hotkey to F8 in Controls, then dictate. The cloud→offline routing and the
+hotkey rebind are build-verified but the end-to-end voice path still needs a human pass.
 
 ### Packaging decisions (agreed)
 

@@ -24,14 +24,12 @@
                             <TextBlock x:Name="HotkeyHint" Text="לחיצה מפעילה ועוצרת את ההכתבה בכל מקום."
                                        Style="{StaticResource CaptionMutedStyle}" />
                         </StackPanel>
-                        <Border Grid.Column="1" VerticalAlignment="Center"
-                                Background="{ThemeResource SurfaceSubtleBrush}"
-                                BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1"
-                                CornerRadius="6" Padding="14,6,14,6">
-                            <TextBlock x:Name="HotkeyText" Text="F8" FontFamily="Consolas"
-                                       Foreground="{ThemeResource TextPrimaryBrush}" />
-                        </Border>
+                        <ComboBox x:Name="HotkeyCombo" Grid.Column="1" MinWidth="200" VerticalAlignment="Center"
+                                  SelectionChanged="OnHotkeyChanged" />
                     </Grid>
+                    <TextBlock x:Name="HotkeyConflict" TextWrapping="Wrap" Visibility="Collapsed"
+                               Foreground="#B45309"
+                               Text="מקש זה עלול להתנגש עם Windows Copilot. אם ההכתבה לא נפתחת, בחרו מקש אחר (למשל F8)." />
                     <StackPanel Spacing="8">
                         <TextBlock Text="אופן ההפעלה" Style="{StaticResource SectionHeaderStyle}" />
                         <RadioButton x:Name="ModeToggle" GroupName="trigmode" Tag="toggle" Checked="OnModeChoice"
@@ -39,7 +37,7 @@
                         <RadioButton x:Name="ModePtt" GroupName="trigmode" Tag="push_to_talk" Checked="OnModeChoice"
                                      Content="לחיצה ממושכת — מקליט כל עוד המקש לחוץ" />
                     </StackPanel>
-                    <TextBlock Text="השינוי באופן ההפעלה ובמקש ייכנס לתוקף בהפעלה הבאה."
+                    <TextBlock Text="מקש הקיצור חל מיד. אופן ההפעלה ייכנס לתוקף בהפעלה הבאה."
                                Style="{StaticResource CaptionMutedStyle}" />
                 </StackPanel>
             </Border>

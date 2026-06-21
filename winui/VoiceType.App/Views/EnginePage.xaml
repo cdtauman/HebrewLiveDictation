@@ -21,24 +21,25 @@
                 <StackPanel Spacing="14">
                     <TextBlock Text="בחירת מנוע" Style="{StaticResource SectionHeaderStyle}" />
                     <StackPanel Spacing="10">
-                        <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
+                        <RadioButton x:Name="OptOffline" GroupName="engine" Tag="offline" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
-                                <TextBlock Text="מומלץ · Google Chirp 3" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="האיכות הטובה ביותר לעברית. דורש מפתח Google."
+                                <TextBlock Text="מומלץ בבטא · לא־מקוון · Whisper" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="פרטי לחלוטין ועובד ללא הגדרה. לאחר התקנת המודל הלא־מקוון מטה — עובד בלי חיבור לאינטרנט."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="OptOffline" GroupName="engine" Tag="offline" Checked="OnEngineChoice">
+                        <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
-                                <TextBlock Text="לא־מקוון · Whisper" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="פרטי לחלוטין. לאחר התקנת המודל הלא־מקוון — עובד בלי חיבור לאינטרנט."
+                                <TextBlock Text="Google Chirp 3 (ענן)" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="איכות מצוינת לעברית — אך הגדרת מפתח Google אינה זמינה בגרסת הבטא. הבחירה תעביר אתכם ללא־מקוון."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="OptChoose" GroupName="engine" Tag="choose" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
-                                <TextBlock Text="בחירה ידנית" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="בחרו ספק זיהוי אחר." Style="{StaticResource CaptionMutedStyle}" />
+                                <TextBlock Text="ספק ענן אחר" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="Deepgram/Groq דורשים מפתח — הגדרה שאינה זמינה בגרסת הבטא. הבחירה תעביר אתכם ללא־מקוון."
+                                           Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
                     </StackPanel>

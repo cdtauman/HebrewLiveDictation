@@ -698,11 +698,19 @@ def run(pipe_name: str | None = None) -> int:
 
     from ..config import Config
     from ..dictation_controller import DictationController
-    from ..hotkeys import HotkeyListener
+    from ..hotkeys import HotkeyListener, check_hotkey_conflict
+    from .. import app_logging
 
     appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
     config_dir = os.path.join(appdata, "VoiceType")
     config = Config(config_dir)
+    # Persist the engine log next to settings so packaged (engine.exe) runs are diagnosable.
+    # run() otherwise only had logging.basicConfig (console -> piped to the shell, never on disk),
+    # which left packaged field failures with no engine log to inspect.
+    try:
+        app_logging.setup_logging(config_dir)
+    except Exception:
+        logger.error("file logging setup failed:\n%s", traceback.format_exc())
 
     # Clear a stale saved microphone before any dictation can start, so the engine falls
     # back to the Windows default rather than trying a device that no longer exists —
@@ -841,6 +849,22 @@ def run(pipe_name: str | None = None) -> int:
         if method == "setConfig":
             saved = config.set(params["key"], params["value"])  # engine is the single writer
             return {"key": params["key"], "value": config.get(params["key"]), "saved": bool(saved)}
+        if method == "reloadHotkeys":
+            # Apply a hotkey change (already written via setConfig) to the RUNNING listener
+            # immediately — the listener boots once, so without this a rebind would only take
+            # effect next launch. Also report whether the chosen hotkey conflicts (e.g. the
+            # Copilot key, which Windows also claims) so the UI can warn and offer a safe choice.
+            try:
+                hotkeys.update_settings()
+            except Exception:
+                logger.error("hotkey reload failed:\n%s", traceback.format_exc())
+            conflict = False
+            try:
+                conflict = bool(check_hotkey_conflict(config.get("hotkeys.hotkey", "") or ""))
+            except Exception:
+                pass
+            return {"hotkeysActive": hotkeys_ok, "conflict": conflict,
+                    "hotkey": config.get("hotkeys.hotkey", "")}
         if method == "startDictation":
             if offline_start_refused():
                 return {"accepted": False, "needsModel": True, "message": OFFLINE_MODEL_REQUIRED_MSG}

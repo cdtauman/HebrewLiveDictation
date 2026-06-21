@@ -36,7 +36,7 @@ public sealed partial class ControlsPage : Page
         DispatcherQueue.TryEnqueue(() =>
         {
             _loading = true;
-            HotkeyText.Text = FormatHotkey(hotkey);
+            PopulateHotkeys(hotkey);
             if (mode == "push_to_talk") ModePtt.IsChecked = true; else ModeToggle.IsChecked = true;
             ApplyHotkeyHint(mode);
             HudToggle.IsOn = hud;
@@ -102,6 +102,60 @@ public sealed partial class ControlsPage : Page
         string mode = (sender as FrameworkElement)?.Tag as string ?? "toggle";
         ApplyHotkeyHint(mode);
         await Persist("hotkeys.mode", mode);   // applies on next launch (hotkey listener boots once)
+    }
+
+    // Curated, engine-supported hotkeys (the engine accepts function keys, the Copilot key, and
+    // combos; we offer a safe shortlist plus whatever is currently saved). Tag = engine string.
+    private static readonly (string tag, string label)[] HotkeyPresets =
+    {
+        ("f2", "F2"), ("f3", "F3"), ("f4", "F4"), ("f6", "F6"), ("f7", "F7"),
+        ("f8", "F8"), ("f9", "F9"), ("f10", "F10"), ("f11", "F11"), ("f12", "F12"),
+        ("copilot", "מקש Copilot"),
+    };
+
+    /// <summary>Build the hotkey list and select the saved value (adding it if it isn't a preset,
+    /// e.g. a custom combo), so a rebind never silently loses the current binding.</summary>
+    private void PopulateHotkeys(string current)
+    {
+        current = (current ?? "").Trim().ToLowerInvariant();
+        HotkeyCombo.Items.Clear();
+        bool matched = false;
+        foreach (var (tag, label) in HotkeyPresets)
+        {
+            var item = new ComboBoxItem { Content = label, Tag = tag };
+            HotkeyCombo.Items.Add(item);
+            if (tag == current) { HotkeyCombo.SelectedItem = item; matched = true; }
+        }
+        if (!matched && current.Length > 0)
+        {
+            var item = new ComboBoxItem { Content = current.ToUpperInvariant().Replace("+", " + "), Tag = current };
+            HotkeyCombo.Items.Add(item);
+            HotkeyCombo.SelectedItem = item;
+        }
+        if (HotkeyCombo.SelectedItem == null && HotkeyCombo.Items.Count > 0) HotkeyCombo.SelectedIndex = 0;
+        HotkeyConflict.Visibility = current == "copilot" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Persist the new hotkey AND apply it to the running listener immediately
+    /// (reloadHotkeys), then surface any conflict (e.g. the Copilot key) so the user isn't
+    /// left with a binding that silently never fires.</summary>
+    private async void OnHotkeyChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string tag = (HotkeyCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "f8";
+        if (!await Persist("hotkeys.hotkey", tag)) return;
+        bool conflict = false;
+        if (_host?.Client != null)
+        {
+            try
+            {
+                var r = await _host.Client.RpcAsync("reloadHotkeys");
+                conflict = r.TryGetProperty("conflict", out var c) && c.ValueKind == JsonValueKind.True;
+            }
+            catch { }
+        }
+        DispatcherQueue.TryEnqueue(() =>
+            HotkeyConflict.Visibility = conflict ? Visibility.Visible : Visibility.Collapsed);
     }
 
     private void ApplyHotkeyHint(string mode)
@@ -186,9 +240,6 @@ public sealed partial class ControlsPage : Page
         catch { }
         return null;
     }
-
-    private static string FormatHotkey(string raw)
-        => string.IsNullOrWhiteSpace(raw) ? "—" : raw.ToUpperInvariant().Replace("+", " + ");
 
     private async Task ShowMessageAsync(string title, string body)
     {

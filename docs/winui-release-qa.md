@@ -126,10 +126,51 @@ shipped path), and falls back to the dev `python -m hebrew_live_dictation.bridge
 tree. The frozen engine is built by `packaging\engine.spec` / `packaging\build_engine.ps1`, and
 the packaged launch is gated by the `--expect-packaged-engine` self-test above.
 
-What remains before a beta: assemble the two-artifact package (`VoiceType.exe` + `engine\` +
-WindowsAppRuntime) into an unsigned installer, make that artifact reproducible via GitHub Actions /
-GitHub Release, and run the real-hardware focus-safety matrix on the packaged build. The local
-PyInstaller proof on a dev machine is **not** the release — the shippable artifact must come from CI.
+What remains before a beta: ~~assemble the two-artifact package~~ (done — see "Local unsigned beta
+layout" below), make that artifact reproducible via GitHub Actions / GitHub Release, and run the
+real-hardware focus-safety matrix on the packaged build. The local PyInstaller/publish proof on a
+dev machine is **not** the release — the shippable artifact must come from CI.
+
+### Local unsigned beta layout (P3 — proof of package shape, NOT a release)
+
+`packaging\build_beta.ps1` assembles a self-contained, unpackaged folder a user can run with
+**no repo, no Python, no dev environment**:
+
+```powershell
+powershell -File packaging\build_beta.ps1          # -> dist\beta\VoiceType-beta
+```
+
+It (1) `dotnet publish`es the shell self-contained + `WindowsAppSDKSelfContained=true` (bundles
+the .NET runtime AND the Windows App Runtime), (2) freezes the engine (`build_engine.ps1`), and
+(3) assembles `dist\beta\VoiceType-beta\` = `VoiceType.exe` + all runtime DLLs + `engine\engine.exe`
++ `READ-ME-BETA.txt`.
+
+- **Output:** `dist\beta\VoiceType-beta\` (gitignored).
+- **Size:** ~544 MB on disk. Heavy contributors: the frozen engine (~374 MB — PySide6 + faster-whisper
+  + ctranslate2 + grpc), and the self-contained .NET + Windows App Runtime in the shell (~150 MB+).
+- **Contents (top level):** `VoiceType.exe`, `VoiceType.dll`, `VoiceType.pri` (see PRI note), the
+  .NET + WinAppSDK runtime DLLs, `Microsoft.UI*.pri`, `resources\`, `engine\` (engine.exe + `_internal\`),
+  `READ-ME-BETA.txt`.
+- **Run:** double-click `VoiceType.exe`, or from a terminal.
+- **Verify (must pass) — out-of-repo packaged self-test:**
+  ```powershell
+  & "dist\beta\VoiceType-beta\VoiceType.exe" --selftest --expect-packaged-engine   # result: 39/39 passed
+  ```
+  Run it from a copy OUTSIDE the repo to prove no dev fallback is possible; the report is written to
+  `<folder>\winui\winui_runtime_report.txt`. Negative check: rename `engine\engine.exe` away and
+  re-run — `engine.launch.mode` must FAIL (`expected=packaged, spawned='python'`).
+
+**PRI note (real defect this layout caught):** `dotnet publish` for unpackaged WinUI drops the app's
+own compiled resource index `VoiceType.pri` from the publish folder. Without it, every page/window
+throws `XamlParseException 0x802B000A` and the UI never renders (the engine still runs, so it is easy
+to miss). `build_beta.ps1` recovers `VoiceType.pri` from the build output into the publish folder; the
+packaged self-test's `onboarding.*` / `engine.model_management` checks (which construct real XAML)
+guard against a regression.
+
+**SmartScreen / unknown publisher (must be in release notes):** these binaries are **unsigned**.
+Windows SmartScreen shows an "unknown publisher" / "Windows protected your PC" warning, and some AV
+may flag the unsigned `.exe`. Users proceed via *More info → Run anyway*. This is a **beta**, not a
+signed release; signing is a later phase. `READ-ME-BETA.txt` states this in-package.
 
 Already in place (reusable, from the prior app): a signed-manifest updater
 (`updater.py`, `docs/updater.md`) with `test_updater.py`, `test_sign_release.py`,

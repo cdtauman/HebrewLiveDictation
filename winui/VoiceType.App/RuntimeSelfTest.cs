@@ -26,6 +26,15 @@ internal static class RuntimeSelfTest
     private static void Check(string name, bool ok, string detail = "")
         => Results.Add((name, ok, detail));
 
+    // Rich one-line detail for a failed XAML construction (diagnoses Release/self-contained
+    // XAML-loading regressions): type + message + inner-most message + HRESULT.
+    private static string XamlDetail(Exception ex)
+    {
+        var inner = ex; while (inner.InnerException != null) inner = inner.InnerException;
+        string m = $"{ex.GetType().Name}: {ex.Message} | inner: {inner.GetType().Name}: {inner.Message} | hr=0x{ex.HResult:X8}";
+        return m.Length > 400 ? m.Substring(0, 400) : m;
+    }
+
     public static async Task RunAsync(bool expectPackaged = false)
     {
         Process? bridge = null;
@@ -302,7 +311,7 @@ internal static class RuntimeSelfTest
                 Check("onboarding.navigation", steps == 5 && finishOnLast && backWorks,
                       $"5-step wizard navigates; Finish only on last step (steps={steps})");
             }
-            catch (Exception ex) { Check("onboarding.navigation", false, ex.Message); }
+            catch (Exception ex) { Check("onboarding.navigation", false, XamlDetail(ex)); }
 
             // 6f) Engine mapping (pure, no writes): BOTH choices must run truly offline
             //     (whisper_local/local) — Recommended must NOT persist api/auto_fallback
@@ -344,7 +353,7 @@ internal static class RuntimeSelfTest
                 Check("onboarding.offline_readiness", readyOk && absentOk && dlOk,
                       "offline note honest per model state; download offered only when not ready");
             }
-            catch (Exception ex) { Check("onboarding.offline_readiness", false, ex.Message); }
+            catch (Exception ex) { Check("onboarding.offline_readiness", false, XamlDetail(ex)); }
 
             // 6i) Engine-room offline model management: download offered when absent, delete
             //     offered when present, ring while downloading (render only — no RPC/download).
@@ -360,7 +369,7 @@ internal static class RuntimeSelfTest
                 Check("engine.model_management", absentOk && readyOk && dlOk,
                       "download when absent, delete when present, ring while downloading");
             }
-            catch (Exception ex) { Check("engine.model_management", false, ex.Message); }
+            catch (Exception ex) { Check("engine.model_management", false, XamlDetail(ex)); }
 
             // 7) Disconnect surfacing: a dead engine must raise BridgeClient.Disconnected
             //    so the shell can drop to a recoverable "disconnected" state (not hang).

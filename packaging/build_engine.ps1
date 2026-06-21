@@ -30,12 +30,20 @@ $py = Join-Path $repo ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }
 
 Write-Host "Building engine.exe with PyInstaller..." -ForegroundColor Cyan
+# Pre-clean PyInstaller's build AND dist output dirs ourselves. PyInstaller cleans both with
+# shutil.rmtree, which fails on Windows when a previously-collected file is read-only (WinError 5
+# seen on build\engine\localpycs and dist\engine\_internal\av\audio). Remove-Item -Force clears the
+# read-only attribute and succeeds, so we remove them here and DON'T pass --clean.
+foreach ($d in @((Join-Path $repo "build\engine"), (Join-Path $repo "dist\engine"))) {
+  if (Test-Path $d) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+}
+
 # PyInstaller writes progress to stderr; under ErrorActionPreference=Stop, Windows PowerShell 5.1
 # treats the first native-stderr line as a terminating error. Scope Continue around the call and
 # detect real failure via the exit code instead.
 $prevEAP = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-& $py -m PyInstaller --noconfirm --clean "packaging\engine.spec"
+& $py -m PyInstaller --noconfirm "packaging\engine.spec"
 $code = $LASTEXITCODE
 $ErrorActionPreference = $prevEAP
 if ($code -ne 0) { throw "PyInstaller failed (exit $code)" }

@@ -129,11 +129,11 @@ tree. The frozen engine is built by `packaging\engine.spec` / `packaging\build_e
 the packaged launch is gated by the `--expect-packaged-engine` self-test above.
 
 What remains before a beta: ~~assemble the two-artifact package~~ (done — see "Local unsigned beta
-layout" below), ~~make that artifact reproducible via GitHub Actions~~ (workflow added — see
-"Reproducible beta in CI" below; **a real Actions run is still pending**), wire GitHub Release
-attachment (prepared, tag-gated, dormant), and run the real-hardware focus-safety matrix on the
-packaged build. The local PyInstaller/publish proof on a dev machine is **not** the release — the
-shippable artifact must come from CI.
+layout" below), ~~make that artifact reproducible via GitHub Actions~~ (done — two green runs, see
+"Reproducible beta in CI" below), wire GitHub Release attachment (prepared, tag-gated, dormant), and
+~~run the real-hardware focus-safety matrix on the packaged build~~ (in progress — see "P5 manual QA /
+focus-safety matrix" below). The local PyInstaller/publish proof on a dev machine is **not** the
+release — the shippable artifact must come from CI.
 
 ### Local unsigned beta layout (P3 — proof of package shape, NOT a release)
 
@@ -270,6 +270,64 @@ the legacy `build-release.yml`, which is the old Qt app on `main` + `v*` tags �
   (both `.positive.txt` and `.negative.txt`).
 - **Still UNSIGNED:** the CI artifact carries the same SmartScreen "unknown publisher" limitation as the
   local layout; CI does not sign. Signing is a later phase.
+
+### P5 — Manual QA / focus-safety matrix (real hardware — AUTHORITATIVE)
+
+This is the **hard real-hardware gate for focus safety**. The CI focus checks
+(`focus.no_steal`, `hud.surface.no_steal`) were **advisory**; the results below are **authoritative**.
+Run the matrix against the **CI artifact**, not a local rebuild.
+
+**Artifact under test (do not rebuild):**
+- Artifact: **`VoiceType-winui-beta-unsigned`**
+- From green P4 run **27905256239** (commit `eb53c0b`):
+  https://github.com/cdtauman/HebrewLiveDictation/actions/runs/27905256239
+- Downloaded/extracted to `c:\tmp\vt-p5-artifact` (run `VoiceType.exe` from there).
+- Automatable pre-check on the dev machine: the artifact **launches and self-tests 39/39**,
+  `engine.launch.mode` PASS (`spawned='engine'`) — confirms the package runs before manual QA.
+
+**Stop condition (Must-Fix):** if any target **steals focus**, **inserts text twice**, or inserts into
+the **wrong place/target**, STOP and record it as a Must-Fix — do not continue to P6.
+
+**Tested Windows environment** (fill in):
+| Field | Value |
+|---|---|
+| Windows build | _(dev machine reference: Windows 11 Pro 10.0.26200)_ |
+| Display scaling / DPI | _____ |
+| Monitor setup | _____ |
+| Microphone | _____ |
+| Engine mode tested | _(Recommended/Google · Offline · both)_ |
+| Microsoft Word version | _____ |
+| Chrome version | _____ |
+| WhatsApp / Telegram version | _____ |
+| VS Code version | _____ |
+| Tester / date | _____ |
+
+**Per-target insertion + focus matrix** (mark PASS / FAIL / N/A):
+| # | Target | Insertion path | Checks | Result | Notes |
+|---|---|---|---|---|---|
+| 1 | Notepad | SendInput/Unicode | Hebrew RTL renders correctly · spoken punctuation · **no self-injection** into VoiceType | ☐ | |
+| 2 | Microsoft Word | COM | COM insertion path · mixed Hebrew/English · paragraph-break command | ☐ | |
+| 3 | Chrome / Gmail | UIA | UIA path · **final-only** commit (no interim spam) · **send only when intended** | ☐ | |
+| 4 | WhatsApp / Telegram desktop | UIA/SendInput | message text · emoji phrase · **send boundary** (no premature send) | ☐ | |
+| 5 | VS Code / Electron | UIA/SendInput | correct target identity · **no stale target** after app switch | ☐ | |
+
+**Cross-cutting focus / state / UX checks** (mark PASS / FAIL / N/A):
+| # | Check | Result | Notes |
+|---|---|---|---|
+| A | HUD never steals focus | ☐ | |
+| B | Remote never steals focus | ☐ | |
+| C | Tray never steals focus | ☐ | |
+| D | Target reassurance correct (`→ {app}`) | ☐ | |
+| E | Unknown/unsafe target shows **"יעד לא זוהה"** | ☐ | |
+| F | "Target changed" warning appears when target changes mid-session | ☐ | |
+| G | auto_fallback / offline-backup notice is honest | ☐ | |
+| H | RTL correct across rooms + onboarding | ☐ | |
+| I | DPI / multi-monitor behavior (if available) | ☐ | |
+| J | Onboarding skip / finish behavior | ☐ | |
+| K | Offline model missing → download flow honest (no silent auto-download) | ☐ | |
+| L | Tray show / start / stop / exit + hide-to-tray | ☐ | |
+
+**Status: PENDING** — awaiting human execution on real hardware. Results recorded here as each target is run.
 
 ### Packaging decisions (agreed)
 

@@ -52,7 +52,7 @@ $engine = Join-Path $work "engine\engine.exe"
 
 # The app always writes the one canonical $report; each run overwrites the last. To preserve BOTH proofs
 # we copy the canonical report to a distinct name after each phase, so CI can upload both:
-#   .positive.txt -> the packaged 39/39 run        .negative.txt -> the missing-engine hard-gate FAIL
+#   .positive.txt -> the packaged positive run (non-focus checks pass)  .negative.txt -> missing-engine hard-gate FAIL
 $reportPositive = Join-Path $work "winui_runtime_report.positive.txt"
 $reportNegative = Join-Path $work "winui_runtime_report.negative.txt"
 if (Test-Path $reportPositive) { Remove-Item -Force $reportPositive }
@@ -117,7 +117,7 @@ if ($launchLine2 -notmatch "^\[FAIL\]") { Write-Host "  NEGATIVE FAILED: engine.
 
 Kill-Work
 Write-Host "`nReports preserved:" -ForegroundColor Cyan
-Write-Host "  positive (39/39): $reportPositive"
+Write-Host "  positive (hard checks pass; focus advisory): $reportPositive"
 Write-Host "  negative (hard-gate FAIL): $reportNegative"
 if ($fail) { Write-Host "`nBETA VERIFY: FAILED" -ForegroundColor Red; exit 1 }
 Write-Host "`nBETA VERIFY: PASSED (out-of-repo positive packaged self-test + negative hard-gate)" -ForegroundColor Green

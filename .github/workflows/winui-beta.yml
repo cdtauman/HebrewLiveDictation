@@ -75,7 +75,7 @@ jobs:
         shell: pwsh
         run: ./packaging/verify_beta.ps1
 
-      # Collect BOTH preserved reports (positive 39/39 + negative hard-gate FAIL) from the out-of-repo
+      # Collect BOTH preserved reports (positive non-focus-pass + negative hard-gate FAIL) from the out-of-repo
       # verify copy. if: always() so a failed verify is still inspectable. verify_beta.ps1 copies the
       # canonical report to distinct names after each phase before the next run overwrites it.
       - name: Stage self-test reports

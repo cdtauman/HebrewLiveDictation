@@ -84,9 +84,11 @@ Get-Content winui\winui_runtime_report.txt | Select-Object -First 3
 ```
 
 The bundled engine lives at `$out\engine\engine.exe` (the path `RepoPaths.PackagedEnginePath()`
-resolves). Both runs must report `result: 39/39 passed`. To prove the packaged gate really is hard:
-delete `$out\engine\engine.exe` and re-run the packaged command — it must drop below 39/39
-(`engine.launch.mode` fails: `expected=packaged, spawned='python'`).
+resolves). In the positive run, `engine.launch.mode` must PASS (`expected=packaged, spawned='engine'`)
+and all non-focus checks must pass (`result: 39/39` on a quiet desktop; the two focus checks are
+advisory and may read 37–38/39 if another window steals foreground — see the build/focus split note
+below). To prove the packaged gate really is hard: delete `$out\engine\engine.exe` and re-run — it must
+drop (`engine.launch.mode` FAILS: `expected=packaged, spawned='python'`).
 
 ## Manual QA (cannot be automated)
 

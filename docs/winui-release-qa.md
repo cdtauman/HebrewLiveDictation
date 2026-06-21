@@ -161,9 +161,22 @@ the .NET runtime AND the Windows App Runtime), (2) freezes the engine (`build_en
   ```
   `verify_beta.ps1` copies the layout to `%TEMP%\vt-beta-verify` (so `RepoPaths` can't find the repo
   and no dev fallback is possible), then runs the **positive** packaged self-test and the **negative**
-  (engine.exe renamed away) hard-gate check, asserting both. Equivalent manual commands:
+  (engine.exe renamed away) hard-gate check. It preserves **both** reports under distinct names so neither
+  overwrites the other: `winui_runtime_report.positive.txt` (the positive proof) and
+  `winui_runtime_report.negative.txt` (the expected hard-gate FAIL).
+
+  **Build/artifact vs GUI-focus split (P4 review decision).** The script HARD-GATES only the deterministic,
+  packaging-relevant checks (`engine.launch.mode` PASS positive / FAIL when engine.exe is missing, packaged
+  layout, XAML/PRI rendering, report written). The two focus-safety checks — `focus.no_steal` and
+  `hud.surface.no_steal` — are **advisory**: they fail whenever *any* unrelated window holds the foreground
+  while the test runs (the report shows `fgAfter != hud`, i.e. a third window grabbed focus, not our HUD),
+  which is non-deterministic on a busy desktop or a shared/headless CI runner (observed 39/37/38 across
+  back-to-back runs, a different foreground thief each time). They still **run and are recorded** in the
+  report; they just do not gate packaged verification. **Authoritative focus-safety is the P5 real-hardware
+  focus matrix** (dictate into Word/Gmail/WhatsApp; §16). Equivalent manual commands:
   ```powershell
-  & "<out-of-repo-copy>\VoiceType.exe" --selftest --expect-packaged-engine   # positive: result: 39/39 passed
+  & "<out-of-repo-copy>\VoiceType.exe" --selftest --expect-packaged-engine   # positive: engine.launch.mode PASS;
+  #   all non-focus checks pass (result 39/39 on a quiet desktop, 37-38/39 if a window steals focus)
   # rename engine\engine.exe away, re-run -> engine.launch.mode FAILS (expected=packaged, spawned='python')
   ```
 - **Self-test report path:** the report is written **inside the package** at
@@ -203,18 +216,36 @@ the legacy `build-release.yml`, which is the old Qt app on `main` + `v*` tags �
   no `.venv`, so `build_engine.ps1` falls back to the runner's `python`) → **`packaging\verify_beta.ps1`**
   (out-of-repo positive `--selftest --expect-packaged-engine` + negative engine-rename hard-gate) →
   upload artifacts.
-- **Artifacts:** **`VoiceType-winui-beta-unsigned`** = the full `dist\beta\VoiceType-beta` package
-  (~544 MB), and **`winui-beta-selftest-report`** = the package-root `winui_runtime_report.txt`
-  (uploaded with `if: always()` so a failed verify is still inspectable). Retention 14 days.
+- **Artifacts (retention 14 days):**
+  - **`VoiceType-winui-beta-unsigned`** = the full `dist\beta\VoiceType-beta` package (~544 MB).
+    Uploaded with `if: always()`, so the package is preserved even if GUI verification fails.
+  - **`winui-beta-selftest-reports`** = BOTH preserved self-test reports (uploaded `if: always()`):
+    - `winui_runtime_report.positive.txt` — **the packaged positive proof** (`--expect-packaged-engine`,
+      `engine.launch.mode` PASS, `spawned='engine'`; all non-focus checks pass). On a quiet desktop this is
+      39/39; if a window steals focus during the run it may read 37–38/39 with only the advisory focus
+      checks failing (see the split note below) — the hard gate still passes.
+    - `winui_runtime_report.negative.txt` — **the negative hard-gate proof** (engine.exe renamed away;
+      `engine.launch.mode` FAIL, `spawned='python'`). This report is *expected* to show a failing check.
+
+    The app always writes one canonical `<package>\winui_runtime_report.txt` and each run overwrites it,
+    so `verify_beta.ps1` copies it to these two distinct names after each phase. Read `.positive.txt`
+    for the success proof — never the canonical/last-written file, which holds the negative run.
+- **Verify-step timeout:** the verification step has `timeout-minutes: 12` so a stuck GUI self-test
+  cannot burn the whole job's time budget (`verify_beta.ps1` is itself bounded — ~40s poll per run).
 - **GitHub Release (prepared, dormant):** the tag-gated **`prerelease`** job runs only on a `beta-v*`
   tag; it zips the package and `gh release create … --prerelease` (unsigned). It is wired but has
   **not** been exercised — pushing the first `beta-v*` tag is what proves it.
-- **CI caveat (needs a real run to confirm green):** `verify_beta.ps1` launches the WinUI GUI in
-  `--selftest` mode, which constructs real XAML windows. Whether a GitHub-hosted `windows-latest`
-  session can create those windows headlessly is unverified until the first actual Actions run. If it
-  cannot, that step is where it will surface (the package + report still upload via `if: always()`),
-  and the verify step would move to `continue-on-error` with the GUI gate run on self-hosted/interactive
-  hardware instead. Everything up to and including `build_beta.ps1` is runner-safe.
+- **Build/artifact vs GUI-focus split (decision):** packaged verification hard-gates only the
+  deterministic packaging checks; the environment-sensitive focus checks are advisory and deferred to the
+  P5 real-hardware focus matrix (see the split note under "Verify" above). This was decided after the focus
+  checks proved non-deterministic even on a local interactive machine (39/37/38 across runs), so they
+  cannot be a reliable gate on a shared/headless runner.
+- **CI caveat (still needs a real run to confirm green):** `verify_beta.ps1` launches the WinUI GUI in
+  `--selftest` mode, which constructs real XAML windows. Whether a GitHub-hosted `windows-latest` session
+  can create those windows *at all* headlessly is unverified until the first actual Actions run. If it
+  cannot, that step is where it will surface (the package + both reports still upload via `if: always()`,
+  and the step has `timeout-minutes: 12`), and the GUI self-test would move to a self-hosted/interactive
+  runner. Everything up to and including `build_beta.ps1` (freeze + publish + assemble) is runner-safe.
 - **Still UNSIGNED:** the CI artifact carries the same SmartScreen "unknown publisher" limitation as the
   local layout; CI does not sign. Signing is a later phase.
 

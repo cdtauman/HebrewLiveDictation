@@ -62,38 +62,48 @@ jobs:
         run: ./packaging/build_beta.ps1
 
       # Gate 2: packaged hard-gate. Copies the beta OUT-OF-REPO, runs --selftest --expect-packaged-engine
-      # (positive: all checks pass + package-root winui_runtime_report.txt written), then renames engine.exe
-      # away and asserts engine.launch.mode FAILS (negative). This launches the WinUI GUI in --selftest mode;
-      # if a headless runner cannot create the XAML windows, this step is the one that needs a real run to
-      # confirm green (see docs/winui-release-qa.md "CI").
-      - name: Verify packaged beta (positive self-test + negative hard-gate)
+      # and HARD-GATES the deterministic packaging checks (engine.launch.mode PASS positive / FAIL when
+      # engine.exe is renamed away + package-root winui_runtime_report.txt written). The two focus-safety
+      # checks (focus.no_steal, hud.surface.no_steal) are ADVISORY here: they are environment-sensitive
+      # (fail if any non-HUD window holds foreground) and non-deterministic on a shared/headless runner, so
+      # they are reported but do NOT gate -- authoritative focus-safety is the P5 real-hardware matrix.
+      # This still launches the WinUI GUI in --selftest mode; if a headless runner cannot create the XAML
+      # windows at all, this step is the one that needs a real run to confirm (see docs "Reproducible beta in CI").
+      # Bounded so a stuck GUI self-test can't burn the whole job timeout (verify_beta.ps1 polls ~40s/run).
+      - name: Verify packaged beta (build/artifact hard-gate; focus checks advisory)
+        timeout-minutes: 12
         shell: pwsh
         run: ./packaging/verify_beta.ps1
 
-      # Always collect the self-test report (from the out-of-repo verify copy) so a failed verify is inspectable.
-      - name: Stage self-test report
+      # Collect BOTH preserved reports (positive 39/39 + negative hard-gate FAIL) from the out-of-repo
+      # verify copy. if: always() so a failed verify is still inspectable. verify_beta.ps1 copies the
+      # canonical report to distinct names after each phase before the next run overwrites it.
+      - name: Stage self-test reports
         if: always()
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          $report = Join-Path $env:TEMP 'vt-beta-verify\winui_runtime_report.txt'
-          if (Test-Path $report) {
-            Copy-Item $report (Join-Path 'artifacts' 'winui_runtime_report.txt') -Force
-            Write-Host "Staged self-test report."
-          } else {
-            Write-Host "No self-test report found at $report (verify may not have reached the self-test)."
+          $base = Join-Path $env:TEMP 'vt-beta-verify'
+          foreach ($n in 'winui_runtime_report.positive.txt','winui_runtime_report.negative.txt') {
+            $src = Join-Path $base $n
+            if (Test-Path $src) { Copy-Item $src (Join-Path 'artifacts' $n) -Force; Write-Host "Staged $n" }
+            else { Write-Host "Missing $n (verify may not have reached this phase)." }
           }
 
-      - name: Upload self-test report
+      - name: Upload self-test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: winui-beta-selftest-report
-          path: artifacts/winui_runtime_report.txt
+          name: winui-beta-selftest-reports
+          path: |
+            artifacts/winui_runtime_report.positive.txt
+            artifacts/winui_runtime_report.negative.txt
           if-no-files-found: warn
           retention-days: 14
 
+      # if: always() so the full package is preserved for debugging even when GUI verification fails.
       - name: Upload beta package
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: VoiceType-winui-beta-unsigned

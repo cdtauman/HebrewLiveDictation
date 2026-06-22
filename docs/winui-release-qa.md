@@ -541,6 +541,20 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
    history/export · diagnostics/log viewer · provider/model settings · tray/startup behavior ·
    updater/release notes.
 
+### Product Completion — running changelog
+
+- **PC1 — Google/Chirp setup (done).** Engine room now has a real **Google Cloud config card** (shown
+  when "Google Chirp 3" is selected): Project ID · Region · Model (chirp_3/chirp_2/…) · Recognizer ID ·
+  credential mode (service-account JSON / ADC) · **JSON file picker** · **Test connection** (live
+  `list_recognizers` check) · honest **configured / not-configured / failed** status. New sidecar RPCs
+  `getGoogleStatus` + `testConnection` (reuse the engine's credential/project resolution; no protected
+  engine module changed). Selecting Google sets `provider=google_v2`; missing credentials are reported
+  here and still route to Offline at next start (`recover_unconfigured_cloud`). Deepgram/Groq ("Choose")
+  remain routed to Offline (later phase). *Tests:* Python 282/282; WinUI build 0 errors; dev self-test
+  39/39; packaged verify PASSED. *Known limits:* live connection result depends on the user's real GCP
+  credentials (can't be CI-verified); `smart_auto` Google-when-usable is handled by `auto_select`.
+  *Core path unaffected* (offline F8/Remote untouched). **Next: PC2 started.**
+
 ### Packaging decisions (agreed)
 
 These are settled, not open:

@@ -672,6 +672,68 @@ def _parse_pipe_arg(argv) -> str:
     return DEFAULT_PIPE_NAME
 
 
+def google_config_status(config) -> dict:
+    """Honest Google configuration state for the Engine room (no network): 'configured' when a
+    usable credential source is present (service-account JSON file that exists, or ADC), else
+    'unconfigured'. Project id is resolved the same way the live client does."""
+    try:
+        from ..google_stt_v2_stream import infer_project_id_from_credentials
+        mode = config.get("google.credential_mode", "service_account_json")
+        creds_path = config.get("google.credentials_path", "") or config.get("google_credentials_path", "")
+        project_id = ""
+        try:
+            project_id = infer_project_id_from_credentials(config) or ""
+        except Exception:
+            project_id = config.get("google.project_id", "") or ""
+        if mode == "adc" or "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
+            configured = True
+        else:
+            configured = bool(creds_path and os.path.exists(creds_path))
+        return {"configured": bool(configured and project_id),
+                "hasCredentials": bool(configured), "projectId": project_id,
+                "location": config.get("google.location", "eu"),
+                "model": config.get("google.model", "chirp_3")}
+    except Exception:
+        logger.error("google_config_status failed:\n%s", traceback.format_exc())
+        return {"configured": False, "hasCredentials": False, "projectId": "", "location": "", "model": ""}
+
+
+def test_google_connection(config) -> dict:
+    """Live Google STT V2 reachability/credentials check for the Engine room 'Test connection'.
+    Mirrors how the streaming client resolves credentials (GOOGLE_APPLICATION_CREDENTIALS) + project,
+    then makes one cheap list_recognizers call. Returns {ok, message}. Synchronous (user-initiated)."""
+    try:
+        from ..google_stt_v2_stream import infer_project_id_from_credentials
+        mode = config.get("google.credential_mode", "service_account_json")
+        creds_path = config.get("google.credentials_path", "") or config.get("google_credentials_path", "")
+        if mode == "service_account_json":
+            if not creds_path or not os.path.exists(creds_path):
+                return {"ok": False, "message": "קובץ ההרשאות (Service Account JSON) לא נמצא. בחרו קובץ תקין."}
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
+        elif mode == "adc" and "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
+            pass  # rely on gcloud ADC
+        project_id = infer_project_id_from_credentials(config) or ""
+        if not project_id:
+            return {"ok": False, "message": "חסר Project ID. הזינו אותו או השתמשו ב-JSON שמכיל project_id."}
+        location = (config.get("google.location", "eu") or "eu")
+        from google.cloud.speech_v2 import SpeechClient
+        from google.api_core.client_options import ClientOptions
+        opts = None
+        if location not in ("global", "_"):
+            opts = ClientOptions(api_endpoint=f"{location}-speech.googleapis.com")
+        client = SpeechClient(client_options=opts)
+        parent = f"projects/{project_id}/locations/{location}"
+        # Iterating the pager forces the RPC; this validates credentials + project + region + API access.
+        next(iter(client.list_recognizers(parent=parent, timeout=15.0)), None)
+        return {"ok": True, "message": f"חיבור תקין ✓  (פרויקט {project_id}, אזור {location})"}
+    except Exception as e:
+        logger.warning("Google test connection failed: %s", e)
+        msg = str(e)
+        if len(msg) > 220:
+            msg = msg[:220] + "…"
+        return {"ok": False, "message": "החיבור נכשל: " + msg}
+
+
 _CLOUD_PROVIDERS = ("google_v2", "deepgram", "groq")
 
 
@@ -886,6 +948,14 @@ def run(pipe_name: str | None = None) -> int:
         if method == "getCapabilities":
             # Import probe of the dynamic insertion backends — used by the packaged smoke test.
             return engine_capabilities()
+        if method == "getGoogleStatus":
+            return google_config_status(config)
+        if method == "testConnection":
+            # Synchronous, user-initiated cloud reachability check (Engine room "Test connection").
+            provider = params.get("provider", "google_v2")
+            if provider == "google_v2":
+                return test_google_connection(config)
+            return {"ok": False, "message": f"בדיקת חיבור אינה זמינה עבור '{provider}'."}
         if method == "getCommands":
             return command_reference(config)
         if method == "listMicrophones":

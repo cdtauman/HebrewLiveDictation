@@ -31,20 +31,72 @@
                         <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="Google Chirp 3 (ענן)" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="איכות מצוינת לעברית — אך הגדרת מפתח Google אינה זמינה בגרסת הבטא. הבחירה תעביר אתכם ללא־מקוון."
+                                <TextBlock Text="האיכות הטובה ביותר לעברית. דורש פרויקט Google Cloud והרשאות (מוגדר מטה)."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="OptChoose" GroupName="engine" Tag="choose" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="ספק ענן אחר" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="Deepgram/Groq דורשים מפתח — הגדרה שאינה זמינה בגרסת הבטא. הבחירה תעביר אתכם ללא־מקוון."
+                                <TextBlock Text="Deepgram/Groq — עדיין לא נתמכים בגרסה זו; הבחירה תעביר אתכם ללא־מקוון."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
                     </StackPanel>
                     <TextBlock x:Name="CurrentLabel" Style="{StaticResource CaptionMutedStyle}" />
                     <TextBlock Text="השינוי ייכנס לתוקף בהכתבה הבאה." Style="{StaticResource CaptionMutedStyle}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Google Cloud setup (PC1) — shown only when Google is the selected engine -->
+            <Border x:Name="GoogleCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="הגדרת Google Cloud" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock x:Name="GoogleStatusText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" Text="בודק מצב…" />
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Project ID" Style="{StaticResource CaptionMutedStyle}" />
+                        <TextBox x:Name="ProjectIdBox" LostFocus="OnProjectIdChanged" PlaceholderText="my-gcp-project" />
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Text="אזור (Region)" Style="{StaticResource CaptionMutedStyle}" />
+                            <ComboBox x:Name="LocationCombo" HorizontalAlignment="Stretch" SelectionChanged="OnLocationChanged" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="מודל" Style="{StaticResource CaptionMutedStyle}" />
+                            <ComboBox x:Name="GoogleModelCombo" HorizontalAlignment="Stretch" SelectionChanged="OnGoogleModelChanged" />
+                        </StackPanel>
+                    </Grid>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="מזהה Recognizer (ברירת מחדל: _)" Style="{StaticResource CaptionMutedStyle}" />
+                        <TextBox x:Name="RecognizerBox" LostFocus="OnRecognizerChanged" PlaceholderText="_" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="אופן ההזדהות" Style="{StaticResource CaptionMutedStyle}" />
+                        <ComboBox x:Name="CredModeCombo" HorizontalAlignment="Stretch" SelectionChanged="OnCredModeChanged">
+                            <ComboBoxItem Tag="service_account_json" Content="קובץ Service Account (JSON)" />
+                            <ComboBoxItem Tag="adc" Content="Application Default Credentials (gcloud)" />
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel x:Name="CredPathRow" Spacing="4">
+                        <TextBlock Text="קובץ ההרשאות (JSON)" Style="{StaticResource CaptionMutedStyle}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox x:Name="CredPathBox" Grid.Column="0" IsReadOnly="True" PlaceholderText="לא נבחר קובץ" />
+                            <Button x:Name="BrowseCredBtn" Grid.Column="1" Content="עיון…" Click="OnBrowseCredentials" />
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <Button x:Name="TestConnBtn" Content="בדיקת חיבור" Click="OnTestConnection" />
+                        <ProgressRing x:Name="TestRing" IsActive="False" Visibility="Collapsed" Width="20" Height="20" />
+                    </StackPanel>
+                    <TextBlock x:Name="TestStatusText" Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 

@@ -170,10 +170,152 @@ public sealed partial class EnginePage : Page
             bool offline = OptOffline.IsChecked == true;
             BackupCard.Visibility = offline ? Visibility.Collapsed : Visibility.Visible;
             ChooseCard.Visibility = OptChoose.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            GoogleCard.Visibility = OptRecommended.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             _loading = false;
         });
 
         await RefreshLabelAsync();
+        if (provider == "google_v2") await LoadGoogleConfigAsync();
+    }
+
+    // ---- Google Cloud setup (PC1) ----
+    private static readonly string[] GoogleLocations =
+        { "eu", "us", "global", "europe-west1", "europe-west2", "europe-west3", "europe-west4", "us-central1" };
+    private static readonly (string tag, string label)[] GoogleModels =
+        { ("chirp_3", "Chirp 3"), ("chirp_2", "Chirp 2"), ("chirp", "Chirp"), ("latest_short", "Latest Short") };
+
+    private async Task LoadGoogleConfigAsync()
+    {
+        string projectId = await GetConfigString("google.project_id", "");
+        string location = await GetConfigString("google.location", "eu");
+        string recognizer = await GetConfigString("google.recognizer_id", "_");
+        string model = await GetConfigString("google.model", "chirp_3");
+        string mode = await GetConfigString("google.credential_mode", "service_account_json");
+        string credPath = await GetConfigString("google.credentials_path", "");
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _loading = true;
+            if (LocationCombo.Items.Count == 0)
+                foreach (var loc in GoogleLocations) LocationCombo.Items.Add(new ComboBoxItem { Content = loc, Tag = loc });
+            SelectComboByTag(LocationCombo, location, "eu");
+            if (GoogleModelCombo.Items.Count == 0)
+                foreach (var (t, label) in GoogleModels) GoogleModelCombo.Items.Add(new ComboBoxItem { Content = label, Tag = t });
+            SelectComboByTag(GoogleModelCombo, model, "chirp_3");
+            SelectComboByTag(CredModeCombo, mode, "service_account_json");
+            CredPathRow.Visibility = mode == "service_account_json" ? Visibility.Visible : Visibility.Collapsed;
+            ProjectIdBox.Text = projectId;
+            RecognizerBox.Text = string.IsNullOrEmpty(recognizer) ? "_" : recognizer;
+            CredPathBox.Text = credPath;
+            _loading = false;
+        });
+        await RefreshGoogleStatusAsync();
+    }
+
+    private static void SelectComboByTag(ComboBox combo, string tag, string fallback)
+    {
+        foreach (var obj in combo.Items)
+            if (obj is ComboBoxItem ci && (ci.Tag as string) == tag) { combo.SelectedItem = obj; return; }
+        foreach (var obj in combo.Items)
+            if (obj is ComboBoxItem ci && (ci.Tag as string) == fallback) { combo.SelectedItem = obj; return; }
+        if (combo.Items.Count > 0) combo.SelectedIndex = 0;
+    }
+
+    /// <summary>Honest, no-network Google state from the engine (configured / not-configured).</summary>
+    private async Task RefreshGoogleStatusAsync()
+    {
+        bool configured = false; string projectId = "";
+        if (_host?.Client != null)
+        {
+            try
+            {
+                var r = await _host.Client.RpcAsync("getGoogleStatus");
+                configured = r.TryGetProperty("configured", out var c) && c.ValueKind == JsonValueKind.True;
+                projectId = r.TryGetProperty("projectId", out var p) ? p.GetString() ?? "" : "";
+            }
+            catch { }
+        }
+        DispatcherQueue.TryEnqueue(() =>
+            GoogleStatusText.Text = configured
+                ? $"מוגדר ✓  (פרויקט {projectId}). מומלץ ללחוץ 'בדיקת חיבור'."
+                : "לא מוגדר. הזינו Project ID ובחרו קובץ הרשאות (JSON), או השתמשו בלא־מקוון. ללא הגדרה תקפה ההכתבה תעבור אוטומטית ללא־מקוון.");
+    }
+
+    private async void OnProjectIdChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        await SetConfig("google.project_id", ProjectIdBox.Text.Trim());
+        await RefreshGoogleStatusAsync();
+    }
+
+    private async void OnRecognizerChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        string v = RecognizerBox.Text.Trim();
+        await SetConfig("google.recognizer_id", string.IsNullOrEmpty(v) ? "_" : v);
+    }
+
+    private async void OnLocationChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        await SetConfig("google.location", (LocationCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "eu");
+    }
+
+    private async void OnGoogleModelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        await SetConfig("google.model", (GoogleModelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "chirp_3");
+        await RefreshLabelAsync();
+    }
+
+    private async void OnCredModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string mode = (CredModeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "service_account_json";
+        await SetConfig("google.credential_mode", mode);
+        DispatcherQueue.TryEnqueue(() =>
+            CredPathRow.Visibility = mode == "service_account_json" ? Visibility.Visible : Visibility.Collapsed);
+        await RefreshGoogleStatusAsync();
+    }
+
+    private async void OnBrowseCredentials(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Console == null) return;
+        var picker = new Windows.Storage.Pickers.FileOpenPicker
+        {
+            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+        };
+        picker.FileTypeFilter.Add(".json");
+        // Unpackaged WinUI: a picker must be associated with the owning window's HWND.
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(_host.Console));
+        var file = await picker.PickSingleFileAsync();
+        if (file == null) return;
+        await SetConfig("google.credentials_path", file.Path);
+        DispatcherQueue.TryEnqueue(() => CredPathBox.Text = file.Path);
+        await RefreshGoogleStatusAsync();
+    }
+
+    private async void OnTestConnection(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Client == null) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            TestRing.IsActive = true; TestRing.Visibility = Visibility.Visible;
+            TestConnBtn.IsEnabled = false; TestStatusText.Text = "בודק חיבור…";
+        });
+        string msg = "";
+        try
+        {
+            var r = await _host.Client.RpcAsync("testConnection", new { provider = "google_v2" });
+            msg = r.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
+        }
+        catch (Exception ex) { msg = "שגיאה בבדיקה: " + ex.Message; }
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            TestRing.IsActive = false; TestRing.Visibility = Visibility.Collapsed;
+            TestConnBtn.IsEnabled = true; TestStatusText.Text = msg;
+        });
+        await RefreshGoogleStatusAsync();
     }
 
     private async void OnEngineChoice(object sender, RoutedEventArgs e)
@@ -181,15 +323,15 @@ public sealed partial class EnginePage : Page
         if (_loading) return;
         string tag = (sender as FrameworkElement)?.Tag as string ?? "";
 
-        if (tag is "recommended" or "choose")
+        if (tag == "choose")
         {
-            // Beta honesty: cloud providers (Google/Deepgram/Groq) need credentials, and this beta
-            // has no credential setup UI. Never leave the user on a dead cloud path — explain and
-            // route to the Offline engine, which works with no setup.
-            await ShowMessageAsync("חיבור לענן אינו זמין בגרסת הבטא",
-                "הגדרת מפתח/חשבון לספק ענן עדיין לא קיימת בגרסה זו. עוברים למנוע הלא־מקוון, שעובד ללא הגדרה — התקינו את המודל הלא־מקוון מטה כדי להתחיל.");
+            // PC1 supports Google only; the other cloud providers (Deepgram/Groq) are not configurable
+            // yet, so honestly route to Offline rather than leave a dead path.
+            await ShowMessageAsync("ספק זה אינו נתמך עדיין",
+                "Deepgram/Groq עדיין אינם ניתנים להגדרה בגרסה זו. עוברים למנוע הלא־מקוון. (Google Cloud כן זמין — בחרו 'Google Chirp 3'.)");
             _loading = true;
             OptOffline.IsChecked = true;
+            GoogleCard.Visibility = Visibility.Collapsed;
             ChooseCard.Visibility = Visibility.Collapsed;
             BackupCard.Visibility = Visibility.Collapsed;
             _loading = false;
@@ -197,7 +339,26 @@ public sealed partial class EnginePage : Page
             return;
         }
 
+        if (tag == "recommended")
+        {
+            // Google Chirp 3 — a real configurable cloud path. provider=google_v2; the config card below
+            // captures project/region/model/credentials and offers a live Test connection. If credentials
+            // are missing it is reported as not-configured here, and the engine routes to offline at the
+            // next start (recover_unconfigured_cloud) so the user is never stuck on a dead path.
+            GoogleCard.Visibility = Visibility.Visible;
+            ChooseCard.Visibility = Visibility.Collapsed;
+            BackupCard.Visibility = Visibility.Visible;
+            bool ok = await SetConfig("stt.provider", "google_v2");
+            if (string.IsNullOrEmpty(await GetConfigString("google.model", "")))
+                ok &= await SetConfig("google.model", "chirp_3");
+            ok &= await ApplyCloudMode();
+            if (!await Finish(ok)) return;
+            await LoadGoogleConfigAsync();
+            return;
+        }
+
         // offline
+        GoogleCard.Visibility = Visibility.Collapsed;
         ChooseCard.Visibility = Visibility.Collapsed;
         BackupCard.Visibility = Visibility.Collapsed;
         await Finish(await ApplyOffline());

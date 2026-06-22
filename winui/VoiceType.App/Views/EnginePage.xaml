@@ -130,6 +130,11 @@
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="10">
                     <TextBlock Text="מודל לא־מקוון" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="בחרו מודל. מודל גדול יותר = איכות טובה יותר, אך איטי יותר ודורש יותר זיכרון."
+                               Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                    <ComboBox x:Name="ModelCombo" MinWidth="300" HorizontalAlignment="Stretch"
+                              SelectionChanged="OnModelSelected" />
+                    <TextBlock x:Name="ModelMetaText" Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <TextBlock x:Name="ModelStatusText" Style="{StaticResource CaptionMutedStyle}"
                                TextWrapping="Wrap" Text="בודק מצב מודל…" />
                     <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">

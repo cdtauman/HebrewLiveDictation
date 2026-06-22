@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
@@ -26,6 +27,7 @@ public sealed partial class EnginePage : Page
         if (_host != null) _host.ModelDownloadChanged += OnModelDownloadChanged;
         _ = LoadAsync();
         _ = RefreshModelStatusAsync();
+        _ = LoadModelCatalogAsync();
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -50,6 +52,68 @@ public sealed partial class EnginePage : Page
             catch { }
         }
         DispatcherQueue.TryEnqueue(() => RenderModel(downloaded ? "ready" : "absent", name));
+    }
+
+    // ---- offline model catalog (PC2): list/select; download/delete reuse the selected model ----
+    private bool _loadingCatalog;
+
+    private async Task LoadModelCatalogAsync()
+    {
+        if (_host?.Client == null) return;
+        JsonElement r;
+        try { r = await _host.Client.RpcAsync("getModelCatalog"); }
+        catch { return; }
+        string selected = r.TryGetProperty("selected", out var s) ? s.GetString() ?? "" : "";
+        var rows = new List<(string name, string label)>();
+        string selectedMeta = "";
+        if (r.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var it in items.EnumerateArray())
+            {
+                string name = it.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                string size = it.TryGetProperty("sizeLabel", out var sz) ? sz.GetString() ?? "" : "";
+                string quality = it.TryGetProperty("quality", out var q) ? q.GetString() ?? "" : "";
+                string speed = it.TryGetProperty("speed", out var sp) ? sp.GetString() ?? "" : "";
+                int ram = it.TryGetProperty("ramMb", out var rm) && rm.TryGetInt32(out var rv) ? rv : 0;
+                bool downloaded = it.TryGetProperty("downloaded", out var d) && d.ValueKind == JsonValueKind.True;
+                bool recommended = it.TryGetProperty("recommended", out var rc) && rc.ValueKind == JsonValueKind.True;
+                string label = name + (recommended ? "  ★ מומלץ" : "") + (downloaded ? "  ✓ מותקן" : "");
+                string meta = $"{size} · זיכרון ~{ram}MB · איכות: {quality} · מהירות: {speed}";
+                if (name == selected) selectedMeta = meta;
+                rows.Add((name, label));
+            }
+        }
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _loadingCatalog = true;
+            ModelCombo.Items.Clear();
+            ComboBoxItem? sel = null;
+            foreach (var (name, label) in rows)
+            {
+                var item = new ComboBoxItem { Content = label, Tag = name };
+                ModelCombo.Items.Add(item);
+                if (name == selected) sel = item;
+            }
+            if (sel != null) ModelCombo.SelectedItem = sel;
+            else if (ModelCombo.Items.Count > 0) ModelCombo.SelectedIndex = 0;
+            ModelMetaText.Text = selectedMeta;
+            _loadingCatalog = false;
+        });
+    }
+
+    private async void OnModelSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingCatalog) return;
+        string name = (ModelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        if (string.IsNullOrEmpty(name)) return;
+        if (!await SetConfig("providers.whisper.model", name))
+        {
+            await ShowMessageAsync("לא ניתן לשמור את בחירת המודל כעת.", "בדקו שהמנוע פעיל ונסו שוב.");
+            return;
+        }
+        // The download/delete card and status follow the selected model.
+        await RefreshModelStatusAsync();
+        await LoadModelCatalogAsync();
     }
 
     /// <summary>Honest model state: ready only when the model is actually on disk. Download is
@@ -132,11 +196,12 @@ public sealed partial class EnginePage : Page
             await ShowMessageAsync("לא ניתן למחוק את המודל כעת.",
                 "ייתכן שהורדה פעילה או שהקובץ בשימוש. נסו שוב מאוחר יותר.");
         await RefreshModelStatusAsync();
+        await LoadModelCatalogAsync();   // reflect the new downloaded state in the catalog
     }
 
     private async void OnModelDownloadChanged(string state, string name, string message)
     {
-        if (state == "done") { await RefreshModelStatusAsync(); return; }
+        if (state == "done") { await RefreshModelStatusAsync(); await LoadModelCatalogAsync(); return; }
         DispatcherQueue.TryEnqueue(() => RenderModel(
             state switch { "running" => "downloading", "error" => "error", _ => "absent" }, name));
     }

@@ -672,6 +672,46 @@ def _parse_pipe_arg(argv) -> str:
     return DEFAULT_PIPE_NAME
 
 
+# Display metadata for the offline model catalog (Engine room). RAM + download size come from the
+# engine's MODEL_REGISTRY; quality/speed/recommended are presentation. For HEBREW the multilingual
+# models (medium / large-v3) beat the English-distilled 'distil' models, so 'medium' is recommended.
+_MODEL_DISPLAY = {
+    "tiny":            {"quality": "נמוכה",                 "speed": "מהירה מאוד",  "recommended": False},
+    "base":            {"quality": "בסיסית",                "speed": "מהירה",       "recommended": False},
+    "small":           {"quality": "טובה",                  "speed": "בינונית",     "recommended": False},
+    "medium":          {"quality": "טובה מאוד לעברית",      "speed": "איטית",       "recommended": True},
+    "large-v3":        {"quality": "הטובה ביותר",           "speed": "איטית מאוד",  "recommended": False},
+    "distil-large-v3": {"quality": "טובה (מותאם לאנגלית)",  "speed": "בינונית",     "recommended": False},
+}
+
+
+def model_catalog(config) -> dict:
+    """The offline-model catalog for the Engine room: every known model with size · RAM · quality ·
+    speed · recommended · downloaded · selected. Reuses the engine's MODEL_REGISTRY + readiness check."""
+    try:
+        from .. import models
+        storage = models.default_storage_dir(config)
+        selected = config.get("providers.whisper.model", models.DEFAULT_MODEL)
+        items = []
+        for name in models.known_models():
+            info = models.model_info(name) or {}
+            disp = _MODEL_DISPLAY.get(name, {})
+            items.append({
+                "name": name,
+                "sizeLabel": info.get("size_label", ""),
+                "ramMb": info.get("approx_ram_mb", 0),
+                "quality": disp.get("quality", ""),
+                "speed": disp.get("speed", ""),
+                "recommended": bool(disp.get("recommended", False)),
+                "downloaded": bool(models.is_downloaded(name, storage)),
+                "selected": name == selected,
+            })
+        return {"items": items, "selected": selected}
+    except Exception:
+        logger.error("model_catalog failed:\n%s", traceback.format_exc())
+        return {"items": [], "selected": ""}
+
+
 def google_config_status(config) -> dict:
     """Honest Google configuration state for the Engine room (no network): 'configured' when a
     usable credential source is present (service-account JSON file that exists, or ADC), else
@@ -962,6 +1002,8 @@ def run(pipe_name: str | None = None) -> int:
             return list_microphones(config)
         if method == "getModelStatus":
             return model_status(config)
+        if method == "getModelCatalog":
+            return model_catalog(config)
         if method == "downloadModel":
             # Runs off this thread; progress arrives as {"kind":"modelDownload",...} events.
             return model_downloads.start(config, params.get("name"))

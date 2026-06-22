@@ -554,6 +554,16 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   39/39; packaged verify PASSED. *Known limits:* live connection result depends on the user's real GCP
   credentials (can't be CI-verified); `smart_auto` Google-when-usable is handled by `auto_select`.
   *Core path unaffected* (offline F8/Remote untouched). **Next: PC2 started.**
+- **PC2 — Offline model manager (done).** The Engine-room offline-model card now has a **model selector**
+  (ComboBox) listing all six known models (tiny/base/small/medium/large-v3/distil-large-v3), each showing
+  **download size · RAM · quality · speed · ★recommended · ✓installed**, plus a metadata line for the
+  selected model. Selecting a model sets `providers.whisper.model`; the existing download/delete/status
+  then follow the selected model. New sidecar RPC `getModelCatalog` (size+RAM from the engine's
+  `MODEL_REGISTRY`; quality/speed/recommended are presentation — **`medium` is recommended for Hebrew**,
+  since the English-distilled `distil` models are weaker for Hebrew). *Tests:* Python 282/282; WinUI 0
+  errors; dev self-test 39/39. *Known limits:* no manual local-folder import yet (deferred); large models
+  need the RAM the catalog states (engine `ram_preflight` still guards load). *Core path unaffected*
+  (default stays `small`; download/delete reuse the proven path). **Next: PC3 started.**
 
 ### Packaging decisions (agreed)
 

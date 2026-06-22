@@ -56,6 +56,7 @@ public sealed partial class EnginePage : Page
 
     // ---- offline model catalog (PC2): list/select; download/delete reuse the selected model ----
     private bool _loadingCatalog;
+    private string _selectedSizeLabel = "";   // size of the selected model, for honest download copy
 
     private async Task LoadModelCatalogAsync()
     {
@@ -66,6 +67,7 @@ public sealed partial class EnginePage : Page
         string selected = r.TryGetProperty("selected", out var s) ? s.GetString() ?? "" : "";
         var rows = new List<(string name, string label)>();
         string selectedMeta = "";
+        string selectedSize = "";
         if (r.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
         {
             foreach (var it in items.EnumerateArray())
@@ -79,7 +81,7 @@ public sealed partial class EnginePage : Page
                 bool recommended = it.TryGetProperty("recommended", out var rc) && rc.ValueKind == JsonValueKind.True;
                 string label = name + (recommended ? "  ★ מומלץ" : "") + (downloaded ? "  ✓ מותקן" : "");
                 string meta = $"{size} · זיכרון ~{ram}MB · איכות: {quality} · מהירות: {speed}";
-                if (name == selected) selectedMeta = meta;
+                if (name == selected) { selectedMeta = meta; selectedSize = size; }
                 rows.Add((name, label));
             }
         }
@@ -97,6 +99,10 @@ public sealed partial class EnginePage : Page
             if (sel != null) ModelCombo.SelectedItem = sel;
             else if (ModelCombo.Items.Count > 0) ModelCombo.SelectedIndex = 0;
             ModelMetaText.Text = selectedMeta;
+            if (!string.IsNullOrEmpty(selectedSize)) _selectedSizeLabel = selectedSize;
+            // Re-render the status copy so the download text reflects the selected model's real size.
+            if (ModelDownloadBtn.Visibility == Visibility.Visible && ModelDeleteBtn.Visibility != Visibility.Visible)
+                RenderModel("absent");
             _loadingCatalog = false;
         });
     }
@@ -116,6 +122,10 @@ public sealed partial class EnginePage : Page
         await LoadModelCatalogAsync();
     }
 
+    /// <summary>Honest download-size suffix for the selected model (e.g. " (~1.5 GB)"), so the copy
+    /// never claims a fixed ~500 MB when the user picked medium/large.</summary>
+    private string SizeSuffix() => string.IsNullOrEmpty(_selectedSizeLabel) ? "" : $" ({_selectedSizeLabel})";
+
     /// <summary>Honest model state: ready only when the model is actually on disk. Download is
     /// offered when absent/failed; delete only when present; the ring shows while downloading.</summary>
     private void RenderModel(string state, string name = "")
@@ -132,7 +142,7 @@ public sealed partial class EnginePage : Page
                 ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
                 break;
             case "downloading":
-                ModelStatusText.Text = "מוריד מודל לא־מקוון (כ־500MB) — עשוי לקחת מספר דקות, דרוש אינטרנט. אפשר להמשיך לעבוד בינתיים; נעדכן כשיסתיים.";
+                ModelStatusText.Text = $"מוריד מודל לא־מקוון{SizeSuffix()} — עשוי לקחת מספר דקות, דרוש אינטרנט. אפשר להמשיך לעבוד בינתיים; נעדכן כשיסתיים.";
                 ModelDownloadBtn.Visibility = Visibility.Collapsed;
                 ModelDeleteBtn.Visibility = Visibility.Collapsed;
                 ModelRing.IsActive = true; ModelRing.Visibility = Visibility.Visible;
@@ -145,7 +155,7 @@ public sealed partial class EnginePage : Page
                 ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
                 break;
             default: // absent
-                ModelStatusText.Text = "המודל אינו מותקן. הכתבה לא־מקוונת דורשת הורדה חד־פעמית (כ־500MB, דרוש אינטרנט).";
+                ModelStatusText.Text = $"המודל אינו מותקן. הכתבה לא־מקוונת דורשת הורדה חד־פעמית{SizeSuffix()} (דרוש אינטרנט).";
                 ModelDownloadBtn.Content = "הורד מודל";
                 ModelDownloadBtn.Visibility = Visibility.Visible;
                 ModelDeleteBtn.Visibility = Visibility.Collapsed;
@@ -289,21 +299,26 @@ public sealed partial class EnginePage : Page
     /// <summary>Honest, no-network Google state from the engine (configured / not-configured).</summary>
     private async Task RefreshGoogleStatusAsync()
     {
-        bool configured = false; string projectId = "";
+        bool verified = false, hasCreds = false; string projectId = "";
         if (_host?.Client != null)
         {
             try
             {
                 var r = await _host.Client.RpcAsync("getGoogleStatus");
-                configured = r.TryGetProperty("configured", out var c) && c.ValueKind == JsonValueKind.True;
+                verified = r.TryGetProperty("verified", out var v) && v.ValueKind == JsonValueKind.True;
+                hasCreds = r.TryGetProperty("hasCredentials", out var hc) && hc.ValueKind == JsonValueKind.True;
                 projectId = r.TryGetProperty("projectId", out var p) ? p.GetString() ?? "" : "";
             }
             catch { }
         }
+        // Honest: Google is "active" only after a passing Test connection (verified). Credentials present
+        // but untested -> "needs test"; until verified, dictation routes to offline.
         DispatcherQueue.TryEnqueue(() =>
-            GoogleStatusText.Text = configured
-                ? $"מוגדר ✓  (פרויקט {projectId}). מומלץ ללחוץ 'בדיקת חיבור'."
-                : "לא מוגדר. הזינו Project ID ובחרו קובץ הרשאות (JSON), או השתמשו בלא־מקוון. ללא הגדרה תקפה ההכתבה תעבור אוטומטית ללא־מקוון.");
+            GoogleStatusText.Text = verified
+                ? $"מאומת ✓  (פרויקט {projectId}) — Google פעיל."
+                : hasCreds
+                    ? "פרטים קיימים אך לא נבדקו. לחצו 'בדיקת חיבור' כדי להפעיל את Google; עד אז ההכתבה תשתמש בלא־מקוון."
+                    : "לא מוגדר. הזינו Project ID ובחרו קובץ הרשאות (JSON), או השתמשו בלא־מקוון.");
     }
 
     private async void OnProjectIdChanged(object sender, RoutedEventArgs e)

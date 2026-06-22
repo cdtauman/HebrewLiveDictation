@@ -159,6 +159,15 @@ internal static class RuntimeSelfTest
                       insOk ? "comtypes + comtypes.client (Word COM) + uiautomation (UIA) importable in the engine"
                             : $"missing insertion backend(s): {caps.GetRawText()}");
 
+                // Codex MF5: prove python-docx + the DOCX history-export path actually work in the
+                // (frozen) engine — it ships a default template a freeze can miss. Writes a tiny DOCX.
+                var docx = await client.RpcAsync("selfTestDocx");
+                bool docxOk = True_(docx, "ok")
+                              && docx.TryGetProperty("size", out var dsz) && dsz.TryGetInt32(out var dv) && dv > 0;
+                Check("engine.export.docx", docxOk,
+                      docxOk ? "python-docx wrote a non-empty DOCX in the engine"
+                             : $"DOCX export self-test failed: {docx.GetRawText()}");
+
                 // Destructive-RPC guard: clearHistory WITHOUT a confirm flag must refuse
                 // (so this is safe to run — it never wipes the real store).
                 var clr = await client.RpcAsync("clearHistory");

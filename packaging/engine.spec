@@ -61,7 +61,10 @@ hiddenimports = [
 # explicitly so the PortAudio runtime DLL (_sounddevice_data/portaudio-binaries/libportaudio64bit.dll)
 # is collected deterministically rather than relying on PyInstaller's bundled hook — without it the
 # package launches and self-tests but CANNOT capture microphone audio.
-for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "huggingface_hub", "sounddevice"):
+# 'docx' (python-docx) is imported lazily by export.py for DOCX history export and ships a default
+# template (docx/templates/default.docx) that PyInstaller must collect — without it, packaged DOCX
+# export raises at runtime (the packaged self-test now proves this works).
+for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "huggingface_hub", "sounddevice", "docx"):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b

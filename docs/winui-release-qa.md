@@ -582,8 +582,11 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   if safe" — skipped, no functional check shipped); advanced VAD/recognizer Labs (avoid overbuild); manual
   local-model import. *Tests:* Python 282/282; WinUI 0 errors; dev self-test 39/39; DOCX writer produces a
   valid file. *Core path unaffected.* **Next: PC5 (record manual-matrix status).**
-- **PC5 — manual-verification status (recorded; NOT faked).** Everything in PC1–PC4 is **build-verified +
-  unit-tested only**; none of it has been voice/visually exercised on real hardware. Honest status:
+- **PC5 — manual-verification status (recorded; NOT faked).** PC1–PC4 are **build-verified** and the
+  existing Python suite (282) still passes, **but the new PC code paths are largely NOT unit-tested**
+  (no new automated coverage was added for the Google config/model-catalog/live-words/export UI beyond
+  the packaged DOCX self-test added in the Codex round). None of it has been voice/visually exercised on
+  real hardware. Honest status:
   - **Manually confirmed (earlier P5 pre-smoke):** offline → **F8/Remote** → final clipboard insertion into
     Notepad, matching history. This remains the only human-confirmed path.
   - **Needs a human pass (NOT yet done):** Google **Chirp 3** end-to-end with real GCP credentials (Test
@@ -599,6 +602,30 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   **No public beta / release** — that needs explicit approval. Recommended review focus: the Google
   credential/test-connection path (security-adjacent), the model-catalog RAM guidance, and that live words
   never become live-typing into the target (insertion stays final-only).
+
+- **Codex public-beta fixes (done) — baseline `490637e` was internal-safe but not public-beta-safe.**
+  1. **MF1 — Google readiness not optimistic:** Google is "usable" **only after a passing Test
+     connection** for the current config (a `.google_verified` signature marker next to settings.json);
+     ADC/`GOOGLE_APPLICATION_CREDENTIALS` no longer imply usable. `getGoogleStatus` reports
+     verified/needs-test/not-configured; `_cloud_provider_usable(google)` requires the marker. `smart_auto`
+     is covered (recovery routes when its effective pick is unverified Google).
+  2. **MF2 — no dead cloud path:** a **start-guard** (`cloud_guard`) runs `recover_unconfigured_cloud`
+     before every dictation start (F8/UI/Remote) and on startup; an unusable/unverified cloud engine is
+     switched to **Offline** with a clear status. Engine-room status warns until verified.
+  3. **MF3 — recognizer validated:** Test connection now `get_recognizer`s a custom `recognizer_id`
+     (≠ "_") and fails with an actionable message if it's missing/inaccessible.
+  4. **MF4 — final-only insertion:** startup **normalizes `dictation.live_typing_mode=live → final_only`**
+     (no live-typing toggle in the beta); live/interim words stay display-only in HUD/Remote.
+  5. **MF5 — DOCX packaged proof:** `python-docx` is now bundled in `engine.spec`, and a new
+     **`engine.export.docx` packaged self-test** writes a tiny DOCX in the frozen engine — **verified
+     40/40 in the packaged run**.
+  - **Should-Fix:** Test-connection errors are **redacted** (`redact_sensitive`); `GOOGLE_APPLICATION_CREDENTIALS`
+    is **restored** after the test (no global leak); **unknown model names rejected** at the
+    download/delete/select RPC boundary; model download copy shows the **selected model's real size**
+    (not a fixed ~500 MB); docs no longer claim PC1–PC4 are "fully unit-tested".
+  - *Tests:* Python **285/285** (recovery tests reworked for verified-gating); WinUI 0 errors; dev
+    self-test **40/40**; **packaged verify 40/40** (incl. `engine.export.docx`). *Core offline F8/Remote
+    path untouched.* **No release.**
 
 ### Packaging decisions (agreed)
 

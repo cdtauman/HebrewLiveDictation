@@ -712,36 +712,105 @@ def model_catalog(config) -> dict:
         return {"items": [], "selected": ""}
 
 
+def _is_known_model(name) -> bool:
+    """Validate a model name against the engine's registry (RPC-boundary guard)."""
+    try:
+        from .. import models
+        return name in models.known_models()
+    except Exception:
+        return False
+
+
+def selftest_docx() -> dict:
+    """Packaged proof that python-docx + the DOCX export path actually work in the frozen engine
+    (Codex MF5): write a tiny RTL DOCX to a temp file and report its size, then clean up. Returns
+    {ok, size}. Used by the packaged self-test; never raises."""
+    import tempfile
+    path = ""
+    try:
+        from .. import export
+        fd, path = tempfile.mkstemp(suffix=".docx")
+        os.close(fd)
+        export.write_docx(path, "שלום עולם\nDOCX self-test")
+        size = os.path.getsize(path) if os.path.exists(path) else 0
+        return {"ok": size > 0, "size": size}
+    except Exception as e:
+        logger.warning("selftest_docx failed: %s", e)
+        return {"ok": False, "size": 0, "error": str(e)}
+    finally:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+
+# --- Google "verified" gate (Codex public-beta MF1/MF2) -------------------------------------------
+# Google is "usable" only after a real Test connection PASSES for the CURRENT config — credentials
+# merely existing (or ADC/GOOGLE_APPLICATION_CREDENTIALS being set) is NOT proof. The success is
+# recorded in a marker file keyed by a signature of the google inputs; any config change invalidates
+# it. No config SCHEMA change (the marker lives next to settings.json).
+def _google_dir(config) -> str:
+    return getattr(config, "config_dir", None) or os.path.join(
+        os.environ.get("APPDATA", os.path.expanduser("~")), "VoiceType")
+
+
+def _google_signature(config) -> str:
+    return "|".join(str(x or "") for x in (
+        config.get("google.project_id", ""),
+        config.get("google.location", "eu"),
+        config.get("google.recognizer_id", "_"),
+        config.get("google.credential_mode", "service_account_json"),
+        config.get("google.credentials_path", "") or config.get("google_credentials_path", ""),
+    ))
+
+
+def _google_verified(config) -> bool:
+    try:
+        with open(os.path.join(_google_dir(config), ".google_verified"), "r", encoding="utf-8") as f:
+            return f.read().strip() == _google_signature(config)
+    except Exception:
+        return False
+
+
+def _set_google_verified(config) -> None:
+    try:
+        os.makedirs(_google_dir(config), exist_ok=True)
+        with open(os.path.join(_google_dir(config), ".google_verified"), "w", encoding="utf-8") as f:
+            f.write(_google_signature(config))
+    except Exception:
+        logger.warning("could not write google verify marker:\n%s", traceback.format_exc())
+
+
 def google_config_status(config) -> dict:
-    """Honest Google configuration state for the Engine room (no network): 'configured' when a
-    usable credential source is present (service-account JSON file that exists, or ADC), else
-    'unconfigured'. Project id is resolved the same way the live client does."""
+    """Honest Google state for the Engine room (no network). 'configured'/'usable' is reported ONLY
+    after a passing Test connection for the current config (verified); credentials present but
+    untested -> 'needs test'. Project id is resolved the same way the live client does."""
     try:
         from ..google_stt_v2_stream import infer_project_id_from_credentials
         mode = config.get("google.credential_mode", "service_account_json")
         creds_path = config.get("google.credentials_path", "") or config.get("google_credentials_path", "")
-        project_id = ""
         try:
             project_id = infer_project_id_from_credentials(config) or ""
         except Exception:
             project_id = config.get("google.project_id", "") or ""
-        if mode == "adc" or "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
-            configured = True
-        else:
-            configured = bool(creds_path and os.path.exists(creds_path))
-        return {"configured": bool(configured and project_id),
-                "hasCredentials": bool(configured), "projectId": project_id,
+        has_creds = True if mode == "adc" else bool(creds_path and os.path.exists(creds_path))
+        verified = _google_verified(config)
+        return {"configured": bool(verified), "verified": bool(verified),
+                "hasCredentials": bool(has_creds and project_id), "projectId": project_id,
                 "location": config.get("google.location", "eu"),
                 "model": config.get("google.model", "chirp_3")}
     except Exception:
         logger.error("google_config_status failed:\n%s", traceback.format_exc())
-        return {"configured": False, "hasCredentials": False, "projectId": "", "location": "", "model": ""}
+        return {"configured": False, "verified": False, "hasCredentials": False,
+                "projectId": "", "location": "", "model": ""}
 
 
 def test_google_connection(config) -> dict:
-    """Live Google STT V2 reachability/credentials check for the Engine room 'Test connection'.
-    Mirrors how the streaming client resolves credentials (GOOGLE_APPLICATION_CREDENTIALS) + project,
-    then makes one cheap list_recognizers call. Returns {ok, message}. Synchronous (user-initiated)."""
+    """Live Google STT V2 check for 'Test connection'. Validates credentials + project + region, AND
+    the SPECIFIC recognizer the engine will use (MF3), then records the success (verified marker).
+    Restores GOOGLE_APPLICATION_CREDENTIALS afterwards (no global leak) and redacts error text."""
+    prev_env = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     try:
         from ..google_stt_v2_stream import infer_project_id_from_credentials
         mode = config.get("google.credential_mode", "service_account_json")
@@ -750,50 +819,48 @@ def test_google_connection(config) -> dict:
             if not creds_path or not os.path.exists(creds_path):
                 return {"ok": False, "message": "קובץ ההרשאות (Service Account JSON) לא נמצא. בחרו קובץ תקין."}
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
-        elif mode == "adc" and "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
-            pass  # rely on gcloud ADC
         project_id = infer_project_id_from_credentials(config) or ""
         if not project_id:
             return {"ok": False, "message": "חסר Project ID. הזינו אותו או השתמשו ב-JSON שמכיל project_id."}
         location = (config.get("google.location", "eu") or "eu")
         from google.cloud.speech_v2 import SpeechClient
         from google.api_core.client_options import ClientOptions
-        opts = None
-        if location not in ("global", "_"):
-            opts = ClientOptions(api_endpoint=f"{location}-speech.googleapis.com")
+        opts = None if location in ("global", "_") else ClientOptions(api_endpoint=f"{location}-speech.googleapis.com")
         client = SpeechClient(client_options=opts)
         parent = f"projects/{project_id}/locations/{location}"
-        # Iterating the pager forces the RPC; this validates credentials + project + region + API access.
-        next(iter(client.list_recognizers(parent=parent, timeout=15.0)), None)
-        return {"ok": True, "message": f"חיבור תקין ✓  (פרויקט {project_id}, אזור {location})"}
+        next(iter(client.list_recognizers(parent=parent, timeout=15.0)), None)  # auth + project + region
+        # MF3: dictation uses google.recognizer_id; if it's a custom one, prove it exists/accessible.
+        recognizer_id = config.get("google.recognizer_id", "_") or "_"
+        if recognizer_id != "_":
+            client.get_recognizer(name=f"{parent}/recognizers/{recognizer_id}", timeout=15.0)
+        _set_google_verified(config)   # only a PASS marks Google usable
+        extra = f", recognizer {recognizer_id}" if recognizer_id != "_" else ""
+        return {"ok": True, "message": f"חיבור תקין ✓  (פרויקט {project_id}, אזור {location}{extra})"}
     except Exception as e:
-        logger.warning("Google test connection failed: %s", e)
-        msg = str(e)
+        from .. import app_logging
+        msg = app_logging.redact_sensitive(str(e))   # Should-Fix: redact paths/secrets in UI text
         if len(msg) > 220:
             msg = msg[:220] + "…"
+        logger.warning("Google test connection failed: %s", msg)
         return {"ok": False, "message": "החיבור נכשל: " + msg}
+    finally:
+        if prev_env is None:
+            os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+        else:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = prev_env
 
 
 _CLOUD_PROVIDERS = ("google_v2", "deepgram", "groq")
 
 
 def _cloud_provider_usable(config, provider) -> bool:
-    """Whether a cloud provider has usable credentials configured, reusing the engine's own
-    credential checks (stt.auto_select). Safe-True on error so we never wrongly downgrade."""
+    """Whether a cloud provider is truly usable. For Google this requires a PASSING Test connection
+    for the current config (MF1) — credentials merely existing is not enough. Safe-False for google
+    (don't wrongly claim usable); safe-True only for key-based providers on error."""
+    if provider == "google_v2":
+        return _google_verified(config)
     try:
         from ..stt import auto_select
-        if provider == "google_v2":
-            if not auto_select._google_available(config):
-                return False
-            # Stricter than the factory: a configured service-account credentials PATH must actually
-            # exist on disk to count as usable. A dangling path (stale dev config) is unusable -> route
-            # to offline rather than fail at first dictation.
-            mode = config.get("google.credential_mode", "service_account_json")
-            if mode == "service_account_json":
-                path = config.get("google.credentials_path", "") or config.get("google_credentials_path", "")
-                if path and not os.path.exists(path):
-                    return False
-            return True
         if provider in ("deepgram", "groq"):
             return bool(auto_select._has_key(config, provider))
     except Exception:
@@ -801,26 +868,39 @@ def _cloud_provider_usable(config, provider) -> bool:
     return True
 
 
-def recover_unconfigured_cloud(config) -> bool:
-    """Beta honesty: this build has no cloud-credential setup UI, so a returning user whose saved
-    config selects a cloud provider with NO usable credentials would hit a dead cloud path. If the
-    live engine is such an unconfigured cloud provider, switch to offline Whisper at startup. A
-    validly-configured cloud provider (real key/credentials file) is left untouched; 'smart_auto'
-    is left to the factory, which already resolves to local when no cloud credentials exist.
-    Returns True iff it changed the engine."""
+def recover_unconfigured_cloud(config, emit=None) -> bool:
+    """Route an unusable cloud engine to offline so the user never starts a dead cloud session. The
+    live cloud provider is unusable when its credentials are missing OR (for Google) not yet verified
+    by a passing Test connection. Covers 'api'/'auto_fallback' and 'smart_auto' (when the factory's
+    pick would be an unverified Google). A validly-keyed provider is untouched. `emit` (optional)
+    surfaces a status when it routes (used at dictation start). Returns True iff it changed the engine."""
     provider = config.get("stt.provider", "google_v2") or "google_v2"
     mode = config.get("stt.mode", "api")
-    if mode not in ("api", "auto_fallback"):
+    if mode == "local" or provider == "whisper_local":
         return False
-    if provider not in _CLOUD_PROVIDERS:
+    effective = provider
+    if mode == "smart_auto":
+        try:
+            from ..stt import auto_select
+            effective = auto_select.select_provider(config)
+        except Exception:
+            effective = provider
+        if effective != "google_v2":
+            return False   # smart_auto picked a keyed/local provider — leave it
+    elif mode not in ("api", "auto_fallback"):
         return False
-    if _cloud_provider_usable(config, provider):
+    if effective not in _CLOUD_PROVIDERS or _cloud_provider_usable(config, effective):
         return False
     config.set("stt.provider", "whisper_local")
     config.set("stt.mode", "local")
     config.set("providers.whisper.enabled", True)
-    logger.info("Beta recovery: cloud provider '%s' has no usable credentials; switched to "
-                "offline (whisper_local).", provider)
+    logger.info("Beta recovery: cloud provider '%s' not usable; switched to offline (whisper_local).", effective)
+    if emit:
+        try:
+            emit({"kind": "status", "state": "idle",
+                  "message": "המנוע הענני אינו מאומת — עברנו ללא־מקוון. הגדירו ובדקו חיבור בחדר 'מנוע'."})
+        except Exception:
+            pass
     return True
 
 
@@ -875,12 +955,22 @@ def run(pipe_name: str | None = None) -> int:
     except Exception:
         logger.error("could not extend injector denylist:\n%s", traceback.format_exc())
 
-    # Beta honesty: route an unconfigured cloud engine to offline so the user never starts on a dead
-    # cloud path (this build has no cloud-credential setup UI). No-op for a configured/local engine.
+    # Beta honesty: route an unconfigured/unverified cloud engine to offline so the user never starts on
+    # a dead cloud path (this build has no cloud-credential setup UI). No-op for a configured/local engine.
     try:
         recover_unconfigured_cloud(config)
     except Exception:
         logger.error("cloud->offline recovery failed:\n%s", traceback.format_exc())
+
+    # Codex MF4: the WinUI beta exposes no live-typing toggle, and live mode would type interims into
+    # the target app. Normalize any migrated 'live' config to final-only so target insertion is final-only
+    # (live/interim words remain display-only in HUD/Remote).
+    try:
+        if config.get("dictation.live_typing_mode", "final_only") == "live":
+            config.set("dictation.live_typing_mode", "final_only")
+            logger.info("Normalized dictation.live_typing_mode 'live' -> 'final_only' (no live-typing in beta).")
+    except Exception:
+        logger.error("live_typing_mode normalization failed:\n%s", traceback.format_exc())
 
     # Clear a stale saved microphone before any dictation can start, so the engine falls
     # back to the Windows default rather than trying a device that no longer exists —
@@ -932,7 +1022,16 @@ def run(pipe_name: str | None = None) -> int:
                     "message": OFFLINE_MODEL_REQUIRED_MSG, "needsModel": True})
         return True
 
+    def cloud_guard():
+        """Before starting: if the live engine is an unusable/unverified cloud provider (e.g. Google not
+        yet Test-connected), switch to offline + notify, so we never start a dead cloud session (MF2)."""
+        try:
+            recover_unconfigured_cloud(config, emit=emit_event)
+        except Exception:
+            logger.error("cloud start-guard failed:\n%s", traceback.format_exc())
+
     def hotkey_start():
+        cloud_guard()
         if offline_start_refused():
             return
         s = server_holder["server"]
@@ -990,6 +1089,9 @@ def run(pipe_name: str | None = None) -> int:
             return engine_capabilities()
         if method == "getGoogleStatus":
             return google_config_status(config)
+        if method == "selfTestDocx":
+            # Packaged proof that python-docx / DOCX export works in the frozen engine (Codex MF5).
+            return selftest_docx()
         if method == "testConnection":
             # Synchronous, user-initiated cloud reachability check (Engine room "Test connection").
             provider = params.get("provider", "google_v2")
@@ -1005,17 +1107,24 @@ def run(pipe_name: str | None = None) -> int:
         if method == "getModelCatalog":
             return model_catalog(config)
         if method == "downloadModel":
+            # Reject unknown model names at the boundary (Should-Fix); None = use the configured model.
+            nm = params.get("name")
+            if nm is not None and not _is_known_model(nm):
+                return {"started": False, "error": "unknown model", "name": str(nm)}
             # Runs off this thread; progress arrives as {"kind":"modelDownload",...} events.
-            return model_downloads.start(config, params.get("name"))
+            return model_downloads.start(config, nm)
         if method == "deleteModel":
             # Destructive: require an explicit confirmation flag at the RPC boundary.
             if not params.get("confirm"):
                 return {"deleted": False, "error": "confirmation required"}
+            nm = params.get("name")
+            if nm is not None and not _is_known_model(nm):
+                return {"deleted": False, "error": "unknown model"}
             # Don't delete out from under an in-flight download (it would race the writer and
             # could leave a half-written cache). Refuse while a download is active.
             if model_downloads.active is not None:
                 return {"deleted": False, "error": "download in progress"}
-            return delete_model(config, params.get("name"))
+            return delete_model(config, nm)
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":
@@ -1046,6 +1155,10 @@ def run(pipe_name: str | None = None) -> int:
                 return {"cleared": False, "error": "confirmation required"}
             return {"cleared": _clear_history(config)}
         if method == "setConfig":
+            # Reject unknown model names at the boundary when selecting the offline model (Should-Fix).
+            if params.get("key") == "providers.whisper.model" and not _is_known_model(params.get("value")):
+                return {"key": params["key"], "value": config.get("providers.whisper.model"),
+                        "saved": False, "error": "unknown model"}
             saved = config.set(params["key"], params["value"])  # engine is the single writer
             return {"key": params["key"], "value": config.get(params["key"]), "saved": bool(saved)}
         if method == "reloadHotkeys":
@@ -1065,6 +1178,7 @@ def run(pipe_name: str | None = None) -> int:
             return {"hotkeysActive": hotkeys_ok, "conflict": conflict,
                     "hotkey": config.get("hotkeys.hotkey", "")}
         if method == "startDictation":
+            cloud_guard()
             if offline_start_refused():
                 return {"accepted": False, "needsModel": True, "message": OFFLINE_MODEL_REQUIRED_MSG}
             invoker.invoke.emit(lambda: controller.start_listening(params.get("mode", "external")))
@@ -1075,8 +1189,10 @@ def run(pipe_name: str | None = None) -> int:
         if method == "toggleDictation":
             # Only a start (idle -> listening) can trigger an offline model download; a toggle
             # that stops an active session needs no model, so gate only when currently idle.
-            if controller.state == "idle" and offline_start_refused():
-                return {"accepted": False, "needsModel": True, "message": OFFLINE_MODEL_REQUIRED_MSG}
+            if controller.state == "idle":
+                cloud_guard()
+                if offline_start_refused():
+                    return {"accepted": False, "needsModel": True, "message": OFFLINE_MODEL_REQUIRED_MSG}
             invoker.invoke.emit(lambda: controller.toggle_listening(params.get("mode", "external")))
             return {"accepted": True}
         if method == "shutdown":

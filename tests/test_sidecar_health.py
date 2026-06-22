@@ -68,50 +68,79 @@ class _FakeConfig:
 
 
 class CloudRecoveryTests(unittest.TestCase):
-    """recover_unconfigured_cloud: route an unconfigured cloud engine to offline (the WinUI beta has
-    no cloud-credential setup UI), but leave a configured cloud engine and the local path untouched."""
+    """recover_unconfigured_cloud: route an UNUSABLE cloud engine to offline. Per Codex MF1, Google is
+    'usable' ONLY after a passing Test connection (the verified marker) for the current config —
+    credentials merely existing is not enough."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def _cfg(self, d):
+        return _FakeConfig(dict(d), config_dir=self.dir)   # isolate the verify marker per test
 
     def _no_adc(self):
         return mock.patch.dict(os.environ, {k: v for k, v in os.environ.items()
                                             if k != "GOOGLE_APPLICATION_CREDENTIALS"}, clear=True)
 
     def test_unconfigured_google_routes_to_offline(self):
-        # Fresh/default: google_v2 + api with an EMPTY credentials path -> switch to offline.
-        cfg = _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api",
-                           "google.credential_mode": "service_account_json", "google.credentials_path": ""})
+        cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "api",
+                         "google.credential_mode": "service_account_json", "google.credentials_path": ""})
         with self._no_adc():
             self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
         self.assertEqual(cfg.get("stt.provider"), "whisper_local")
         self.assertEqual(cfg.get("stt.mode"), "local")
         self.assertTrue(cfg.get("providers.whisper.enabled"))
 
-    def test_dangling_google_path_routes_to_offline(self):
-        # Stale dev config: a credentials PATH that does not exist on disk is unusable -> offline.
-        cfg = _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api",
-                           "google.credential_mode": "service_account_json",
-                           "google.credentials_path": r"C:\nope\missing-key.json"})
+    def test_credentials_present_but_unverified_routes_to_offline(self):
+        # MF1: a real credentials file that has NOT been Test-connected is NOT usable -> offline.
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "api",
+                             "google.credential_mode": "service_account_json", "google.credentials_path": path})
+            with self._no_adc():
+                self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+            self.assertEqual(cfg.get("stt.provider"), "whisper_local")
+        finally:
+            os.unlink(path)
+
+    def test_verified_google_left_untouched(self):
+        # A passing Test connection (verified marker for the current config) -> Google usable -> no change.
+        cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "api", "google.project_id": "proj",
+                         "google.location": "eu", "google.recognizer_id": "_", "google.credential_mode": "adc"})
+        sidecar._set_google_verified(cfg)
+        self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "google_v2")
+
+    def test_verification_invalidated_by_config_change(self):
+        cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "api",
+                         "google.project_id": "proj-a", "google.credential_mode": "adc"})
+        sidecar._set_google_verified(cfg)
+        cfg.set("google.project_id", "proj-b")   # signature changes -> marker no longer matches
         with self._no_adc():
             self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
         self.assertEqual(cfg.get("stt.provider"), "whisper_local")
 
-    def test_configured_google_left_untouched(self):
-        # A real, existing credentials file -> Google is usable -> no change.
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            path = f.name
-        try:
-            cfg = _FakeConfig({"stt.provider": "google_v2", "stt.mode": "api",
-                               "google.credential_mode": "service_account_json", "google.credentials_path": path})
-            self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
-            self.assertEqual(cfg.get("stt.provider"), "google_v2")
-        finally:
-            os.unlink(path)
+    def test_offline_is_noop(self):
+        cfg = self._cfg({"stt.provider": "whisper_local", "stt.mode": "local"})
+        self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
 
-    def test_offline_and_smart_auto_are_noops(self):
-        for d in ({"stt.provider": "whisper_local", "stt.mode": "local"},
-                  {"stt.provider": "google_v2", "stt.mode": "smart_auto", "google.credentials_path": ""}):
-            cfg = _FakeConfig(dict(d))
+    def test_smart_auto_whisper_enabled_is_noop(self):
+        # smart_auto resolves to whisper_local (not google) -> left to the factory.
+        cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "smart_auto",
+                         "google.credentials_path": "", "providers.whisper.enabled": True})
+        with self._no_adc():
             self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
-            self.assertEqual(cfg.get("stt.provider"), d["stt.provider"])
+        self.assertEqual(cfg.get("stt.mode"), "smart_auto")
+
+    def test_smart_auto_unverified_google_routes_to_offline(self):
+        # smart_auto whose effective pick is unverified Google must not start a dead cloud session.
+        cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "smart_auto",
+                         "google.credentials_path": "", "providers.whisper.enabled": False})
+        with self._no_adc():
+            self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
 
 
 class ShellSelfTargetBlockTests(unittest.TestCase):

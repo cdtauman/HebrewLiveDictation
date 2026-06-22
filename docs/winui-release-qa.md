@@ -429,11 +429,26 @@ arrives while `state != "listening"` and nothing was injected this session is **
 tests in `tests/test_poststop_final.py` (no-punctuation/with-punctuation/late-after-idle injected once,
 no duplicate, cloud-while-listening unchanged).
 
+**Pre-smoke round 3 — insertion corruption (Hebrew garbled).** Insertion landed in Notepad, but the
+text was corrupted vs history (e.g. "שלום עולם זה מבחן" → "שלום זזזזזזה ןןןן" — chars repeated + dropped).
+Engine log: `Injector event backend=unicode_keyboard` with `raw_text_len==text_len==inserted_len` — the
+injector's accounting was correct; the corruption is at the OS delivery layer. Root cause:
+`text_injector._type_unicode_text` types **char-by-char** via `SendInput` keydown+keyup with only
+`time.sleep(0.001)` (1 ms) between chars; under the load right after offline processing, Notepad drops
+some `WM_CHAR`s and auto-repeats others. For Notepad the generic `TargetProfile.preferred_backend ==
+"unicode_keyboard"` forced that path. **Fix (authorized `text_injector.py` change):** for a final-only
+complete utterance, `inject_final` now calls `_insert_text(target_text, prefer_clipboard=True)`, which
+inserts via **atomic clipboard paste** (exact Hebrew/Unicode, with `restore_clipboard`), falling back to
+unicode if the paste fails, and never diverting Word (COM). Added insert-attempt instrumentation (length,
+prefer_clipboard, profile backend, target, backend used, fallback chain). 4 regression tests in
+`tests/test_final_clipboard_insertion.py` (final→clipboard; paste-fail→unicode fallback; non-final→unicode
+unchanged; Word→COM not clipboard).
+
 Per-target focus matrix below remains **unfilled** — re-run manual P5 against the **rebuilt** artifact
 after the pre-smoke. The cloud→offline routing, startup recovery, shell self-target block, hotkey rebind,
-post-stop final insertion, and logging are build-verified + unit-tested, but the end-to-end voice path
-still needs a human pass. (Home/Tray target-capture — the shell-foreground backstop — remains a separate
-open item if those paths still mis-target after this insertion fix.)
+post-stop final insertion, clipboard-paste fidelity, and logging are build-verified + unit-tested, but the
+end-to-end voice path still needs a human pass. (Home/Tray target-capture — the shell-foreground backstop
+— remains a separate open item if those paths still mis-target.)
 
 ### Packaging decisions (agreed)
 

@@ -385,7 +385,9 @@ class TextInjector:
             else:
                 return {"status": "target_unavailable", "text": target_text, "backend": "none"}
         else:
-            if not self._insert_text(target_text):
+            # final_only path: a complete utterance. Prefer clipboard paste for exact Hebrew fidelity
+            # (per-char unicode SendInput races under load and corrupts the text in apps like Notepad).
+            if not self._insert_text(target_text, prefer_clipboard=True):
                 return {"status": "target_unavailable", "text": target_text, "backend": "none"}
 
             self.session_pasted_text += target_text
@@ -432,10 +434,29 @@ class TextInjector:
         logger.info("External injection blocked: could not activate target. target=%s", self.target.describe())
         return False
 
-    def _insert_text(self, text: str) -> bool:
+    def _insert_text(self, text: str, prefer_clipboard: bool = False) -> bool:
         if not (self.target and self.target.is_usable_external()):
             self.target = WindowTarget.capture_best_target()
         profile = self.target.profile() if self.target and hasattr(self.target, "profile") else None
+        backend_pref = profile.preferred_backend if profile else "unicode_keyboard"
+        # Instrumentation: what the backend is about to attempt (the transcript content is logged
+        # separately, redaction-aware, by inject_final's caller). Helps diagnose insertion fidelity.
+        logger.info("Insert attempt: len=%s prefer_clipboard=%s profile_backend=%s target=%s",
+                    len(text), prefer_clipboard, backend_pref,
+                    self.target.describe() if self.target else "none")
+
+        # Beta-safe FINAL insertion: clipboard paste is atomic and reproduces Hebrew/Unicode exactly.
+        # Per-character unicode SendInput (see _type_unicode_text) races under the load right after
+        # offline processing, so Notepad drops/repeats characters (the "זזזזזז" corruption). For a
+        # complete final utterance prefer clipboard, except for Word (its COM editor is more precise).
+        # Falls through to the existing keyboard/COM backends if the paste fails.
+        if prefer_clipboard and backend_pref != "word_com":
+            if self._paste_text(text):
+                self.last_insert_backend = "clipboard"
+                logger.info("Inserted via clipboard paste (backend=clipboard, len=%s).", len(text))
+                return True
+            logger.warning("Clipboard paste failed for final insertion; falling back to keyboard/COM backends.")
+
         if profile and profile.preferred_backend == "word_com" and self.word_editor.insert_text(text, self.target):
             self.last_insert_backend = "word_com"
             return True

@@ -75,7 +75,7 @@ class TextInjectorTests(unittest.TestCase):
         injector = TextInjector(DummyConfig(values))
         injector.target = self.injector_target
         self.ops = []
-        injector._insert_text = lambda text: self.ops.append(("insert", text)) or True
+        injector._insert_text = lambda text, prefer_clipboard=False: self.ops.append(("insert", text)) or True
         injector._send_backspaces = lambda count: self.ops.append(("backspace", count)) or True
         return injector
 
@@ -175,7 +175,7 @@ class TextInjectorTests(unittest.TestCase):
         injector = self._injector({"dictation.live_typing_mode": "live"})
         
         # Simulating user keyboard interrupt mid-typing by making _insert_text set abort_requested
-        def mock_insert(text):
+        def mock_insert(text, prefer_clipboard=False):
             injector.abort_requested = True
             return False
             

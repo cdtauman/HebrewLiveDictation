@@ -337,6 +337,7 @@ public sealed class RemoteWindow
     private readonly AppHost _host;
     private readonly Ellipse _dot;
     private readonly Button _primary;
+    private readonly TextBlock _words;
     private Storyboard? _pulse;
     private string _state = "idle";
 
@@ -367,11 +368,24 @@ public sealed class RemoteWindow
         row.Children.Add(_dot);
         row.Children.Add(_primary);
 
+        // Live/interim words while dictating (PC3): a single trimmed RTL line, hidden at rest.
+        _words = new TextBlock
+        {
+            Text = "", FontSize = 12, Foreground = Overlays.Muted,
+            TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap,
+            MaxLines = 1, Visibility = Visibility.Collapsed,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+
+        var col = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4 };
+        col.Children.Add(row);
+        col.Children.Add(_words);
+
         var border = new Border
         {
             Background = Overlays.Surface, CornerRadius = new CornerRadius(16),
             BorderBrush = Overlays.Edge, BorderThickness = new Thickness(1),
-            Padding = new Thickness(14, 10, 14, 10), Child = row,
+            Padding = new Thickness(14, 10, 14, 10), Child = col,
         };
         var root = new Grid { FlowDirection = FlowDirection.RightToLeft };
         root.Children.Add(border);
@@ -387,7 +401,7 @@ public sealed class RemoteWindow
             Native.SendMessageW(Hwnd, Native.WM_NCLBUTTONDOWN, new IntPtr(Native.HTCAPTION), IntPtr.Zero);
         };
 
-        Overlays.Configure(Window, Hwnd, clickThrough: false, 220, 76, OverlayAnchor.BottomRight);
+        Overlays.Configure(Window, Hwnd, clickThrough: false, 280, 104, OverlayAnchor.BottomRight);
         // The Remote is interactive but must NEVER steal foreground — otherwise starting dictation
         // from it makes the shell the foreground and the injector captures the wrong target. WS_EX_NOACTIVATE
         // (set by Configure) is not enough for a clicked XAML Button; this makes it truly no-activate.
@@ -417,8 +431,25 @@ public sealed class RemoteWindow
             default: _primary.Content = "התחל"; _primary.IsEnabled = true; break;
         }
 
+        // Live words only make sense while dictating; clear them on any other state.
+        if (_state is not ("listening" or "stopping"))
+        {
+            _words.Text = "";
+            _words.Visibility = Visibility.Collapsed;
+        }
+
         if (pulse) StartPulse();
         else StopPulse();
+    }
+
+    /// <summary>Show live/interim words while dictating (PC3). For a streaming provider these are the
+    /// interim words as you speak; for offline (no interims) it shows the final at the end. Empty text
+    /// or a non-listening state hides the line. Target-app insertion stays final-only.</summary>
+    public void SetWords(string words)
+    {
+        bool show = !string.IsNullOrWhiteSpace(words) && _state is "listening" or "stopping";
+        _words.Text = words ?? "";
+        _words.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void StartPulse()

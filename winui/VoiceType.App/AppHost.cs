@@ -285,7 +285,9 @@ public sealed class AppHost
                     if (needsModel) { ShowConsole(); OfflineModelRequired?.Invoke(); }
                     break;
                 case "text":
-                    _hud?.SetWords(e.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "");
+                    string words = e.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
+                    _hud?.SetWords(words);
+                    _remote?.SetWords(words);   // PC3: live/interim words on the Remote too
                     break;
                 case "error":
                     string em = e.TryGetProperty("message", out var me) ? me.GetString() ?? "" : "";

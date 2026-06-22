@@ -564,6 +564,14 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   errors; dev self-test 39/39. *Known limits:* no manual local-folder import yet (deferred); large models
   need the RAM the catalog states (engine `ram_preflight` still guards load). *Core path unaffected*
   (default stays `small`; download/delete reuse the proven path). **Next: PC3 started.**
+- **PC3 — Live/interim words in HUD + Remote (done).** The HUD already showed live words on `text` events;
+  the **Remote** now shows them too — a single trimmed RTL line below the orb/button (Remote resized
+  280×104), shown only while listening/stopping and cleared otherwise. `AppHost`'s `text` case now feeds
+  both `_hud.SetWords` and `_remote.SetWords`. **Streaming providers** (cloud Google) stream interims → live
+  words while speaking; **offline `whisper_local`** has no interims, so words appear at the end (the final,
+  briefly) — accepted per the phase rule. **Target-app insertion stays final-only** (no live-typing into
+  the target). *Tests:* WinUI 0 errors; dev self-test 39/39 (Remote constructs; no-activate intact; no
+  Python change). *Core path unaffected.* **Next: PC4 started.**
 
 ### Packaging decisions (agreed)
 

@@ -327,8 +327,14 @@ the **wrong place/target**, STOP and record it as a Must-Fix — do not continue
 | K | Offline model missing → download flow honest (no silent auto-download) | ☐ | |
 | L | Tray show / start / stop / exit + hide-to-tray | ☐ | |
 
-**Status: PRE-SMOKE PASS (2026-06-22) — proceeding to the full focus-safety matrix.** After rounds 1–3
-(see below) the Notepad pre-smoke now passes for the **supported start paths**:
+**Status (2026-06-22):**
+- **P5 pre-smoke: PASS** (Notepad, via F8 and the floating Remote).
+- **Full P5 matrix: DEFERRED — not fully run.** Priority shifted to Product Completion (below).
+- **Known risk:** Word / Gmail / WhatsApp / VS Code insertion + focus-safety **not yet verified**.
+- **Not ready for public beta on P5 alone** — the matrix is incomplete and the product is not feature-
+  complete (see "Product Completion / Feature Parity").
+
+Pre-smoke detail — after rounds 1–3 (below) the Notepad pre-smoke passes for the **supported start paths**:
 - **F8 (global hotkey) → target app: PASS.**
 - **Floating Remote → target app: PASS.**
 - Offline engine / mic / STT / start-stop / **clipboard-paste final insertion** all working; remaining
@@ -471,6 +477,47 @@ P5 validates that the **supported** dictation workflow (F8 + Remote → target a
 does **not** make the product feature-complete — the WinUI shell is still a subset of the original vision
 and of the legacy Qt app. Before the beta is called complete, a dedicated Product Completion phase must
 close these gaps. (Runs **after** P5 and the P6 review; do not start until explicitly directed.)
+
+### Audit (A–F), 2026-06-22
+
+**A. What already works (WinUI):** core offline dictation (F8/Remote → clipboard insert), mic, STT,
+start/stop, status; the 6-room IA — Home (status + recent), **Dictation (language selection + punctuation
+toggles + live command reference)**, Engine (offline / model download / offline-backup), Controls (hotkey
+rebind + toggle/PTT + mic + HUD/Remote toggles), History (transcripts + **TXT export** + clear), **Settings
+(theme + startup + minimize-on-close + Advanced door + Diagnostics viewer)**; focus-safe HUD + Remote;
+onboarding (offline-first); persisted engine + shell logs; tray; CI beta artifact.
+
+**B. Missing from the original vision:** live/interim "words-while-speaking" for the **offline** engine
+(`whisper_local` emits no interims; the HUD shows live words only for a streaming provider, and the Remote
+shows none); an **offline model catalog** (only one hard-coded `small` model — weak quality); cloud as a
+real **Recommended** path (Google Chirp 3 config + test); Advanced/Labs depth (VAD/recognizer) — deferred.
+
+**C. Regressed from the legacy Qt app** (`qt_app.py` had these; WinUI dropped them): **Google setup UI**
+(project_id · model · region · credential-mode · service-account JSON file picker); **provider selection +
+API keys** (Deepgram/Groq); **Whisper model selection** (combo → now one fixed model); **DOCX export**
+(WinUI is TXT-only); advanced **audio/VAD/recognizer** settings; **updater / update-check** surface. (Voice
+editing commands — delete last word/sentence, replace/delete phrase, send/next — are preserved via the
+command pack + the Dictation command reference, not regressed in capability.)
+
+**D. Do first (highest "real product" impact):** (1) **Cloud/Google setup** — biggest regression and the
+path to *good* Hebrew quality (Chirp 3), since the offline `small` model is weak; (2) **offline model
+manager** — let users pick a larger/better model; (3) **live/interim in HUD + Remote** for streaming
+providers.
+
+**E. Can wait:** experimental live-typing-into-target (Labs); offline partial-decode interims (hard, low
+ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
+
+**F. Recommended phased plan:**
+- **PC1 — Cloud provider setup (Google first):** restore the Engine-room Google config (project_id /
+  region / model / SA-JSON picker / ADC / **Test connection**); mark cloud usable only when configured;
+  wire `smart_auto`. Reuses the engine's existing `google_stt_v2` + `auto_select`.
+- **PC2 — Offline model manager:** catalog (tiny/base/small/medium/large) with size · quality · speed ·
+  RAM · recommended; download / delete / select; optional local-folder import.
+- **PC3 — Live/interim experience:** show interim words in **HUD and Remote** for streaming providers;
+  keep final-only insertion; defer offline partial-decode.
+- **PC4 — Parity cleanup:** per-provider language clarity; DOCX export; updater/update-check surface;
+  Diagnostics polish; audio/VAD Labs.
+- **PC5 — Full P5 matrix + P6 review** before any public beta.
 
 1. **Live / interim dictation experience (Gboard-like).** The user should see words **while speaking**;
    the HUD/Remote should show recent/interim words, not only finals. RTL-safety decision to make: show

@@ -582,6 +582,23 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   if safe" — skipped, no functional check shipped); advanced VAD/recognizer Labs (avoid overbuild); manual
   local-model import. *Tests:* Python 282/282; WinUI 0 errors; dev self-test 39/39; DOCX writer produces a
   valid file. *Core path unaffected.* **Next: PC5 (record manual-matrix status).**
+- **PC5 — manual-verification status (recorded; NOT faked).** Everything in PC1–PC4 is **build-verified +
+  unit-tested only**; none of it has been voice/visually exercised on real hardware. Honest status:
+  - **Manually confirmed (earlier P5 pre-smoke):** offline → **F8/Remote** → final clipboard insertion into
+    Notepad, matching history. This remains the only human-confirmed path.
+  - **Needs a human pass (NOT yet done):** Google **Chirp 3** end-to-end with real GCP credentials (Test
+    connection + actual cloud dictation); downloading a **larger model** (e.g. medium) and its quality;
+    **live interim words** visibly appearing in HUD/Remote during a *streaming/cloud* session; **DOCX**
+    export opening correctly in Word; and the full **P5 focus-safety matrix** (Word/Gmail/WhatsApp/VS Code).
+  - The full P5 matrix stays **DEFERRED**; these new surfaces are added to it as items to run. No results
+    are fabricated.
+- **PC6 — final-review prep (no release).** Product Completion commits: PC1 `e72d181`, PC2 `1a9bed3`, PC3
+  `f3972d3`, PC4 `6a13827` (+ this docs commit). All on `feature/winui-redesign-migration`. Each: builds
+  clean, Python 282/282, dev self-test 39/39; the offline F8/Remote core path was not touched. A final
+  **packaged build + `verify_beta`** and a **CI run** close the autopilot (artifact for manual testing).
+  **No public beta / release** — that needs explicit approval. Recommended review focus: the Google
+  credential/test-connection path (security-adjacent), the model-catalog RAM guidance, and that live words
+  never become live-typing into the target (insertion stays final-only).
 
 ### Packaging decisions (agreed)
 

@@ -8,8 +8,13 @@ See dictation_controller.handle_stt_event (the post-stop inject branch in the ex
 import unittest
 from unittest import mock
 
-# A QApplication is not required to construct a plain QObject or to call handle_stt_event directly
-# (we never rely on queued signal delivery), so these tests stay headless.
+# DictationController is a QObject (signals + a QTimer in the accumulation path). Without a Qt
+# application context, Qt cleanup at interpreter shutdown aborts the process (unittest prints OK but
+# the process exits non-zero — seen in CI). A headless QCoreApplication gives it a clean context.
+from PySide6.QtCore import QCoreApplication
+
+_qt_app = QCoreApplication.instance() or QCoreApplication([])
+
 import hebrew_live_dictation.dictation_controller as dc
 
 

@@ -24,10 +24,24 @@ public sealed partial class DictationPage : Page
     private AppHost? _host;
     private bool _loading;
 
+    // The dictation language list (one source of truth; the combo is populated from this). Both
+    // Hebrew codes are offered because Google may behave differently for iw-IL vs he-IL (R3 item 3).
+    internal static readonly (string tag, string label)[] Languages =
+    {
+        ("iw-IL", "עברית (iw-IL)"),
+        ("he-IL", "עברית (he-IL)"),
+        ("en-US", "English (US)"),
+        ("ar-XA", "العربية"),
+        ("ru-RU", "Русский"),
+        ("fr-FR", "Français"),
+        ("es-ES", "Español"),
+    };
+
     // language code -> (command pack key, Hebrew pack name for the caption)
     private static readonly Dictionary<string, (string pack, string name)> LangPack = new()
     {
         ["iw-IL"] = ("he", "עברית"),
+        ["he-IL"] = ("he", "עברית"),   // alt Hebrew code for Google; Offline maps it to 'he' too
         ["en-US"] = ("en", "אנגלית"),
         ["ar-XA"] = ("ar", "ערבית"),
         ["ru-RU"] = ("ru", "רוסית"),
@@ -52,6 +66,9 @@ public sealed partial class DictationPage : Page
         DispatcherQueue.TryEnqueue(() =>
         {
             _loading = true;
+            if (LanguageCombo.Items.Count == 0)
+                foreach (var (tag, label) in Languages)
+                    LanguageCombo.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
             SelectLanguage(lang);
             AutoPunctToggle.IsOn = autoPunct;
             SpokenPunctToggle.IsOn = spokenPunct;

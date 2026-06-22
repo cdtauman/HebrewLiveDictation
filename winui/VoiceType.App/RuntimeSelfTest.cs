@@ -78,6 +78,17 @@ internal static class RuntimeSelfTest
                   $"spawned='{spawned}', derived={derivedMode}, " +
                   $"packagedEngine={RepoPaths.PackagedEnginePath() ?? "(none)"}");
 
+            // 1c) R3-Google stabilization: the pick-lists must include the entries needed to test the
+            //     live-words model (latest_long) and the Hebrew language-code suspect (he-IL).
+            bool hasLatestLong = Views.EnginePage.GoogleModels.Any(m => m.tag == "latest_long");
+            Check("engine.google.models", hasLatestLong,
+                  hasLatestLong ? "Google model list includes latest_long (live words / continuous)"
+                                : "latest_long missing from the Google model dropdown");
+            bool hasHeIl = Views.DictationPage.Languages.Any(l => l.tag == "he-IL");
+            Check("dictation.languages", hasHeIl,
+                  hasHeIl ? "Hebrew language list includes he-IL (alt Google code)"
+                          : "he-IL missing from the dictation language list");
+
             // 2) Connect the C# client and exercise the contract from the WinUI side.
             using var client = new BridgeClient(pipeShort);
             var disconnected = new System.Threading.ManualResetEventSlim(false);

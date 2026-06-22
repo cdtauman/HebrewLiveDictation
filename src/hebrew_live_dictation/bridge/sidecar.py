@@ -30,7 +30,13 @@ logger = logging.getLogger("voicetype.bridge")
 HEARTBEAT_MS = 10000
 
 
-def make_callbacks(hotkeys, server_ref, on_session_end=None):
+# R3-D: a cloud (Google) session that produced no usable transcription must NOT end silently —
+# surface a clear, actionable status so the user knows to change model/region/language or go offline.
+CLOUD_NO_TRANSCRIPTION_MSG = (
+    "Google לא החזירה תמלול. נסו מודל/אזור/שפה אחרים, או עברו ללא־מקוון.")
+
+
+def make_callbacks(hotkeys, server_ref, on_session_end=None, config=None):
     """Build the controller event callbacks.
 
     Extracted so the listening-state sync (toggle-hotkey parity with the legacy Qt
@@ -38,6 +44,8 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
     loop. `server_ref` returns the live server (or None before it is constructed).
     `on_session_end(transcript)` is invoked once per completed session (parity with
     the legacy app, which appended finalized transcripts to history in the UI layer).
+    `config` (optional) lets a completed CLOUD session that yielded no text surface a
+    clear failure instead of going silently idle (R3-D).
     """
 
     finals = []
@@ -45,7 +53,10 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
     # reused for every later listening-status refresh, so the displayed target can never
     # change mid-session. `fallback` latches when the engine reports the cloud provider
     # dropped to local mid-session (auto_fallback). Both reset the moment listening ends.
-    session = {"listening": False, "target": "", "fallback": False, "target_changed": False}
+    # `cloud`/`got_text` track whether the session ran a cloud provider and produced any
+    # usable text, so a silent empty-Google session can be surfaced at idle (R3-D).
+    session = {"listening": False, "target": "", "fallback": False, "target_changed": False,
+               "cloud": False, "got_text": False}
 
     def send(event):
         server = server_ref()
@@ -67,6 +78,10 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
                 session["listening"] = True
                 session["target"] = injection_target_label()
                 session["fallback"] = False
+                # Remember whether THIS session is running a cloud provider, so a completed
+                # cloud session that produced no usable text can be surfaced at idle (R3-D).
+                session["cloud"] = bool(config is not None and _effective_provider(config) in _CLOUD_PROVIDERS)
+                session["got_text"] = False
             if is_fallback_status(message):
                 session["fallback"] = True
             session["target_changed"] = is_target_changed_status(message)
@@ -78,14 +93,21 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
         # Session ended: append the accumulated finals to history. The legacy app
         # did this in qt_app (_flush_session_history); the sidecar must replicate it
         # or completed WinUI sessions never reach history / Home recent activity.
-        if state == "idle" and finals:
-            transcript = " ".join(finals).strip()
-            finals.clear()
-            if transcript and on_session_end:
-                try:
-                    on_session_end(transcript)
-                except Exception:
-                    logger.error("session history append failed:\n%s", traceback.format_exc())
+        surface_cloud_no_text = False
+        if state == "idle":
+            if finals:
+                transcript = " ".join(finals).strip()
+                finals.clear()
+                if transcript and on_session_end:
+                    try:
+                        on_session_end(transcript)
+                    except Exception:
+                        logger.error("session history append failed:\n%s", traceback.format_exc())
+            elif session.get("cloud") and not session.get("got_text"):
+                # Cloud session ran but produced no usable transcription -> surface it (R3-D).
+                surface_cloud_no_text = True
+            session["cloud"] = False
+            session["got_text"] = False
         event = {"kind": "status", "state": state, "message": message, "outputMode": output_mode}
         if state == "listening":
             # Always carry the captured-once target while listening; "" tells the HUD to
@@ -96,10 +118,17 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None):
             if session["target_changed"]:
                 event["targetChanged"] = True
         send(event)
+        # Emit AFTER the idle status so the actionable error is the state the user is left on,
+        # not overwritten by the idle/ready status. Display-only: changes no insertion behavior.
+        if surface_cloud_no_text:
+            send({"kind": "status", "state": "error",
+                  "message": CLOUD_NO_TRANSCRIPTION_MSG, "cloudNoText": True})
 
     def on_text(text, final, output_mode):
-        if final and text and text.strip():
-            finals.append(text.strip())
+        if text and text.strip():
+            session["got_text"] = True   # any usable interim/final means the cloud session worked (R3-D)
+            if final:
+                finals.append(text.strip())
         send({"kind": "text", "text": text, "final": bool(final), "outputMode": output_mode})
 
     def on_error(message):
@@ -827,14 +856,18 @@ def google_config_status(config) -> dict:
             project_id = config.get("google.project_id", "") or ""
         has_creds = True if mode == "adc" else bool(creds_path and os.path.exists(creds_path))
         verified = _google_verified(config)
+        # Also report the ACTIVE runtime selection (R3 item 5) so the shell can show exactly what
+        # will run — provider/model/region/language — without the user reading the engine log.
         return {"configured": bool(verified), "verified": bool(verified),
                 "hasCredentials": bool(has_creds and project_id), "projectId": project_id,
                 "location": config.get("google.location", "eu"),
-                "model": config.get("google.model", "chirp_3")}
+                "model": config.get("google.model", "chirp_3"),
+                "provider": _effective_provider(config),
+                "language": config.get("languages.primary", "iw-IL")}
     except Exception:
         logger.error("google_config_status failed:\n%s", traceback.format_exc())
         return {"configured": False, "verified": False, "hasCredentials": False,
-                "projectId": "", "location": "", "model": ""}
+                "projectId": "", "location": "", "model": "", "provider": "", "language": ""}
 
 
 def test_google_connection(config) -> dict:
@@ -883,6 +916,23 @@ def test_google_connection(config) -> dict:
 
 
 _CLOUD_PROVIDERS = ("google_v2", "deepgram", "groq")
+
+
+def _effective_provider(config) -> str:
+    """The provider the factory will actually run for the current config (mirrors stt_factory):
+    mode 'local' -> whisper_local; 'smart_auto' -> auto_select; otherwise stt.provider. Used to tell
+    whether a started session is a cloud session (R3-D silent-failure surfacing)."""
+    mode = config.get("stt.mode", "api") or "api"
+    if mode == "local":
+        return "whisper_local"
+    provider = config.get("stt.provider", "google_v2") or "google_v2"
+    if mode == "smart_auto":
+        try:
+            from ..stt import auto_select
+            return auto_select.select_provider(config)
+        except Exception:
+            return provider
+    return provider
 
 
 def _cloud_provider_usable(config, provider) -> bool:
@@ -1081,7 +1131,8 @@ def run(pipe_name: str | None = None) -> int:
 
     on_status, on_text, on_error, on_command = make_callbacks(
         hotkeys, lambda: server_holder["server"],
-        on_session_end=lambda transcript: _append_history(config, transcript))
+        on_session_end=lambda transcript: _append_history(config, transcript),
+        config=config)
     controller.on_status = on_status
     controller.on_text = on_text
     controller.on_error = on_error

@@ -23,15 +23,11 @@
                         <TextBlock x:Name="PackLabel" Text="פקודות קוליות: עברית"
                                    Style="{StaticResource CaptionMutedStyle}" />
                     </StackPanel>
+                    <!-- Items populated from DictationPage.Languages (one testable source of truth).
+                         Two Hebrew codes (iw-IL/he-IL): Google may behave differently; Offline maps
+                         both to 'he', so either is safe for Whisper (R3 item 3). -->
                     <ComboBox x:Name="LanguageCombo" Grid.Column="1" MinWidth="200" VerticalAlignment="Center"
-                              SelectionChanged="OnLanguageChanged">
-                        <ComboBoxItem Tag="iw-IL" Content="עברית" />
-                        <ComboBoxItem Tag="en-US" Content="English (US)" />
-                        <ComboBoxItem Tag="ar-XA" Content="العربية" />
-                        <ComboBoxItem Tag="ru-RU" Content="Русский" />
-                        <ComboBoxItem Tag="fr-FR" Content="Français" />
-                        <ComboBoxItem Tag="es-ES" Content="Español" />
-                    </ComboBox>
+                              SelectionChanged="OnLanguageChanged" />
                 </Grid>
             </Border>
 

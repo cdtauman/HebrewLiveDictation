@@ -45,6 +45,7 @@ public sealed partial class OnboardingWindow : Window
     private static readonly Dictionary<string, (string pack, string name)> LangPack = new()
     {
         ["iw-IL"] = ("he", "עברית"),
+        ["he-IL"] = ("he", "עברית"),
         ["en-US"] = ("en", "אנגלית"),
         ["ar-XA"] = ("ar", "ערבית"),
         ["ru-RU"] = ("ru", "רוסית"),

@@ -735,5 +735,75 @@ class HudTargetTests(unittest.TestCase):
             self.assertEqual(injection_target_label(), "")
 
 
+class CloudSilentFailureTests(unittest.TestCase):
+    """R3-D: a cloud (Google) session that produced no usable transcription must surface a clear,
+    actionable status at idle instead of going silently to ready — without affecting insertion
+    (the surfaced event is a status, never a paste). Offline silence stays silent (it's normal)."""
+
+    def _cbs(self, server, cfg):
+        return make_callbacks(_FakeHotkeys(), lambda: server, config=cfg)
+
+    def test_effective_provider(self):
+        self.assertEqual(sidecar._effective_provider(_FakeConfig({"stt.mode": "api", "stt.provider": "google_v2"})), "google_v2")
+        self.assertEqual(sidecar._effective_provider(_FakeConfig({"stt.mode": "local", "stt.provider": "google_v2"})), "whisper_local")
+
+    def test_cloud_zero_text_surfaces_status(self):
+        server = _RecordingServer()
+        cfg = _FakeConfig({"stt.mode": "api", "stt.provider": "google_v2"})
+        on_status, on_text, _, _ = self._cbs(server, cfg)
+        with mock.patch.object(sidecar, "injection_target_label", lambda: ""):
+            on_status("listening", "", "external")   # cloud session begins, no text
+            on_status("idle", "", "external")          # ends with nothing recognized
+        surfaced = [e for e in server.events if e.get("cloudNoText")]
+        self.assertEqual(len(surfaced), 1)
+        self.assertEqual(surfaced[0]["message"], sidecar.CLOUD_NO_TRANSCRIPTION_MSG)
+        # The surfaced event is a status (display-only) — it must never be a text/insertion event.
+        self.assertEqual(surfaced[0]["kind"], "status")
+        self.assertFalse([e for e in server.events if e.get("kind") == "text"])
+
+    def test_cloud_with_text_no_false_failure(self):
+        server = _RecordingServer()
+        cfg = _FakeConfig({"stt.mode": "api", "stt.provider": "google_v2"})
+        on_status, on_text, _, _ = self._cbs(server, cfg)
+        with mock.patch.object(sidecar, "injection_target_label", lambda: ""):
+            on_status("listening", "", "external")
+            on_text("שלום עולם", True, "external")    # Google returned real text
+            on_status("idle", "", "external")
+        self.assertFalse([e for e in server.events if e.get("cloudNoText")])
+
+    def test_cloud_interim_only_counts_as_text(self):
+        # Live words arrived but no final flushed -> the session DID work; don't cry failure.
+        server = _RecordingServer()
+        cfg = _FakeConfig({"stt.mode": "api", "stt.provider": "google_v2"})
+        on_status, on_text, _, _ = self._cbs(server, cfg)
+        with mock.patch.object(sidecar, "injection_target_label", lambda: ""):
+            on_status("listening", "", "external")
+            on_text("שלום", False, "external")          # interim only
+            on_status("idle", "", "external")
+        self.assertFalse([e for e in server.events if e.get("cloudNoText")])
+
+    def test_offline_zero_text_is_silent(self):
+        server = _RecordingServer()
+        cfg = _FakeConfig({"stt.mode": "local", "stt.provider": "whisper_local"})
+        on_status, _, _, _ = self._cbs(server, cfg)
+        with mock.patch.object(sidecar, "injection_target_label", lambda: ""):
+            on_status("listening", "", "external")
+            on_status("idle", "", "external")
+        self.assertFalse([e for e in server.events if e.get("cloudNoText")])
+
+
+class OfflineHebrewMappingTests(unittest.TestCase):
+    """Item 3 safety: adding 'he-IL' must not break Offline — Whisper maps both Hebrew codes to 'he'."""
+
+    def test_hebrew_codes_map_to_he(self):
+        from hebrew_live_dictation.stt.whisper_local import WhisperLocalStream
+        for code in ("iw-IL", "he-IL"):
+            stream = WhisperLocalStream(_FakeConfig({"languages.primary": code}))
+            self.assertEqual(stream._language(), "he")
+        # a non-Hebrew code passes through unchanged (sanity)
+        stream = WhisperLocalStream(_FakeConfig({"languages.primary": "en-US"}))
+        self.assertEqual(stream._language(), "en")
+
+
 if __name__ == "__main__":
     unittest.main()

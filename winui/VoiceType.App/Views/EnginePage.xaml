@@ -30,9 +30,9 @@
                         </RadioButton>
                         <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
-                                <TextBlock Text="Google Chirp 3 (ענן)" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="האיכות הטובה ביותר לעברית. דורש פרויקט Google Cloud והרשאות (מוגדר מטה)."
-                                           Style="{StaticResource CaptionMutedStyle}" />
+                                <TextBlock Text="Google (ענן)" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="איכות גבוהה לעברית. בחרו מודל בהמשך — מודלי Chirp מדויקים אך מחזירים טקסט סופי בלבד (ללא מילים חיות); ל'מילים בזמן אמת' בחרו Latest Long. דורש פרויקט Google Cloud והרשאות."
+                                           TextWrapping="Wrap" Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="OptChoose" GroupName="engine" Tag="choose" Checked="OnEngineChoice">
@@ -56,6 +56,9 @@
                     <TextBlock Text="הגדרת Google Cloud" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock x:Name="GoogleStatusText" Style="{StaticResource CaptionMutedStyle}"
                                TextWrapping="Wrap" Text="בודק מצב…" />
+                    <!-- Active runtime config (R3 item 5): exactly what will run — no log-reading needed. -->
+                    <TextBlock x:Name="GoogleActiveText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" />
 
                     <StackPanel Spacing="4">
                         <TextBlock Text="Project ID" Style="{StaticResource CaptionMutedStyle}" />
@@ -72,6 +75,8 @@
                             <ComboBox x:Name="GoogleModelCombo" HorizontalAlignment="Stretch" SelectionChanged="OnGoogleModelChanged" />
                         </StackPanel>
                     </Grid>
+                    <!-- Honest per-model guidance: live words vs final-only, short vs long (R3 item 2). -->
+                    <TextBlock x:Name="GoogleModelMetaText" Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
 
                     <StackPanel Spacing="4">
                         <TextBlock Text="מזהה Recognizer (ברירת מחדל: _)" Style="{StaticResource CaptionMutedStyle}" />

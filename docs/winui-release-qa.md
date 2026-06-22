@@ -640,6 +640,35 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
     change invalidates, creds-file swap invalidates, failed test clears. Python **290/290**; packaged
     verify **40/40**. *Core path untouched.* **No release.**
 
+- **R3‑Google stabilization (manual‑validation findings; done).** R3 manual testing found Google
+  verified but **producing no usable Hebrew text and no live words**. Engine log proved: provider
+  `google_v2`/`api`, **model=chirp_3, location=eu, language=iw‑IL**; Google accepted the stream and
+  received audio but returned **`results count: 0` / empty finals (`text_len=0`) / `interim_events=0`**.
+  Two distinct facts: (a) **chirp_3/eu/iw‑IL returns empty Hebrew transcripts** (Google model/region/
+  language issue — our result extraction is correct); (b) **Chirp models emit no interims by design**,
+  so the Gboard live‑words pillar is impossible on Chirp (needs a conformer model). Narrow, non‑protected
+  fix set:
+  1. **`latest_long` added** to the Engine‑room model list (the continuous/live‑words model that was
+     previously unselectable).
+  2. **Honest model labels + per‑model guidance** (Chirp = accuracy/final‑only; latest_long = live
+     words/continuous; latest_short = short utterances). Google is no longer presented as simply
+     "recommended" without the live‑words caveat.
+  3. **`he-IL` added** as a Hebrew language option (Offline maps both `iw`/`he`→`he`, so it's safe) to
+     test Google's language‑code sensitivity.
+  4. **Silent cloud failure surfaced** — a cloud session that yields zero usable text now emits a clear
+     actionable status (*"Google לא החזירה תמלול…"*) at idle instead of going silently to ready.
+     Display‑only: **insertion stays final‑only, no interim target typing, no double insert.**
+  5. **Active runtime config shown** in the Engine room (provider · model · region · language ·
+     verified · live‑words/final‑only) — no log‑reading needed.
+  6. **`word_confidence`**: confirmed the current code sets **no** such flag (only
+     `enable_automatic_punctuation` + spoken‑punct) — the historical error is **not** reproducible in
+     this artifact, so no protected‑module change.
+  - *Tests:* +6 Python (`CloudSilentFailureTests` zero‑text surfaces / text doesn't / interim counts /
+    offline silent / `_effective_provider`; `OfflineHebrewMappingTests` iw‑IL & he‑IL → `he`) + 2 WinUI
+    self‑test checks (`engine.google.models` has latest_long; `dictation.languages` has he‑IL). Python
+    **296/296**; WinUI 0 errors; dev self‑test **42/42**; **packaged verify 42/42**. *Offline +
+    final‑only safety untouched.* **No release.**
+
 ### Packaging decisions (agreed)
 
 These are settled, not open:

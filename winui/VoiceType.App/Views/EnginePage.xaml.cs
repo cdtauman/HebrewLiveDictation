@@ -256,8 +256,28 @@ public sealed partial class EnginePage : Page
     // ---- Google Cloud setup (PC1) ----
     private static readonly string[] GoogleLocations =
         { "eu", "us", "global", "europe-west1", "europe-west2", "europe-west3", "europe-west4", "us-central1" };
-    private static readonly (string tag, string label)[] GoogleModels =
-        { ("chirp_3", "Chirp 3"), ("chirp_2", "Chirp 2"), ("chirp", "Chirp"), ("latest_short", "Latest Short") };
+    // Honest labels: Chirp models = high accuracy but FINAL-ONLY (no live words); latest_long = live
+    // words / continuous streaming (possibly lower accuracy); latest_short = short utterances only.
+    // 'latest_long' is the model to test for the Gboard-like live experience (R3 items 1-2).
+    internal static readonly (string tag, string label)[] GoogleModels =
+    {
+        ("chirp_3", "Chirp 3 — דיוק מרבי · ללא מילים חיות"),
+        ("chirp_2", "Chirp 2 — דיוק גבוה · ללא מילים חיות"),
+        ("chirp", "Chirp — ללא מילים חיות"),
+        ("latest_long", "Latest Long — מילים בזמן אמת · הכתבה רציפה"),
+        ("latest_short", "Latest Short — אמירות קצרות בלבד"),
+    };
+
+    /// <summary>Longer, honest per-model guidance shown under the picker (R3 item 2).</summary>
+    private static string GoogleModelMeta(string tag) => tag switch
+    {
+        "chirp_3" => "Chirp 3: הדיוק הטוב ביותר לעברית, אך מחזיר טקסט סופי בלבד — בלי מילים חיות תוך כדי דיבור. ייתכן שלא יחזיר טקסט בכל שילוב אזור/שפה.",
+        "chirp_2" => "Chirp 2: דיוק גבוה, טקסט סופי בלבד (ללא מילים חיות).",
+        "chirp" => "Chirp: משפחת Chirp הוותיקה, טקסט סופי בלבד (ללא מילים חיות).",
+        "latest_long" => "Latest Long: מציג מילים בזמן אמת ומתאים להכתבה רציפה (חוויית Gboard). ייתכן שהדיוק לעברית נמוך יותר מ‑Chirp.",
+        "latest_short" => "Latest Short: לאמירות קצרות; עשוי להחזיר טקסט רק בסוף — לא מתאים להכתבה ארוכה.",
+        _ => "",
+    };
 
     private async Task LoadGoogleConfigAsync()
     {
@@ -277,6 +297,7 @@ public sealed partial class EnginePage : Page
             if (GoogleModelCombo.Items.Count == 0)
                 foreach (var (t, label) in GoogleModels) GoogleModelCombo.Items.Add(new ComboBoxItem { Content = label, Tag = t });
             SelectComboByTag(GoogleModelCombo, model, "chirp_3");
+            GoogleModelMetaText.Text = GoogleModelMeta(model);
             SelectComboByTag(CredModeCombo, mode, "service_account_json");
             CredPathRow.Visibility = mode == "service_account_json" ? Visibility.Visible : Visibility.Collapsed;
             ProjectIdBox.Text = projectId;
@@ -299,7 +320,7 @@ public sealed partial class EnginePage : Page
     /// <summary>Honest, no-network Google state from the engine (configured / not-configured).</summary>
     private async Task RefreshGoogleStatusAsync()
     {
-        bool verified = false, hasCreds = false; string projectId = "";
+        bool verified = false, hasCreds = false; string projectId = "", model = "", location = "", language = "";
         if (_host?.Client != null)
         {
             try
@@ -308,17 +329,29 @@ public sealed partial class EnginePage : Page
                 verified = r.TryGetProperty("verified", out var v) && v.ValueKind == JsonValueKind.True;
                 hasCreds = r.TryGetProperty("hasCredentials", out var hc) && hc.ValueKind == JsonValueKind.True;
                 projectId = r.TryGetProperty("projectId", out var p) ? p.GetString() ?? "" : "";
+                model = r.TryGetProperty("model", out var md) ? md.GetString() ?? "" : "";
+                location = r.TryGetProperty("location", out var lo) ? lo.GetString() ?? "" : "";
+                language = r.TryGetProperty("language", out var lg) ? lg.GetString() ?? "" : "";
             }
             catch { }
         }
+        bool liveWords = model.StartsWith("latest");   // only conformer models stream live words
         // Honest: Google is "active" only after a passing Test connection (verified). Credentials present
         // but untested -> "needs test"; until verified, dictation routes to offline.
         DispatcherQueue.TryEnqueue(() =>
+        {
             GoogleStatusText.Text = verified
                 ? $"מאומת ✓  (פרויקט {projectId}) — Google פעיל."
                 : hasCreds
                     ? "פרטים קיימים אך לא נבדקו. לחצו 'בדיקת חיבור' כדי להפעיל את Google; עד אז ההכתבה תשתמש בלא־מקוון."
-                    : "לא מוגדר. הזינו Project ID ובחרו קובץ הרשאות (JSON), או השתמשו בלא־מקוון.");
+                    : "לא מוגדר. הזינו Project ID ובחרו קובץ הרשאות (JSON), או השתמשו בלא־מקוון.";
+            // Active runtime config (R3 item 5) — what will actually run, plus an honest live-words note.
+            GoogleActiveText.Text = string.IsNullOrEmpty(model)
+                ? ""
+                : $"פעיל: Google · מודל {model} · אזור {location} · שפה {language} · "
+                  + (verified ? "מאומת ✓" : "לא נבדק") + " · "
+                  + (liveWords ? "מילים בזמן אמת" : "טקסט סופי בלבד (ללא מילים חיות)");
+        });
     }
 
     private async void OnProjectIdChanged(object sender, RoutedEventArgs e)
@@ -339,13 +372,17 @@ public sealed partial class EnginePage : Page
     {
         if (_loading) return;
         await SetConfig("google.location", (LocationCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "eu");
+        await RefreshGoogleStatusAsync();   // keep the active-config line in sync (R3 item 5)
     }
 
     private async void OnGoogleModelChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading) return;
-        await SetConfig("google.model", (GoogleModelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "chirp_3");
+        string tag = (GoogleModelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "chirp_3";
+        await SetConfig("google.model", tag);
+        GoogleModelMetaText.Text = GoogleModelMeta(tag);   // honest per-model guidance (R3 item 2)
         await RefreshLabelAsync();
+        await RefreshGoogleStatusAsync();   // active-config line reflects the new model (R3 item 5)
     }
 
     private async void OnCredModeChanged(object sender, SelectionChangedEventArgs e)

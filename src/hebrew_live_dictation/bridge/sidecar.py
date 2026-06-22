@@ -755,13 +755,34 @@ def _google_dir(config) -> str:
         os.environ.get("APPDATA", os.path.expanduser("~")), "VoiceType")
 
 
+def _creds_fingerprint(config) -> str:
+    """A cheap fingerprint (mtime:size) of the Service Account JSON, so swapping the file at the SAME
+    path invalidates a prior verification (R1). ADC has no file we can address -> empty (the other
+    signature fields still invalidate on any project/location/recognizer/model/mode change)."""
+    try:
+        if config.get("google.credential_mode", "service_account_json") == "adc":
+            return ""
+        path = config.get("google.credentials_path", "") or config.get("google_credentials_path", "")
+        if path and os.path.exists(path):
+            st = os.stat(path)
+            return f"{int(st.st_mtime)}:{st.st_size}"
+    except Exception:
+        pass
+    return ""
+
+
 def _google_signature(config) -> str:
+    # Any input that changes WHICH recognizer/model/credentials the engine will use must invalidate a
+    # prior 'verified' (R1): project, region, recognizer, MODEL, credential mode/path, and the creds
+    # FILE fingerprint (so re-pointing the same path at a different key forces a re-test).
     return "|".join(str(x or "") for x in (
         config.get("google.project_id", ""),
         config.get("google.location", "eu"),
         config.get("google.recognizer_id", "_"),
+        config.get("google.model", "chirp_3"),
         config.get("google.credential_mode", "service_account_json"),
         config.get("google.credentials_path", "") or config.get("google_credentials_path", ""),
+        _creds_fingerprint(config),
     ))
 
 
@@ -780,6 +801,16 @@ def _set_google_verified(config) -> None:
             f.write(_google_signature(config))
     except Exception:
         logger.warning("could not write google verify marker:\n%s", traceback.format_exc())
+
+
+def _clear_google_verified(config) -> None:
+    """Drop any prior verification (R1): a failed Test connection must not leave Google looking usable."""
+    try:
+        os.remove(os.path.join(_google_dir(config), ".google_verified"))
+    except FileNotFoundError:
+        pass
+    except Exception:
+        logger.warning("could not clear google verify marker:\n%s", traceback.format_exc())
 
 
 def google_config_status(config) -> dict:
@@ -811,6 +842,7 @@ def test_google_connection(config) -> dict:
     the SPECIFIC recognizer the engine will use (MF3), then records the success (verified marker).
     Restores GOOGLE_APPLICATION_CREDENTIALS afterwards (no global leak) and redacts error text."""
     prev_env = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    _clear_google_verified(config)   # a verification holds ONLY if THIS attempt passes (R1)
     try:
         from ..google_stt_v2_stream import infer_project_id_from_credentials
         mode = config.get("google.credential_mode", "service_account_json")

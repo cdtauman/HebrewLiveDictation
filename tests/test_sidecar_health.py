@@ -143,6 +143,65 @@ class CloudRecoveryTests(unittest.TestCase):
         self.assertEqual(cfg.get("stt.provider"), "whisper_local")
 
 
+class GoogleVerifyGateTests(unittest.TestCase):
+    """R1: the .google_verified marker must track the EXACT inputs the live client uses. Any change to
+    project/location/recognizer/MODEL/credential mode/path — or the creds FILE contents at the same
+    path — invalidates a prior verification; a failed Test connection clears the marker."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def _cfg(self, extra=None):
+        d = {"google.project_id": "proj", "google.location": "eu", "google.recognizer_id": "_",
+             "google.model": "chirp_3", "google.credential_mode": "adc", "google.credentials_path": ""}
+        if extra:
+            d.update(extra)
+        return _FakeConfig(d, config_dir=self.dir)
+
+    def test_set_then_verified(self):
+        cfg = self._cfg()
+        sidecar._set_google_verified(cfg)
+        self.assertTrue(sidecar._google_verified(cfg))
+
+    def test_model_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_google_verified(cfg)
+        cfg.set("google.model", "chirp_2")          # different model -> different signature
+        self.assertFalse(sidecar._google_verified(cfg))
+
+    def test_recognizer_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_google_verified(cfg)
+        cfg.set("google.recognizer_id", "my-rec")
+        self.assertFalse(sidecar._google_verified(cfg))
+
+    def test_creds_file_swap_invalidates(self):
+        # Same path, different file contents (size) -> fingerprint changes -> not verified.
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            f.write(b"{}")
+            path = f.name
+        try:
+            cfg = self._cfg({"google.credential_mode": "service_account_json", "google.credentials_path": path})
+            sidecar._set_google_verified(cfg)
+            self.assertTrue(sidecar._google_verified(cfg))
+            with open(path, "wb") as fh:               # swap the key file at the SAME path
+                fh.write(b'{"changed": true, "more": "bytes"}')
+            self.assertFalse(sidecar._google_verified(cfg))
+        finally:
+            os.unlink(path)
+
+    def test_failed_test_connection_clears_marker(self):
+        # A prior verification + a Test connection that fails early (missing creds file, no network)
+        # must leave Google NOT verified.
+        cfg = self._cfg({"google.credential_mode": "service_account_json",
+                         "google.credentials_path": r"C:\nope\missing-key.json"})
+        sidecar._set_google_verified(cfg)
+        self.assertTrue(sidecar._google_verified(cfg))
+        res = sidecar.test_google_connection(cfg)
+        self.assertFalse(res.get("ok"))
+        self.assertFalse(sidecar._google_verified(cfg))
+
+
 class ShellSelfTargetBlockTests(unittest.TestCase):
     """The WinUI shell (VoiceType.exe) runs in a SEPARATE process from the engine, so the injector's
     own-pid guard no longer covers it. The sidecar adds 'voicetype.exe' to the injector denylist so a

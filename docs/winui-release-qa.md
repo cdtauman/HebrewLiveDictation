@@ -627,6 +627,19 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
     self-test **40/40**; **packaged verify 40/40** (incl. `engine.export.docx`). *Core offline F8/Remote
     path untouched.* **No release.**
 
+- **R1 — Google verify-gate hardening (Master-Reset roadmap; done).** The `.google_verified` marker
+  now tracks the EXACT inputs the live client uses, so it can't stay "verified" after a meaningful
+  change:
+  - **`google.model`** added to the verify signature (changing the cloud model re-requires a test).
+  - **Credentials-file fingerprint** (`mtime:size`) added — swapping the Service-Account JSON at the
+    SAME path invalidates a prior verification (ADC has no file, so the other fields still gate it).
+  - **Failed Test connection clears the marker** — `test_google_connection` drops any prior
+    verification up front, and ONLY a passing attempt re-establishes it. A transient/early failure
+    therefore leaves Google *not verified* (routes to Offline), never falsely usable.
+  - *Tests:* +5 unit (`GoogleVerifyGateTests`) — set→verified, model change invalidates, recognizer
+    change invalidates, creds-file swap invalidates, failed test clears. Python **290/290**; packaged
+    verify **40/40**. *Core path untouched.* **No release.**
+
 ### Packaging decisions (agreed)
 
 These are settled, not open:

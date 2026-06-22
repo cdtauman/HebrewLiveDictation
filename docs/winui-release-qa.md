@@ -572,6 +572,16 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   briefly) — accepted per the phase rule. **Target-app insertion stays final-only** (no live-typing into
   the target). *Tests:* WinUI 0 errors; dev self-test 39/39 (Remote constructs; no-activate intact; no
   Python change). *Core path unaffected.* **Next: PC4 started.**
+- **PC4 — Parity cleanup (done).** (1) **DOCX export restored** — History export now offers **Word (.docx)**
+  and TXT; a new `exportHistory` RPC has the engine write the file (reusing the legacy `export.write_docx`
+  RTL-correct python-docx path, or plain TXT), exporting all stored transcripts (one source of truth).
+  (2) **Diagnostics — support files** — Settings → Diagnostics now lists the **engine log** and **shell
+  log** paths ("files for support") so users know exactly what to send. (3) **Provider/language clarity** —
+  Engine room states that Offline/Whisper is multilingual while Google Chirp 3 is best for Hebrew, and
+  points to the Dictation room for language choice. *Deferred (honest):* updater/update-check surface ("only
+  if safe" — skipped, no functional check shipped); advanced VAD/recognizer Labs (avoid overbuild); manual
+  local-model import. *Tests:* Python 282/282; WinUI 0 errors; dev self-test 39/39; DOCX writer produces a
+  valid file. *Core path unaffected.* **Next: PC5 (record manual-matrix status).**
 
 ### Packaging decisions (agreed)
 

@@ -1020,6 +1020,25 @@ def run(pipe_name: str | None = None) -> int:
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":
             return {"items": full_history(config, params.get("count", 200))}
+        if method == "exportHistory":
+            # Write the full history to a user-chosen path. 'docx' restores the legacy RTL-correct Word
+            # export (python-docx, w:bidi/w:rtl); 'txt' is plain UTF-8. The shell picks the path/format.
+            fmt = (params.get("format") or "txt").lower()
+            path = params.get("path") or ""
+            if not path:
+                return {"ok": False, "error": "no path"}
+            try:
+                from .. import export
+                entries = full_history(config, params.get("count", 100000))
+                text = export.entries_to_text(entries)
+                if fmt == "docx":
+                    export.write_docx(path, text)
+                else:
+                    export.write_txt(path, text)
+                return {"ok": True, "path": path, "count": len(entries)}
+            except Exception as e:
+                logger.error("exportHistory failed:\n%s", traceback.format_exc())
+                return {"ok": False, "error": str(e)}
         if method == "clearHistory":
             # Destructive: require an explicit confirmation flag at the RPC boundary so
             # a stray/automated call can never wipe the store without intent.

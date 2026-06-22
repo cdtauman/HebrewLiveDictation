@@ -104,11 +104,16 @@ public sealed partial class SettingsPage : Page
             {
                 var st = await _host.Client.RpcAsync("getStatus");
                 var sb = new StringBuilder();
+                string configDir = Str(st, "configDir");
                 sb.AppendLine("state: " + Str(st, "state"));
                 sb.AppendLine("hotkeys: " + (Bool(st, "hotkeysActive") ? "active" : "inactive"));
-                sb.AppendLine("config: " + Redact(Str(st, "configDir")));
+                sb.AppendLine("config: " + Redact(configDir));
                 sb.AppendLine("pipe: " + Str(st, "pipe"));
-                sb.Append("shell: VoiceType " + AppVersion());
+                sb.AppendLine("shell: VoiceType " + AppVersion());
+                sb.AppendLine("");
+                sb.AppendLine("קבצים לתמיכה / files for support:");
+                sb.AppendLine("• engine log: " + Redact(System.IO.Path.Combine(configDir, "hebrew_live_dictation.log")));
+                sb.Append("• shell log: " + Redact(AppLog.FilePath ?? "(unavailable)"));
                 text = sb.ToString();
             }
             catch { text = "לא ניתן לקרוא את מצב המנוע."; }

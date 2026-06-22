@@ -89,16 +89,14 @@ public sealed partial class HistoryPage : Page
 
     private async void OnExport(object sender, RoutedEventArgs e)
     {
-        if (_host?.Console == null) return;
-        // Export ALL stored transcripts, not just the loaded display page.
-        var items = await FetchAsync(ExportAllCount);
-        if (items.Count == 0) return;
+        if (_host?.Console == null || _host.Client == null) return;
 
         var picker = new FileSavePicker
         {
             SuggestedFileName = "VoiceType-history",
             SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
         };
+        picker.FileTypeChoices.Add("מסמך Word", new List<string> { ".docx" });
         picker.FileTypeChoices.Add("טקסט", new List<string> { ".txt" });
         // Unpackaged WinUI: a picker must be associated with the owning window's HWND.
         WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(_host.Console));
@@ -106,14 +104,19 @@ public sealed partial class HistoryPage : Page
         StorageFile? file = await picker.PickSaveFileAsync();
         if (file == null) return;
 
-        var sb = new StringBuilder();
-        foreach (var it in items)
+        // The engine writes the file — one source of truth, and it produces RTL-correct DOCX (python-docx,
+        // w:bidi/w:rtl) or plain UTF-8 TXT, exporting ALL stored transcripts.
+        string fmt = string.Equals(file.FileType, ".docx", StringComparison.OrdinalIgnoreCase) ? "docx" : "txt";
+        bool ok = false; string err = "";
+        try
         {
-            if (!string.IsNullOrEmpty(it.When)) sb.Append('[').Append(it.When).Append("]  ");
-            sb.AppendLine(it.Text);
-            sb.AppendLine();
+            var r = await _host.Client.RpcAsync("exportHistory", new { format = fmt, path = file.Path });
+            ok = r.TryGetProperty("ok", out var o) && o.ValueKind == JsonValueKind.True;
+            if (!ok) err = r.TryGetProperty("error", out var er) ? er.GetString() ?? "" : "";
         }
-        await FileIO.WriteTextAsync(file, sb.ToString());
+        catch (Exception ex) { err = ex.Message; }
+        if (!ok)
+            await ShowMessageAsync("הייצוא נכשל", string.IsNullOrEmpty(err) ? "נסו שוב מאוחר יותר." : err);
     }
 
     private async void OnClear(object sender, RoutedEventArgs e)

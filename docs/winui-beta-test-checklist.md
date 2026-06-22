@@ -1,0 +1,77 @@
+# VoiceType WinUI — Manual Beta Test Checklist (R3/R4)
+
+One-page tester script for the **fresh CI artifact only** (not a local `dist/` build). Record each
+result honestly: **PASS / FAIL / SKIP** — a blank or a guess is not a result. On any FAIL, capture the
+logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
+
+- **Gate level:** **G** = gates public beta (must PASS). **I** = informative (record, not blocking).
+- **Supported dictation paths** (the only ones that gate): focus the target app → start/stop with **F8**
+  or the **floating Remote** → final transcript inserted once. Home/Tray start are secondary (record only).
+- **Artifact under test:** `VoiceType-winui-beta-unsigned` from GitHub Actions run ____________ (sha ________).
+
+---
+
+## 0. Setup
+- [ ] Download + unzip the CI artifact to a clean folder; run `VoiceType.exe`.
+- [ ] First run: complete (or Skip) onboarding. Confirm Skip leaves a **working Offline** product.
+- [ ] Engine room shows the engine choice; Offline model status is honest (installed ✓ / needs download).
+
+## 1. Core offline — **G**
+- [ ] Install/confirm the **small** offline model (Engine room → model status "מותקן ✓").
+- [ ] **Notepad + F8:** focus Notepad → F8 → speak Hebrew → F8 → final text lands **once**, correct, RTL.
+- [ ] **Notepad + Remote:** repeat using the floating Remote start/stop. Same result.
+- [ ] **Medium model:** Engine room → select **medium** → download → ready → dictate into Notepad.
+      Quality/accuracy is acceptable; final lands once.
+- [ ] History room shows each dictation, text matches what landed.
+- [ ] Nothing was ever typed into VoiceType itself / File Explorer / the wrong window.
+
+## 2. Google / Chirp — **G**
+- [ ] Engine room → choose **Google Chirp 3** → enter Project ID → pick **Service Account (JSON)** → Browse the key.
+- [ ] **Test connection passes** → status shows **"מאומת ✓ … Google פעיל"**.
+- [ ] **Real Google dictation:** focus Notepad → F8 → speak Hebrew → final text lands (cloud quality).
+- [ ] **Custom recognizer valid:** set a real `recognizer_id` → Test connection passes.
+- [ ] **Custom recognizer invalid:** set a bogus `recognizer_id` → Test connection **fails with a clear message**.
+- [ ] **Change after verify:** after a passing test, change the **model** (or swap the JSON) → status returns to
+      **"לא נבדק"** / not-verified (R1), and dictation routes to **Offline** until re-tested.
+- [ ] **ADC path** (if you use gcloud ADC): select ADC → Test connection → dictate.
+- [ ] **Runtime failure:** (e.g. revoke network) dictation routes to Offline with a clear status, no crash.
+
+## 3. Full P5 app matrix — **G**  (each via F8 **and** Remote)
+- [ ] **Word** (COM): Hebrew lands correctly, RTL, once.
+- [ ] **Chrome / Gmail** (UIA): lands in the compose box, correct.
+- [ ] **WhatsApp / Telegram desktop:** lands in the message box, correct.
+- [ ] **VS Code:** lands at the cursor, correct.
+- [ ] **Target changed mid-dictation:** switch apps while listening → text does **not** land in the wrong app
+      (or is handled with a clear "target changed" state).
+- [ ] **No self-target:** dictation never types into VoiceType's own windows/HUD/Remote.
+- [ ] **No double insert:** the final appears exactly once.
+- [ ] **No focus steal:** starting/stopping never pulls focus away from the target app.
+- [ ] **RTL + punctuation:** Hebrew punctuation, "נקודה"/"פסיק", new line / new paragraph behave correctly.
+
+## 4. Model manager — **I**
+- [ ] Select medium → download → ready → dictate → delete → status returns to "not installed".
+- [ ] Cancel/interrupt a download (close mid-download) → no half-broken "ready" claim on next launch.
+
+## 5. Live / interim words (Gboard pillar) — **G** (only meaningful with Google streaming)
+- [ ] During a **Google** session, interim words appear in the **HUD** and the **Remote** as you speak.
+- [ ] Interim words are **never typed into the target app** — only the final is inserted, once.
+
+## 6. DOCX export — **G**
+- [ ] History room → Export → **.docx** → save → **open in Word** → Hebrew RTL + content acceptable.
+- [ ] Export → **.txt** → opens as UTF-8 Hebrew.
+
+## 7. Diagnostics — **I**
+- [ ] Settings → Diagnostics shows engine state, config path, **engine log** + **shell log** paths.
+- [ ] "Copy diagnostics" produces a redacted block (home dir shown as `~`, no secrets).
+
+---
+
+## Sending logs (on any FAIL)
+1. Settings → Diagnostics → **Copy diagnostics** (gives the log paths).
+2. Collect: the **engine log** (`hebrew_live_dictation.log` in the config dir) and the **shell log**
+   (path shown in Diagnostics).
+3. Note: the exact step number above, what you expected, what actually happened, the target app + its version.
+4. If the app crashed: include any crash dump from the config dir.
+
+> Reminder: this is an **unsigned** beta — Windows SmartScreen may warn on first launch ("More info → Run anyway").
+> Record only what you actually observed. No result is better faked than honest.

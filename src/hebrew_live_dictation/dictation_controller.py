@@ -202,6 +202,25 @@ class DictationController(QObject):
                     return
                 if self.output_mode == "external":
                     command = parse_voice_command(text, self.injector._language_code(), self.injector._command_pack())
+                    # Post-stop final: offline whisper_local emits its single final AFTER stop, when the
+                    # stop-flush has already run with an empty accumulator. In final_only mode that final
+                    # would otherwise be accumulated and only flushed on trailing punctuation -> the words
+                    # reach history but never get typed. If a (non-command, non-live) final arrives while the
+                    # session is no longer listening and nothing was injected this session, inject it once,
+                    # verbatim. has_pasted_final guards against double-insertion; this never fires for a
+                    # streaming provider's finals-while-listening (state == "listening") or after it already
+                    # injected, so cloud/streaming behavior is unchanged.
+                    if (not command
+                            and self.config.get("dictation.live_typing_mode") != "live"
+                            and self.state != "listening"
+                            and not self.has_pasted_final
+                            and text.strip()):
+                        logger.info("Injecting post-stop final immediately (no later flush will run): text_len=%s.", len(text))
+                        result = self.injector.inject_final(text)
+                        self._handle_injector_result(result)
+                        if result.get("status") in ("inserted", "duplicate", "command"):
+                            self.has_pasted_final = True
+                        return
                     if command or self.config.get("dictation.live_typing_mode") == "live":
                         if self.accumulated_final_text:
                             flush_result = self.injector.inject_final(self.accumulated_final_text)

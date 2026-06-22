@@ -415,9 +415,25 @@ capture). **Fix:** `Native.MakeNoActivate()` subclasses the Remote to return `MA
 `WM_MOUSEACTIVATE`, so clicking it delivers the click but never takes foreground → the user's real target
 stays foreground and is captured directly. (Build-verified; the focus behavior itself needs a human re-smoke.)
 
+**Pre-smoke round 2 — insertion-path failure (offline final not typed).** Recognized Hebrew reached
+history but **was not inserted** into the focused window, even with the target correctly captured as
+`notepad.exe`, and even via F8. Engine log: every attempt logged `DictationController - Received real
+final STT event` but only **5 `Injector event`s across 21 `whisper_local` sessions**. Root cause in
+`dictation_controller.handle_stt_event`: `whisper_local` emits its single final **~2 s AFTER stop**, by
+which time the stop-flush ([line 112]) already ran with an empty accumulator; in `final_only` mode the
+late final is then *accumulated* and only flushed on trailing `.?!`/a command — so plain phrases land in
+history but are never typed (the round-1 "successes" were the finals that happened to end in punctuation).
+**Fix (authorized engine change):** in the external/final path, a non-command, non-live final that
+arrives while `state != "listening"` and nothing was injected this session is **injected once, verbatim**
+(`has_pasted_final` guards double-insertion; cloud finals-while-listening are unchanged). 6 regression
+tests in `tests/test_poststop_final.py` (no-punctuation/with-punctuation/late-after-idle injected once,
+no duplicate, cloud-while-listening unchanged).
+
 Per-target focus matrix below remains **unfilled** — re-run manual P5 against the **rebuilt** artifact
 after the pre-smoke. The cloud→offline routing, startup recovery, shell self-target block, hotkey rebind,
-and logging are build-verified + unit-tested, but the end-to-end voice path still needs a human pass.
+post-stop final insertion, and logging are build-verified + unit-tested, but the end-to-end voice path
+still needs a human pass. (Home/Tray target-capture — the shell-foreground backstop — remains a separate
+open item if those paths still mis-target after this insertion fix.)
 
 ### Packaging decisions (agreed)
 

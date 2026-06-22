@@ -327,12 +327,27 @@ the **wrong place/target**, STOP and record it as a Must-Fix — do not continue
 | K | Offline model missing → download flow honest (no silent auto-download) | ☐ | |
 | L | Tray show / start / stop / exit + hide-to-tray | ☐ | |
 
-**Status: BLOCKED (first pass, 2026-06-21) — beta blockers found; per-target dictation matrix not
-reachable because core dictation does not work for the tester.** Artifact under test:
+**Status: PRE-SMOKE PASS (2026-06-22) — proceeding to the full focus-safety matrix.** After rounds 1–3
+(see below) the Notepad pre-smoke now passes for the **supported start paths**:
+- **F8 (global hotkey) → target app: PASS.**
+- **Floating Remote → target app: PASS.**
+- Offline engine / mic / STT / start-stop / **clipboard-paste final insertion** all working; remaining
+  recognition weakness is the small offline model, not a P5 blocker.
+
+**Supported beta dictation workflow (the matrix uses these):** focus the target app → start/stop with
+**F8 or the floating Remote** → the final transcript is inserted **once** into the target → history matches
+the inserted text (minus normal model mistakes) → nothing inserted into VoiceType / File Explorer / a wrong
+target. **Home button and Tray are SECONDARY** (they naturally take focus when clicked) — **not** P5
+blockers; a last-external-target backstop can be added later if they are ever promoted to official
+dictation paths. Run every per-target row below via **F8 and the Remote** (not Home/Tray).
+
+**Round history (blockers found and fixed before the pass):**
+
+**Round 1 (2026-06-21) — beta blockers; core dictation unusable for the tester.** Artifact under test:
 `VoiceType-winui-beta-unsigned` (run 27905256239 / `eb53c0b`) at `c:\tmp\vt-p5-artifact`.
 
-Diagnosis evidence (read from the live machine — the packaged engine does **not** persist a log, see
-finding 6, so evidence is settings + model cache + crash dump + source):
+Diagnosis evidence (read from the live machine — the packaged engine did **not** persist a log at that
+point, see finding 6, so evidence is settings + model cache + crash dump + source):
 - `%APPDATA%\VoiceType\settings.json` (shared with the dev/legacy app): `stt.provider=google_v2`,
   `stt.mode=api`, `google.project_id=""`, `hotkeys.hotkey="copilot"`, `providers.whisper.enabled=true`.
 - `%APPDATA%\VoiceType\models\models--Systran--faster-whisper-small`: has `config.json` +
@@ -449,6 +464,35 @@ after the pre-smoke. The cloud→offline routing, startup recovery, shell self-t
 post-stop final insertion, clipboard-paste fidelity, and logging are build-verified + unit-tested, but the
 end-to-end voice path still needs a human pass. (Home/Tray target-capture — the shell-foreground backstop
 — remains a separate open item if those paths still mis-target.)
+
+## Product Completion / Feature Parity (post-P5 — the beta is NOT feature-complete)
+
+P5 validates that the **supported** dictation workflow (F8 + Remote → target app) works end to end. It
+does **not** make the product feature-complete — the WinUI shell is still a subset of the original vision
+and of the legacy Qt app. Before the beta is called complete, a dedicated Product Completion phase must
+close these gaps. (Runs **after** P5 and the P6 review; do not start until explicitly directed.)
+
+1. **Live / interim dictation experience (Gboard-like).** The user should see words **while speaking**;
+   the HUD/Remote should show recent/interim words, not only finals. RTL-safety decision to make: show
+   live/interim words **in the HUD/Remote only**; keep **final-only insertion** into the target app
+   (today's hardened behavior); optional experimental live-typing-into-target behind a Labs toggle later.
+   (Note: offline `whisper_local` emits no interims — interim display likely needs a streaming/cloud
+   provider or a partial-decode path.)
+2. **Offline model manager.** List **all** downloadable models with size · quality · speed · RAM estimate ·
+   a "recommended" label; allow download / delete / select; import a local model folder if practical.
+   (Today: one hard-coded model, indeterminate progress, no choice.)
+3. **Language selection.** Verify a dictation-language selector exists **and actually changes the active
+   provider's language**; Hebrew / English / other must be clear **per provider**; the UI must state what
+   each provider/model supports.
+4. **Cloud providers — bring Google/Chirp back properly.** A real Google setup surface: Project ID ·
+   location/region · recognizer/model · service-account JSON picker · ADC if supported · a working **Test
+   connection**; other cloud providers / API-key setup if still intended. Cloud must **not** be shown as
+   usable until configured (replace today's honest route-to-Offline with real setup).
+5. **Old-app feature-parity audit (legacy Qt vs WinUI).** List missing/regressed: Google setup · live
+   interim text · overlay/toolbar behavior · hotkey modes (toggle/PTT) · spoken punctuation · editing
+   commands · delete last word/sentence · replace/delete phrase · send/next field · mic/audio/VAD settings ·
+   history/export · diagnostics/log viewer · provider/model settings · tray/startup behavior ·
+   updater/release notes.
 
 ### Packaging decisions (agreed)
 

@@ -305,12 +305,16 @@ internal static class RuntimeSelfTest
             bool fallbackShown = false;
             bool fallbackClearedOnStop = true;
             bool targetChangedOk = false;
+            string wordsDuringPause = "";
             try
             {
-                foreach (var hs in new[] { "connecting", "idle", "listening", "stopping", "error", "disconnected" })
+                foreach (var hs in new[] { "connecting", "idle", "listening", "paused", "stopping", "error", "disconnected" })
                     hudSurface.SetState(hs, hs == "error" ? "בדיקה" : "");
                 hudSurface.SetState("listening");        // fresh session
                 hudSurface.SetWords("שלום עולם");        // live words stream in
+                hudSurface.SetState("paused");           // pause keeps the same session words
+                wordsDuringPause = hudSurface.CurrentWordsForTest;
+                hudSurface.SetState("listening");        // resume keeps them too
                 hudSurface.SetTarget("Word");            // confident, injector-aligned target
                 targetWhileListening = hudSurface.CurrentTargetForTest;
                 hudSurface.SetTarget("");                // unknown/unsafe target -> non-claiming state, not a wrong claim
@@ -343,6 +347,8 @@ internal static class RuntimeSelfTest
             Check("hud.surface.states", hudStates, "SetState morphs through all states + words");
             Check("hud.words.preserved", wordsAfterRefresh == "שלום עולם",
                   $"live words survive a repeated 'listening' refresh (got '{wordsAfterRefresh}')");
+            Check("hud.pause.words_preserved", wordsDuringPause == "שלום עולם",
+                  $"pause keeps live words visible but muted (got '{wordsDuringPause}')");
             Check("hud.target.reassurance", targetWhileListening == "יעד: Word" && targetAfterStop == "",
                   $"shows target while listening, cleared on stop (got '{targetWhileListening}')");
             Check("hud.target.safe_state", targetSafeState == "יעד לא זוהה",
@@ -480,7 +486,7 @@ internal static class RuntimeSelfTest
         {
             WriteReport(reportPath);
             try { if (bridge is { HasExited: false }) bridge.Kill(true); } catch { }
-            Application.Current.Exit();
+            Environment.Exit(Results.Count > 0 && Results.All(r => r.ok) ? 0 : 1);
         }
     }
 

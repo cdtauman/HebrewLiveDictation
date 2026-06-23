@@ -76,6 +76,24 @@ class SidecarCallbackTests(unittest.TestCase):
         on_status("idle", "", "external")  # nothing new -> no duplicate append
         self.assertEqual(sessions, ["שלום עולם"])
 
+    def test_pause_does_not_flush_history_or_clear_hotkey_state(self):
+        sessions = []
+        hk = _FakeHotkeys()
+        on_status, on_text, _, _ = make_callbacks(hk, lambda: None, on_session_end=sessions.append)
+        on_status("listening", "", "external")
+        on_text("שלום", True, "external")
+
+        on_status("paused", "מושהה", "external")
+
+        self.assertTrue(hk.listening_state)
+        self.assertEqual(sessions, [])
+
+        on_status("listening", "", "external")
+        on_text("עולם", True, "external")
+        on_status("idle", "", "external")
+
+        self.assertEqual(sessions, ["שלום עולם"])
+
     def test_empty_session_appends_nothing(self):
         sessions = []
         hk = _FakeHotkeys()

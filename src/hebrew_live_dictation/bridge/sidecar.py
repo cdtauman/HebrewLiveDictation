@@ -68,7 +68,7 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None, config=None):
         # Keep the toggle hotkey in sync with the real dictation state, exactly as
         # the legacy Qt app did (qt_app.py: set_listening_state on every status).
         # Without this, F8 toggle starts but never stops.
-        hotkeys.set_listening_state(state == "listening")
+        hotkeys.set_listening_state(state in ("listening", "paused"))
 
         # Capture the injection target exactly once, on the transition into listening.
         # Latch the offline-fallback notice if the engine reports it mid-session. The
@@ -86,6 +86,9 @@ def make_callbacks(hotkeys, server_ref, on_session_end=None, config=None):
             if is_fallback_status(message):
                 session["fallback"] = True
             session["target_changed"] = is_target_changed_status(message)
+        elif state == "paused":
+            session["listening"] = True
+            session["target_changed"] = False
         else:
             session["listening"] = False
             session["target"] = ""
@@ -1679,7 +1682,18 @@ def run(pipe_name: str | None = None) -> int:
             s.send_event({"kind": "hotkey", "edge": "stop"})
         invoker.invoke.emit(controller.stop_listening)
 
-    hotkeys = HotkeyListener(config, hotkey_start, hotkey_stop)
+    def hotkey_pause():
+        if controller.state == "idle":
+            cloud_guard()
+            if offline_start_refused():
+                return
+        edge = "resume" if controller.state == "paused" else "pause"
+        s = server_holder["server"]
+        if s:
+            s.send_event({"kind": "hotkey", "edge": edge})
+        invoker.invoke.emit(lambda: controller.toggle_pause("external"))
+
+    hotkeys = HotkeyListener(config, hotkey_start, hotkey_stop, on_pause_requested=hotkey_pause)
 
     on_status, on_text, on_error, on_command = make_callbacks(
         hotkeys, lambda: server_holder["server"],
@@ -1832,6 +1846,19 @@ def run(pipe_name: str | None = None) -> int:
             return {"accepted": True}
         if method == "stopDictation":
             invoker.invoke.emit(controller.stop_listening)
+            return {"accepted": True}
+        if method == "pauseDictation":
+            invoker.invoke.emit(controller.pause_listening)
+            return {"accepted": True}
+        if method == "resumeDictation":
+            invoker.invoke.emit(controller.resume_listening)
+            return {"accepted": True}
+        if method == "togglePauseDictation":
+            if controller.state == "idle":
+                cloud_guard()
+                if offline_start_refused():
+                    return {"accepted": False, "needsModel": True, "message": OFFLINE_MODEL_REQUIRED_MSG}
+            invoker.invoke.emit(lambda: controller.toggle_pause(params.get("mode", "external")))
             return {"accepted": True}
         if method == "toggleDictation":
             # Only a start (idle -> listening) can trigger an offline model download; a toggle

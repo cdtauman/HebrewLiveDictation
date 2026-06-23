@@ -98,6 +98,7 @@ public sealed partial class MainWindow : Window
         switch (state)
         {
             case "listening": text = "מקשיב"; dot = Palette.Accent(d); break;
+            case "paused": text = "מושהה"; dot = Palette.Neutral(d); break;
             case "stopping": text = "כותב…"; dot = Palette.Attention(d); break;
             case "error": text = "שגיאה"; dot = Palette.Error(d); break;
             case "disconnected": text = "המנוע אינו פעיל"; dot = Palette.Error(d); break;

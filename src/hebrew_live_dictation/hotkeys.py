@@ -128,6 +128,7 @@ class HotkeyListener:
 
         self.target_keys = parse_hotkey_string(self.hotkey_str)
         self.pause_keys = parse_hotkey_string(self.pause_hotkey_str)
+        self._guard_pause_hotkey()
         logger.info(f"Target hotkey set: {self.target_keys} (Mode: {self.mode})")
 
         self.current_pressed = set()
@@ -143,10 +144,16 @@ class HotkeyListener:
         self.pause_hotkey_str = str(self.config.get("hotkeys.pause_hotkey", "") or "")
         self.target_keys = parse_hotkey_string(self.hotkey_str)
         self.pause_keys = parse_hotkey_string(self.pause_hotkey_str)
+        self._guard_pause_hotkey()
         self.current_pressed.clear()
         self.hotkey_active = False
         self.pause_active = False
         logger.info(f"Updated hotkey set: {self.target_keys} (Mode: {self.mode})")
+
+    def _guard_pause_hotkey(self):
+        if self.pause_keys and self.pause_keys == self.target_keys:
+            logger.warning("Pause/resume hotkey matches the main dictation hotkey; disabling pause hotkey.")
+            self.pause_keys = set()
 
     def _win32_event_filter(self, msg, data):
         vk_code = getattr(data, 'vkCode', None)
@@ -228,8 +235,9 @@ class HotkeyListener:
                 logger.info(f"Hotkey combination {self.target_keys} pressed down.")
                 logger.debug(f"Hotkey combination {self.target_keys} pressed down.")
                 self._handle_hotkey_down()
-        # Pause hotkey (separate combo). Acts as a toggle: each press finalizes
-        # an active session or starts a fresh one. No-op when not configured.
+        # Pause hotkey (separate combo). Acts as a true pause/resume toggle for
+        # the active session; when idle the controller starts a fresh session.
+        # No-op when not configured.
         if self.pause_keys and self.pause_keys.issubset(self.current_pressed):
             if not self.pause_active:
                 self.pause_active = True

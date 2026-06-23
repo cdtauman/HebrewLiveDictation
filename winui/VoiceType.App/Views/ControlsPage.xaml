@@ -30,6 +30,18 @@
                     <TextBlock x:Name="HotkeyConflict" TextWrapping="Wrap" Visibility="Collapsed"
                                Foreground="#B45309"
                                Text="מקש זה עלול להתנגש עם Windows Copilot. אם ההכתבה לא נפתחת, בחרו מקש אחר (למשל F8)." />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="מקש השהיה/המשך" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="משהה את המיקרופון בלי לסיים את מושב ההכתבה."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ComboBox x:Name="PauseHotkeyCombo" Grid.Column="1" MinWidth="200" VerticalAlignment="Center"
+                                  SelectionChanged="OnPauseHotkeyChanged" />
+                    </Grid>
+                    <TextBlock x:Name="PauseHotkeyConflict" TextWrapping="Wrap" Visibility="Collapsed"
+                               Foreground="#B45309"
+                               Text="בחרו מקש השהיה שונה ממקש ההתחלה/עצירה." />
                     <StackPanel Spacing="8">
                         <TextBlock Text="אופן ההפעלה" Style="{StaticResource SectionHeaderStyle}" />
                         <RadioButton x:Name="ModeToggle" GroupName="trigmode" Tag="toggle" Checked="OnModeChoice"

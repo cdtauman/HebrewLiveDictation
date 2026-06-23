@@ -52,6 +52,14 @@ class DictationControllerModeTests(unittest.TestCase):
         controller.injector = FakeInjector()
         return controller, texts
 
+    def _pump_events(self, duration=0.05):
+        from PySide6.QtCore import QCoreApplication
+        import time
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            QCoreApplication.processEvents()
+            time.sleep(0.005)
+
     def test_preview_mode_never_calls_text_injector(self):
         controller, texts = self._controller()
         controller.state = "listening"
@@ -236,6 +244,102 @@ class DictationControllerModeTests(unittest.TestCase):
             "vad_min_silence_ms": 650,
         })
         self.assertIsNotNone(seen["stt_started"])
+
+    def test_pause_resume_keeps_session_and_ignores_old_stream_events(self):
+        streams = []
+        audios = []
+
+        class FakeAudioStream:
+            def __init__(self, **kwargs):
+                self.queue = object()
+                self.stopped = False
+                audios.append(self)
+
+            def start(self):
+                return True
+
+            def get_queue(self):
+                return self.queue
+
+            def stop(self):
+                self.stopped = True
+
+        class FakeSttStream:
+            def __init__(self, callback):
+                self.callback = callback
+                self.started_with = None
+                self.canceled = False
+
+            def start(self, audio_queue):
+                self.started_with = audio_queue
+
+            def cancel(self):
+                self.canceled = True
+
+            def stop(self):
+                self.canceled = True
+
+            def emit(self, event):
+                self.callback(event)
+
+        def fake_create_stt_stream(config, callback):
+            stream = FakeSttStream(callback)
+            streams.append(stream)
+            return stream
+
+        controller, _ = self._controller({
+            "dictation.live_typing_mode": "final_only",
+            "dictation.pause_commit_timeout_seconds": 60,
+        })
+
+        with mock.patch("hebrew_live_dictation.dictation_controller.AudioStream", FakeAudioStream):
+            with mock.patch("hebrew_live_dictation.dictation_controller.create_stt_stream",
+                            side_effect=fake_create_stt_stream):
+                controller.start_listening()
+                self._pump_events()
+                session_id = controller.session_id
+                first_generation = controller.generation
+
+                streams[0].emit({"type": "final", "text": "first"})
+                self._pump_events()
+                self.assertEqual(controller.accumulated_final_text, "first")
+
+                controller.pause_listening()
+                self._pump_events()
+                self.assertEqual(controller.state, "paused")
+                self.assertEqual(controller.session_id, session_id)
+                self.assertNotEqual(controller.generation, first_generation)
+
+                streams[0].emit({"type": "final", "text": "old."})
+                self._pump_events()
+                self.assertEqual(controller.accumulated_final_text, "first")
+                self.assertNotIn(("final", "old."), controller.injector.calls)
+
+                controller.resume_listening()
+                self._pump_events()
+                self.assertEqual(controller.state, "listening")
+                self.assertEqual(controller.session_id, session_id)
+                self.assertEqual(len(streams), 2)
+                self.assertEqual(controller.injector.calls, [("reset_session",)])
+
+                streams[1].emit({"type": "final", "text": "second."})
+                self._pump_events()
+
+        self.assertEqual(len(audios), 2)
+        self.assertIn(("final", "first second."), controller.injector.calls)
+        self.assertEqual(controller.accumulated_final_text, "")
+
+    def test_stop_while_paused_flushes_accumulated_final_once(self):
+        controller, _ = self._controller({"dictation.live_typing_mode": "final_only"})
+        controller.state = "paused"
+        controller.output_mode = "external"
+        controller.accumulated_final_text = "שלום עולם"
+
+        controller.stop_listening()
+
+        self.assertEqual(controller.state, "idle")
+        self.assertEqual(controller.injector.calls, [("final", "שלום עולם")])
+        self.assertEqual(controller.accumulated_final_text, "")
 
 
 if __name__ == "__main__":

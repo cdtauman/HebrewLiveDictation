@@ -81,6 +81,7 @@ public sealed class TrayIcon : IDisposable
         var c = state switch
         {
             "listening" => Palette.Accent(true).Color,
+            "paused" => Palette.Neutral(true).Color,
             "stopping" => Palette.Attention(true).Color,
             "error" or "disconnected" => Palette.Error(true).Color,
             "connecting" => Palette.Neutral(true).Color,
@@ -89,6 +90,7 @@ public sealed class TrayIcon : IDisposable
         string tip = state switch
         {
             "listening" => "VoiceType · מקשיב",
+            "paused" => "VoiceType · מושהה",
             "stopping" => "VoiceType · כותב…",
             "error" => "VoiceType · שגיאה",
             "disconnected" => "VoiceType · המנוע אינו פעיל",

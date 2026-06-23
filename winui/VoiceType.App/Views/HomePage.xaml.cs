@@ -53,6 +53,7 @@ public sealed partial class HomePage : Page
     {
         var s = _host?.CurrentState ?? "idle";
         if (s == "disconnected") { _host?.RestartEngine(); return; }
+        if (s == "paused") { _host?.TogglePauseDictation(); return; }
         if (s is "listening" or "stopping") _host?.StopDictation();
         else _host?.StartDictation();
     }
@@ -69,6 +70,12 @@ public sealed partial class HomePage : Page
                 StatusHint.Text = "מדברים… הטקסט ייכתב לחלון היעד כשעוצרים.";
                 PrimaryButton.Content = "עצור";
                 listening = true;
+                break;
+            case "paused":
+                StatusDot.Fill = Palette.Neutral(d);
+                StatusText.Text = "מושהה";
+                StatusHint.Text = "ההכתבה מושהית. לחצו המשך כדי להמשיך באותו מושב.";
+                PrimaryButton.Content = "המשך";
                 break;
             case "stopping":
                 StatusDot.Fill = Palette.Attention(d);

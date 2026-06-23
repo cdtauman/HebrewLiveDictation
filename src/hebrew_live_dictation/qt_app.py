@@ -1809,8 +1809,8 @@ class QtDictationApp:
     def _connect_signals(self):
         self.bridge.start_requested.connect(self.controller.start_listening)
         self.bridge.stop_requested.connect(self.controller.stop_listening)
-        # Pause hotkey toggles: finalize an active session or start a fresh one.
-        self.bridge.pause_requested.connect(self.controller.toggle_listening)
+        # Pause hotkey toggles: suspend/resume the active session without ending it.
+        self.bridge.pause_requested.connect(self.controller.toggle_pause)
         self.bridge.status_changed.connect(self._on_status)
         self.bridge.text_changed.connect(self._on_text)
         self.bridge.error_occurred.connect(self._on_error)

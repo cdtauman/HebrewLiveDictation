@@ -50,7 +50,9 @@ Windows injection (Word COM / UI Automation / Unicode SendInput / clipboard), ta
    (reduces SmartScreen friction; independent of manifest signing).
 
 ## Deferred / future (documented)
-- Full session-preserving pause/resume — `docs/future_pause_resume.md`.
+- Current WinUI Phase 10 implements full session-preserving pause/resume; see
+  `docs/future_pause_resume.md` for the as-built note. The legacy
+  `feature/parity-upgrade` branch only had the Option 2 pause hotkey.
 - TSF/IME promotion gate — `docs/v2_tsf_risk_plan.md` + `docs/qa.md` (stays gated).
 - `audioop` is deprecated (used by `audio_stream`/`vad`/`segmenter`); plan a
   replacement before adopting Python 3.13.

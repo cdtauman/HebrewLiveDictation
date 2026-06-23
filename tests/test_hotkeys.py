@@ -241,6 +241,28 @@ class HotkeyTests(unittest.TestCase):
         listener._on_press(F8())
         self.assertEqual(events, ["start"])
 
+    def test_pause_hotkey_matching_main_hotkey_is_disabled(self):
+        class Config:
+            def get(self, key, default=None):
+                return {"hotkey": "f8", "mode": "toggle", "hotkeys.pause_hotkey": "f8"}.get(key, default)
+
+        class F8:
+            char = None
+            vk = 119
+
+        events = []
+        listener = HotkeyListener(
+            Config(),
+            on_start_requested=lambda: events.append("start"),
+            on_stop_requested=lambda: events.append("stop"),
+            on_pause_requested=lambda: events.append("pause"),
+        )
+
+        listener._on_press(F8())
+
+        self.assertEqual(events, ["start"])
+        self.assertEqual(listener.pause_keys, set())
+
 
 if __name__ == "__main__":
     unittest.main()

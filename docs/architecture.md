@@ -109,6 +109,20 @@ back to the target rate, but the UI must not invite arbitrary sample-rate
 changes until all providers prove that path. Manual stop remains the safe
 default; automatic cloud stop is opt-in.
 
+## Pause / Resume Rules
+
+Pause/resume is session-preserving. The controller state moves
+`listening -> paused -> listening` without returning to idle, without appending
+history, and without resetting the insertion session. Pause suspends the current
+audio and provider stream; resume opens a fresh stream under the same session id.
+
+Provider callbacks are stamped with the session id and generation captured at
+stream creation. A pause increments the generation so late events from the
+pre-pause stream are ignored instead of being inserted or added to history.
+Stopping from paused is the real session boundary: accumulated final text is
+flushed once, then the sidecar emits idle and history can append the completed
+transcript.
+
 ## Google STT V2 Rules
 
 Google readiness has three separate meanings and they must not be collapsed:

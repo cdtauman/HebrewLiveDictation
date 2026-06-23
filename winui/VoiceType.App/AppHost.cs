@@ -268,14 +268,15 @@ public sealed class AppHost
                 case "status":
                     string state = e.TryGetProperty("state", out var s) ? s.GetString() ?? "" : "";
                     string msg = e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
-                    string target = e.TryGetProperty("target", out var tg) ? tg.GetString() ?? "" : "";
+                    bool hasTarget = e.TryGetProperty("target", out var tg);
+                    string target = hasTarget ? tg.GetString() ?? "" : "";
                     bool fallback = e.TryGetProperty("fallback", out var fb) && fb.ValueKind == JsonValueKind.True;
                     bool targetChanged = e.TryGetProperty("targetChanged", out var tc) && tc.ValueKind == JsonValueKind.True;
                     bool needsModel = e.TryGetProperty("needsModel", out var nm) && nm.ValueKind == JsonValueKind.True;
                     CurrentState = string.IsNullOrEmpty(state) ? CurrentState : state;
                     CurrentMessage = msg;
                     ApplyEngineState(CurrentState, CurrentMessage);
-                    _hud?.SetTarget(target);   // "יעד: {app}" reassurance while listening
+                    if (hasTarget) _hud?.SetTarget(target);   // "יעד: {app}" reassurance while listening
                     _hud?.SetTargetChanged(targetChanged);   // amber "target changed — not written"
                     _hud?.SetFallback(fallback);   // amber "offline backup active" when cloud dropped
                     _main?.Log($"status: {state} {msg}");
@@ -316,6 +317,7 @@ public sealed class AppHost
 
     public async void StartDictation() { try { await Client.RpcAsync("startDictation", new { mode = "external" }); } catch (Exception ex) { AppLog.Add("startDictation failed: " + ex.Message); } }
     public async void StopDictation() { try { await Client.RpcAsync("stopDictation"); } catch (Exception ex) { AppLog.Add("stopDictation failed: " + ex.Message); } }
+    public async void TogglePauseDictation() { try { await Client.RpcAsync("togglePauseDictation", new { mode = "external" }); } catch (Exception ex) { AppLog.Add("togglePauseDictation failed: " + ex.Message); } }
 
     public void ShowConsole() => _ui.TryEnqueue(() =>
     {

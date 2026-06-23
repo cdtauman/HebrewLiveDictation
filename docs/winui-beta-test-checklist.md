@@ -30,6 +30,13 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] History room shows each dictation, text matches what landed.
 - [ ] Nothing was ever typed into VoiceType itself / File Explorer / the wrong window.
 
+## 1b. Pause / resume — **G**
+- [ ] Controls room: set a pause/resume hotkey different from the main start/stop hotkey.
+- [ ] Focus Notepad → start dictation → speak Hebrew → pause → confirm target stays empty and HUD/Remote show Paused.
+- [ ] Resume → continue speaking → Stop → final text lands **once** as one session.
+- [ ] History shows one matching entry, not one entry before pause and another after resume.
+- [ ] Press the main start/stop hotkey while paused → session ends safely with no duplicate insertion.
+
 ## 2. Google / STT V2 — **G only after probe PASS; otherwise experimental**
 - [ ] Engine room → choose **Google (ענן)** → enter Project ID → pick **Service Account (JSON)** → Browse the key.
 - [ ] **Test connection passes** → status says **connection verified**. Do **not** mark dictation verified from this alone.

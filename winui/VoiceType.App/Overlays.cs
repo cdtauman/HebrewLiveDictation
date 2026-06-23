@@ -38,6 +38,7 @@ internal static class Overlays
         => state switch
         {
             "listening" => (Palette.Accent(true), "מקשיב", true),
+            "paused" => (Palette.Neutral(true), "מושהה", false),
             "stopping" => (Palette.Attention(true), "כותב…", false),
             "error" => (Palette.Error(true), "שגיאה", false),
             "disconnected" => (Palette.Error(true), "המנוע אינו פעיל", false),
@@ -197,9 +198,9 @@ public sealed class HudWindow
         _status.Foreground = dot;
         _status.Text = label;
 
-        // The target line and fallback notice only make sense while listening; clear both
-        // otherwise. While listening they're driven by the status event.
-        if (_state != "listening")
+        // The target line and fallback notice are visible while listening. Pause hides the
+        // line but keeps the latched values so resume can continue the same session.
+        if (_state is not ("listening" or "paused"))
         {
             _targetApp = ""; _targetChanged = false;
             _target.Text = ""; _target.Visibility = Visibility.Collapsed;
@@ -212,7 +213,11 @@ public sealed class HudWindow
                 _words.Foreground = Overlays.Light;
                 // Only clear on entering listening (fresh session). Repeated "listening"
                 // status refreshes must keep the live words — otherwise they flicker to "…".
-                if (prev != "listening") _words.Text = "…";
+                if (prev is not ("listening" or "paused")) _words.Text = "…";
+                break;
+            case "paused":
+                _words.Foreground = Overlays.Muted;
+                if (string.IsNullOrWhiteSpace(_words.Text) || _words.Text == "…") _words.Text = "מושהה";
                 break;
             case "stopping":
                 _words.Foreground = Overlays.Muted;   // keep last words, dimmed while placing
@@ -411,6 +416,7 @@ public sealed class RemoteWindow
     private void OnPrimary()
     {
         if (_state is "listening" or "stopping") _host.StopDictation();
+        else if (_state is "paused") _host.TogglePauseDictation();
         else if (_state is "idle" or "error") _host.StartDictation();
         // connecting/disconnected: button is disabled, nothing to do
     }
@@ -425,6 +431,7 @@ public sealed class RemoteWindow
         switch (_state)
         {
             case "listening": _primary.Content = "עצור"; _primary.IsEnabled = true; break;
+            case "paused": _primary.Content = "המשך"; _primary.IsEnabled = true; break;
             case "stopping": _primary.Content = "כותב…"; _primary.IsEnabled = false; break;
             case "connecting": _primary.Content = "מתחבר…"; _primary.IsEnabled = false; break;
             case "disconnected": _primary.Content = "אין מנוע"; _primary.IsEnabled = false; break;
@@ -432,7 +439,7 @@ public sealed class RemoteWindow
         }
 
         // Live words only make sense while dictating; clear them on any other state.
-        if (_state is not ("listening" or "stopping"))
+        if (_state is not ("listening" or "stopping" or "paused"))
         {
             _words.Text = "";
             _words.Visibility = Visibility.Collapsed;
@@ -447,7 +454,7 @@ public sealed class RemoteWindow
     /// or a non-listening state hides the line. Target-app insertion stays final-only.</summary>
     public void SetWords(string words)
     {
-        bool show = !string.IsNullOrWhiteSpace(words) && _state is "listening" or "stopping";
+        bool show = !string.IsNullOrWhiteSpace(words) && (_state is "listening" or "stopping");
         _words.Text = words ?? "";
         _words.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }

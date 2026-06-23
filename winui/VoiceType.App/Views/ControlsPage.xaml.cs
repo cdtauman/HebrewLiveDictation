@@ -18,6 +18,7 @@ public sealed partial class ControlsPage : Page
 {
     private AppHost? _host;
     private bool _loading;
+    private string _savedPauseHotkey = "";
 
     public ControlsPage() => this.InitializeComponent();
 
@@ -30,6 +31,7 @@ public sealed partial class ControlsPage : Page
     private async Task LoadAsync()
     {
         string hotkey = await GetString("hotkeys.hotkey", "f8");
+        string pauseHotkey = await GetString("hotkeys.pause_hotkey", "");
         string mode = await GetString("hotkeys.mode", "toggle");
         bool hud = await GetBool("app.show_overlay", true);
         bool remote = await GetBool("toolbar.enabled", false);
@@ -48,6 +50,7 @@ public sealed partial class ControlsPage : Page
         {
             _loading = true;
             PopulateHotkeys(hotkey);
+            PopulatePauseHotkeys(pauseHotkey);
             if (mode == "push_to_talk") ModePtt.IsChecked = true; else ModeToggle.IsChecked = true;
             ApplyHotkeyHint(mode);
             HudToggle.IsOn = hud;
@@ -262,6 +265,15 @@ public sealed partial class ControlsPage : Page
         ("copilot", "מקש Copilot"),
     };
 
+    private static readonly (string tag, string label)[] PauseHotkeyPresets =
+    {
+        ("", "ללא"),
+        ("f9", "F9"),
+        ("f10", "F10"),
+        ("f11", "F11"),
+        ("f12", "F12"),
+    };
+
     /// <summary>Build the hotkey list and select the saved value (adding it if it isn't a preset,
     /// e.g. a custom combo), so a rebind never silently loses the current binding.</summary>
     private void PopulateHotkeys(string current)
@@ -285,14 +297,78 @@ public sealed partial class ControlsPage : Page
         HotkeyConflict.Visibility = current == "copilot" ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void PopulatePauseHotkeys(string current)
+    {
+        current = (current ?? "").Trim().ToLowerInvariant();
+        _savedPauseHotkey = current;
+        PauseHotkeyCombo.Items.Clear();
+        bool matched = false;
+        foreach (var (tag, label) in PauseHotkeyPresets)
+        {
+            var item = new ComboBoxItem { Content = label, Tag = tag };
+            PauseHotkeyCombo.Items.Add(item);
+            if (tag == current) { PauseHotkeyCombo.SelectedItem = item; matched = true; }
+        }
+        if (!matched && current.Length > 0)
+        {
+            var item = new ComboBoxItem { Content = current.ToUpperInvariant().Replace("+", " + "), Tag = current };
+            PauseHotkeyCombo.Items.Add(item);
+            PauseHotkeyCombo.SelectedItem = item;
+        }
+        if (PauseHotkeyCombo.SelectedItem == null && PauseHotkeyCombo.Items.Count > 0) PauseHotkeyCombo.SelectedIndex = 0;
+        PauseHotkeyConflict.Visibility = Visibility.Collapsed;
+    }
+
+    private string SelectedMainHotkey()
+        => (HotkeyCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "f8";
+
+    private string SelectedPauseHotkey()
+        => (PauseHotkeyCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+
     /// <summary>Persist the new hotkey AND apply it to the running listener immediately
     /// (reloadHotkeys), then surface any conflict (e.g. the Copilot key) so the user isn't
     /// left with a binding that silently never fires.</summary>
     private async void OnHotkeyChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading) return;
-        string tag = (HotkeyCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "f8";
+        string tag = SelectedMainHotkey();
         if (!await Persist("hotkeys.hotkey", tag)) return;
+        if (!string.IsNullOrEmpty(_savedPauseHotkey) && _savedPauseHotkey == tag)
+        {
+            if (await Persist("hotkeys.pause_hotkey", ""))
+            {
+                _loading = true;
+                PopulatePauseHotkeys("");
+                _loading = false;
+            }
+        }
+        bool conflict = await ReloadHotkeysAndMainConflictAsync();
+        DispatcherQueue.TryEnqueue(() =>
+            HotkeyConflict.Visibility = conflict ? Visibility.Visible : Visibility.Collapsed);
+    }
+
+    private async void OnPauseHotkeyChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string tag = SelectedPauseHotkey();
+        string main = SelectedMainHotkey();
+        if (!string.IsNullOrEmpty(tag) && tag == main)
+        {
+            PauseHotkeyConflict.Visibility = Visibility.Visible;
+            await ShowMessageAsync("מקש כבר בשימוש", "מקש ההשהיה צריך להיות שונה ממקש ההתחלה/עצירה.");
+            _loading = true;
+            PopulatePauseHotkeys(_savedPauseHotkey);
+            _loading = false;
+            return;
+        }
+        if (!await Persist("hotkeys.pause_hotkey", tag)) return;
+        _savedPauseHotkey = tag;
+        PauseHotkeyConflict.Visibility = Visibility.Collapsed;
+        await ReloadHotkeysAndMainConflictAsync();
+    }
+
+    private async Task<bool> ReloadHotkeysAndMainConflictAsync()
+    {
         bool conflict = false;
         if (_host?.Client != null)
         {
@@ -303,8 +379,7 @@ public sealed partial class ControlsPage : Page
             }
             catch { }
         }
-        DispatcherQueue.TryEnqueue(() =>
-            HotkeyConflict.Visibility = conflict ? Visibility.Visible : Visibility.Collapsed);
+        return conflict;
     }
 
     private void ApplyHotkeyHint(string mode)

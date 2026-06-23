@@ -177,6 +177,8 @@ Already present in the current WinUI branch:
   active-download state, and readiness checks.
 - Controls-room audio/VAD advanced settings for frame length, endpointing,
   auto-stop timing, local VAD, and final-only segment silence.
+- Session-preserving pause/resume with a dedicated optional hotkey, paused UI
+  state, generation-guarded provider events, and stop-from-paused final flush.
 - STT registry with Google, Whisper, Deepgram, Groq, and fallback modules.
 - AutoFallback and Smart Auto backend behavior plus Engine-room routing status.
 - WinUI Home, Dictation, Engine, Controls, History, and Settings rooms.

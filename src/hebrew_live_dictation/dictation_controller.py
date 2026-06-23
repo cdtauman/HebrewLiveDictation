@@ -65,6 +65,18 @@ class DictationController(QObject):
             self.injector.reset_session()
         self._emit_status("listening", tr(self.config, "recording"))
 
+        self._start_capture()
+
+    def _provider_event_callback(self, session_id, generation):
+        def emit(event):
+            if isinstance(event, dict):
+                event = dict(event)
+                event.setdefault("session_id", session_id)
+                event.setdefault("generation", generation)
+            self.stt_event_received.emit(event)
+        return emit
+
+    def _start_capture(self):
         sample_rate = int(self.config.get("audio.sample_rate", 16000))
         frame_ms = int(self.config.get("speech.frame_ms", 100))
         block_size = max(1, int(sample_rate * frame_ms / 1000))
@@ -83,7 +95,10 @@ class DictationController(QObject):
             self.handle_error("Microphone audio stream failed to start.")
             return
 
-        self.stt_stream = create_stt_stream(self.config, self.stt_event_received.emit)
+        self.stt_stream = create_stt_stream(
+            self.config,
+            self._provider_event_callback(self.session_id, self.generation),
+        )
 
         try:
             self.stt_stream.start(self.audio_stream.get_queue())
@@ -94,7 +109,7 @@ class DictationController(QObject):
             return
 
     def stop_listening(self):
-        if self.state != "listening":
+        if self.state not in ("listening", "paused"):
             logger.debug("stop_listening ignored. Current state: %s", self.state)
             return
 
@@ -144,10 +159,67 @@ class DictationController(QObject):
         else:
             self._on_stop_listening_completed()
 
+    def pause_listening(self):
+        if self.state != "listening":
+            logger.debug("pause_listening ignored. Current state: %s", self.state)
+            return
+
+        logger.info("Pausing dictation session.")
+        self.state = "paused"
+        self.generation += 1   # late events from the suspended provider are stale now
+        self._stop_accumulation_timer()
+        self._emit_status("paused", tr(self.config, "paused"))
+        self._suspend_capture()
+
+    def resume_listening(self):
+        if self.state != "paused":
+            logger.debug("resume_listening ignored. Current state: %s", self.state)
+            return
+
+        logger.info("Resuming dictation session.")
+        self.state = "listening"
+        self._emit_status("listening", tr(self.config, "recording"))
+        self._start_capture()
+
+    def toggle_pause(self, output_mode="external"):
+        if self.state == "listening":
+            self.pause_listening()
+        elif self.state == "paused":
+            self.resume_listening()
+        elif self.state == "idle":
+            self.start_listening(output_mode)
+
+    def _suspend_capture(self):
+        audio_stream = self.audio_stream
+        stt_stream = self.stt_stream
+        self.audio_stream = None
+        self.stt_stream = None
+
+        if not audio_stream and not stt_stream:
+            return
+
+        def teardown():
+            if audio_stream:
+                try:
+                    audio_stream.stop()
+                except Exception:
+                    pass
+            if stt_stream:
+                try:
+                    if hasattr(stt_stream, "cancel"):
+                        stt_stream.cancel()
+                    else:
+                        stt_stream.stop()
+                except Exception:
+                    pass
+
+        threading.Thread(target=teardown, name="STTPauseThread", daemon=True).start()
 
     def toggle_listening(self, output_mode="external"):
         if self.state == "listening":
             self.stop_listening()
+        elif self.state == "paused":
+            self.resume_listening()
         elif self.state == "idle":
             self.start_listening(output_mode)
 
@@ -212,7 +284,7 @@ class DictationController(QObject):
                     # injected, so cloud/streaming behavior is unchanged.
                     if (not command
                             and self.config.get("dictation.live_typing_mode") != "live"
-                            and self.state != "listening"
+                            and self.state not in ("listening", "paused")
                             and not self.has_pasted_final
                             and text.strip()):
                         logger.info("Injecting post-stop final immediately (no later flush will run): text_len=%s.", len(text))
@@ -309,7 +381,7 @@ class DictationController(QObject):
             self._on_stop_listening_completed()
 
     def shutdown(self):
-        if self.state == "listening":
+        if self.state in ("listening", "paused"):
             self.stop_listening()
 
     def _handle_injector_result(self, result):

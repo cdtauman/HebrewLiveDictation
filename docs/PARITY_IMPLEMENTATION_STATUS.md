@@ -1,5 +1,10 @@
 # Parity upgrade — implementation status (as-built)
 
+> Legacy note: this file describes the old `feature/parity-upgrade` / `v1.1.0`
+> Python/PySide parity branch. It is source evidence for the final WinUI
+> completion program, not the current WinUI product ledger. The controlling
+> WinUI completion ledger is `docs/final-product-completion-plan.md`.
+
 Branch: `feature/parity-upgrade`. Tests: **206 passing** (`PYTHONPATH=src python -m unittest discover -s tests`). Default behavior unchanged (Google STT V2/Chirp 3 remains the default; everything new is behind config flags, off by default).
 
 ## Implemented (gap → commit)

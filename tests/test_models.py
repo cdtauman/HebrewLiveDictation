@@ -93,13 +93,28 @@ class ModelsTests(unittest.TestCase):
             status = models.model_status(config, "small")
             self.assertEqual(status["name"], "small")
             self.assertFalse(status["downloaded"])
+            self.assertEqual(status["state"], "missing")
+            self.assertEqual(status["reason"], "not_found")
+            self.assertEqual(status["missing"], [])
             self.assertEqual(status["path"], os.path.join(tmp, "models"))
             # A bare matching directory is NOT downloaded — only a complete model is.
             model_dir = os.path.join(tmp, "models", "models--small")
             os.makedirs(model_dir)
-            self.assertFalse(models.model_status(config, "small")["downloaded"])
+            partial = models.model_status(config, "small")
+            self.assertFalse(partial["downloaded"])
+            self.assertEqual(partial["state"], "incomplete")
+            self.assertEqual(partial["reason"], "incomplete")
+            self.assertEqual(
+                partial["missing"],
+                ["completion_marker", "model_weights", "model_config"],
+            )
+            self.assertEqual(partial["modelPath"], model_dir)
             _write_complete_model(model_dir)
-            self.assertTrue(models.model_status(config, "small")["downloaded"])
+            ready = models.model_status(config, "small")
+            self.assertTrue(ready["downloaded"])
+            self.assertEqual(ready["state"], "ready")
+            self.assertEqual(ready["reason"], "complete")
+            self.assertEqual(ready["missing"], [])
 
     def test_is_downloaded_requires_marker_weights_and_aux(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -164,6 +179,19 @@ class ModelsTests(unittest.TestCase):
 
             models.download_model(config, downloader=real_downloader)
             self.assertTrue(models.model_status(config, "small")["downloaded"])
+
+    def test_inspect_model_prefers_ready_cache_over_partial_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            partial_dir = os.path.join(tmp, "models--small-partial")
+            ready_dir = os.path.join(tmp, "models--small-ready")
+            os.makedirs(partial_dir)
+            _write_weights(partial_dir)
+            _write_complete_model(ready_dir)
+
+            status = models.inspect_model("small", tmp)
+            self.assertTrue(status["downloaded"])
+            self.assertEqual(status["state"], "ready")
+            self.assertEqual(status["modelPath"], ready_dir)
 
 
 if __name__ == "__main__":

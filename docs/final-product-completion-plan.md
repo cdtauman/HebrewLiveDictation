@@ -173,7 +173,8 @@ Already present in the current WinUI branch:
 - Google no-transcript failure surfacing.
 - Latest-model request-shape fix for unsupported punctuation.
 - Offline Whisper provider.
-- Offline model catalog, download, delete, and readiness checks.
+- Offline model catalog, selected-model download/delete, incomplete-cache recovery,
+  active-download state, and readiness checks.
 - STT registry with Google, Whisper, Deepgram, Groq, and fallback modules.
 - AutoFallback and Smart Auto backend behavior plus Engine-room routing status.
 - WinUI Home, Dictation, Engine, Controls, History, and Settings rooms.

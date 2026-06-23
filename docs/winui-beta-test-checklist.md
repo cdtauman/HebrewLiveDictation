@@ -75,7 +75,8 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 
 ## 4. Model manager — **I**
 - [ ] Select medium → download → ready → dictate → delete → status returns to "not installed".
-- [ ] Cancel/interrupt a download (close mid-download) → no half-broken "ready" claim on next launch.
+- [ ] Cancel/interrupt a download (close mid-download) → next launch shows missing/incomplete, offers retry, and never claims ready.
+- [ ] Click download again while a model is already downloading → no duplicate download is queued; the UI stays in the active download state.
 
 ## 5. Live / interim words (Gboard pillar) — **G only for a probe-proven live-capable model**
 - [ ] During a **Google** session with a live-capable model, interim words appear in the **HUD** and the **Remote** as you speak.

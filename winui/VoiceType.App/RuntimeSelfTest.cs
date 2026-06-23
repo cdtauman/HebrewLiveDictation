@@ -428,8 +428,12 @@ internal static class RuntimeSelfTest
                 bool readyOk = !ep.ModelDownloadVisibleForTest && ep.ModelDeleteVisibleForTest;
                 ep.RenderModelForTest("downloading");
                 bool dlOk = ep.ModelRingActiveForTest && !ep.ModelDownloadVisibleForTest;
-                Check("engine.model_management", absentOk && readyOk && dlOk,
-                      "download when absent, delete when present, ring while downloading");
+                ep.RenderModelForTest("incomplete");
+                bool incompleteOk = ep.ModelDownloadVisibleForTest
+                                    && !ep.ModelDeleteVisibleForTest
+                                    && !ep.ModelRingActiveForTest;
+                Check("engine.model_management", absentOk && readyOk && dlOk && incompleteOk,
+                      "download when absent/incomplete, delete when present, ring while downloading");
                 ep.RenderSmartAutoForTest("Smart Auto route ready");
                 Check("engine.smart_auto.surface",
                       ep.SmartAutoCardVisibleForTest && ep.SmartAutoStatusForTest.Contains("route", StringComparison.OrdinalIgnoreCase),

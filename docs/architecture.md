@@ -128,6 +128,12 @@ downloaded. The app must not claim offline dictation is ready unless the model's
 on-disk completeness checks pass. The explicit download flow is the supported
 acquisition path; hidden first-use downloads are not a readiness signal.
 
+The model manager distinguishes `missing`, `incomplete`, `downloading`, and
+`ready`. A cache directory, partial Hugging Face file, marker-only folder, or
+zero-byte weights file must stay `incomplete`/not ready and offer a retry rather
+than being treated as installed. A second download request while one is active is
+refused instead of queued.
+
 ## Fallback Rules
 
 Cloud engines can route to offline when configured fallback behavior allows it,

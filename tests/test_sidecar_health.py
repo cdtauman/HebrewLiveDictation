@@ -421,14 +421,20 @@ class HealthTests(unittest.TestCase):
         self.assertIn("model_ready", h["offline"])
 
     def test_model_status_passthrough_and_safe(self):
-        fake = {"name": "small", "downloaded": True, "path": "/models"}
+        fake = {"name": "small", "downloaded": True, "state": "ready", "path": "/models"}
         with mock.patch("hebrew_live_dictation.models.model_status", return_value=fake):
             self.assertEqual(sidecar.model_status(_FakeConfig({})), fake)
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value=dict(fake)):
+            active = sidecar.model_status(_FakeConfig({}), active_download="small")
+            self.assertFalse(active["downloaded"])
+            self.assertEqual(active["state"], "downloading")
+            self.assertEqual(active["activeDownload"], "small")
         # Any failure degrades to a safe not-downloaded shape, never raises.
         with mock.patch("hebrew_live_dictation.models.model_status", side_effect=RuntimeError("x")):
             s = sidecar.model_status(_FakeConfig({}))
             self.assertFalse(s["downloaded"])
-            self.assertEqual(set(s.keys()), {"name", "downloaded", "path"})
+            self.assertEqual(s["state"], "unknown")
+            self.assertIn("path", s)
 
     def test_engine_capabilities_shape_and_bools(self):
         caps = sidecar.engine_capabilities()
@@ -475,6 +481,29 @@ class HealthTests(unittest.TestCase):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))
         with mock.patch("hebrew_live_dictation.models.model_status", side_effect=RuntimeError("x")):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))   # unknown -> not ready
+
+    def test_model_catalog_exposes_state_and_active_download(self):
+        cfg = _FakeConfig({"providers.whisper.model": "small"})
+        status = {
+            "downloaded": False,
+            "state": "incomplete",
+            "reason": "incomplete",
+            "missing": ["model_weights"],
+            "modelPath": "/models/small",
+        }
+        with mock.patch("hebrew_live_dictation.models.known_models", return_value=["small"]):
+            with mock.patch("hebrew_live_dictation.models.model_info",
+                            return_value={"size_label": "~480 MB", "approx_ram_mb": 1600}):
+                with mock.patch("hebrew_live_dictation.models.model_status", return_value=status):
+                    catalog = sidecar.model_catalog(cfg, active_download="small")
+
+        self.assertEqual(catalog["selected"], "small")
+        self.assertEqual(catalog["activeDownload"], "small")
+        item = catalog["items"][0]
+        self.assertEqual(item["state"], "downloading")
+        self.assertFalse(item["downloaded"])
+        self.assertEqual(item["missing"], ["model_weights"])
+        self.assertEqual(item["modelPath"], "/models/small")
 
 
 class ProviderControlPlaneTests(unittest.TestCase):
@@ -734,9 +763,10 @@ class ModelDownloadTests(unittest.TestCase):
 
         mgr = sidecar.ModelDownloadManager(events.append, downloader=downloader)
         # done is emitted only because the post-download validation says the model is complete.
-        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": True}):
+        with mock.patch("hebrew_live_dictation.models.model_status",
+                        side_effect=[{"downloaded": False}, {"downloaded": True}]):
             res = mgr.start(_FakeConfig({"providers.whisper.model": "small"}))
-            self.assertEqual(res, {"started": True, "name": "small"})
+            self.assertEqual(res, {"started": True, "name": "small", "state": "downloading"})
             _join_threads("ModelDownload")
         self.assertEqual(seen, ["small"])
         states = [(e["state"], e.get("downloaded")) for e in events]
@@ -767,8 +797,9 @@ class ModelDownloadTests(unittest.TestCase):
             raise RuntimeError("network down")
 
         mgr = sidecar.ModelDownloadManager(events.append, downloader=downloader)
-        mgr.start(_FakeConfig({}), name="base")
-        _join_threads("ModelDownload")
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": False}):
+            mgr.start(_FakeConfig({}), name="base")
+            _join_threads("ModelDownload")
         self.assertEqual(events[0]["state"], "running")
         self.assertEqual(events[-1]["state"], "error")
         self.assertIn("network down", events[-1]["message"])
@@ -794,15 +825,33 @@ class ModelDownloadTests(unittest.TestCase):
             release.wait(2.0)
 
         mgr = sidecar.ModelDownloadManager(lambda e: None, downloader=downloader)
-        first = mgr.start(_FakeConfig({}), name="small")
-        self.assertTrue(first["started"])
-        self.assertTrue(started.wait(2.0))
-        self.assertEqual(mgr.active, "small")
-        busy = mgr.start(_FakeConfig({}), name="small")     # still running
-        self.assertEqual(busy, {"started": False, "busy": True, "name": "small"})
-        release.set()
-        _join_threads("ModelDownload")
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": False}):
+            first = mgr.start(_FakeConfig({}), name="small")
+            self.assertTrue(first["started"])
+            self.assertTrue(started.wait(2.0))
+            self.assertEqual(mgr.active, "small")
+            busy = mgr.start(_FakeConfig({}), name="small")     # still running
+            self.assertEqual(
+                busy,
+                {"started": False, "busy": True, "name": "small", "activeDownload": "small"},
+            )
+            self.assertEqual(mgr.status(), {"active": True, "name": "small"})
+            release.set()
+            _join_threads("ModelDownload")
         self.assertIsNone(mgr.active)
+
+    def test_start_refuses_already_downloaded_model(self):
+        events = []
+
+        def downloader(config, name):
+            raise AssertionError("already-ready model should not download")
+
+        mgr = sidecar.ModelDownloadManager(events.append, downloader=downloader)
+        with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": True}):
+            res = mgr.start(_FakeConfig({}), name="small")
+        self.assertEqual(res, {"started": False, "alreadyDownloaded": True, "name": "small", "state": "ready"})
+        self.assertEqual(events, [])
+        self.assertEqual(mgr.status(), {"active": False, "name": ""})
 
     def test_recent_history_empty_and_safe(self):
         # Empty config dir -> no history file -> empty list, never raises.

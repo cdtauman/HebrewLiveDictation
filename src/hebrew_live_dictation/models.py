@@ -142,11 +142,27 @@ def _mark_complete(model_path) -> None:
 
 
 def model_status(config, name=None):
-    """Return {name, downloaded, path} for the UI. ``downloaded`` is the TRUTHFUL completion
-    signal (see is_downloaded), never merely "a matching directory exists"."""
+    """Return truthful model state for the UI.
+
+    ``downloaded`` is the readiness signal (see is_downloaded), never merely
+    "a matching directory exists". ``state`` explains missing/incomplete/ready
+    so the WinUI manager can avoid treating a partial cache as installable.
+    """
     name = name or config.get("providers.whisper.model", DEFAULT_MODEL)
     storage_dir = default_storage_dir(config)
-    return {"name": name, "downloaded": is_downloaded(name, storage_dir), "path": storage_dir}
+    info = MODEL_REGISTRY.get(name) or {}
+    inspection = inspect_model(name, storage_dir)
+    return {
+        "name": name,
+        "downloaded": bool(inspection["downloaded"]),
+        "state": inspection["state"],
+        "reason": inspection["reason"],
+        "missing": inspection["missing"],
+        "path": storage_dir,
+        "modelPath": inspection["modelPath"],
+        "sizeLabel": info.get("size_label", ""),
+        "ramMb": info.get("approx_ram_mb", 0),
+    }
 
 
 def is_downloaded(name, storage_dir) -> bool:
@@ -161,23 +177,65 @@ def is_downloaded(name, storage_dir) -> bool:
     A bare directory, a marker with no weights, an interrupted download (only
     ``*.incomplete`` blobs), or a zero-byte weights file all report False.
     """
+    return bool(inspect_model(name, storage_dir)["downloaded"])
+
+
+def inspect_model(name, storage_dir) -> dict:
+    """Inspect the local cache for one model without mutating it.
+
+    Returns a JSON-safe dict with ``state``:
+      * ready: a matching complete model exists
+      * incomplete: a matching cache exists, but one or more readiness signals are missing
+      * missing: no matching cache exists
+    """
+    result = {
+        "downloaded": False,
+        "state": "missing",
+        "reason": "not_found",
+        "missing": [],
+        "modelPath": "",
+    }
     if not storage_dir or not os.path.isdir(storage_dir):
-        return False
-    for entry in os.listdir(storage_dir):
+        return result
+    saw_match = False
+    best_incomplete = None
+    try:
+        entries = list(os.listdir(storage_dir))
+    except Exception:
+        return result
+    for entry in entries:
         if not _matches(entry, name):
             continue
-        if _entry_is_complete(os.path.join(storage_dir, entry)):
-            return True
-    return False
+        saw_match = True
+        path = os.path.join(storage_dir, entry)
+        status = _entry_status(path)
+        status["modelPath"] = path
+        if status["downloaded"]:
+            return {
+                "downloaded": True,
+                "state": "ready",
+                "reason": "complete",
+                "missing": [],
+                "modelPath": path,
+            }
+        if best_incomplete is None or len(status.get("missing", [])) < len(best_incomplete.get("missing", [])):
+            best_incomplete = status
+    if saw_match and best_incomplete is not None:
+        return {
+            "downloaded": False,
+            "state": "incomplete",
+            "reason": "incomplete",
+            "missing": best_incomplete.get("missing", []),
+            "modelPath": best_incomplete.get("modelPath", ""),
+        }
+    return result
 
 
-def _entry_is_complete(root) -> bool:
-    """True only if a matched cache entry holds a finished AND loadable model: our completion
-    marker, real weights, and the supporting config/vocabulary. The marker alone is never
-    enough."""
+def _entry_status(root) -> dict:
+    """Readiness signals for a matched cache entry. The marker alone is never enough."""
     try:
         if not os.path.isdir(root):
-            return False
+            return {"downloaded": False, "missing": ["directory"]}
         has_marker = has_weights = has_aux = False
         for dirpath, _dirs, files in os.walk(root):
             fileset = set(files)
@@ -191,9 +249,16 @@ def _entry_is_complete(root) -> bool:
                     pass
             if fileset & _AUX_FILES:
                 has_aux = True
-        return has_marker and has_weights and has_aux
+        missing = []
+        if not has_marker:
+            missing.append("completion_marker")
+        if not has_weights:
+            missing.append("model_weights")
+        if not has_aux:
+            missing.append("model_config")
+        return {"downloaded": not missing, "missing": missing}
     except Exception:
-        return False
+        return {"downloaded": False, "missing": ["inspection_failed"]}
 
 
 def delete_model(name, storage_dir) -> bool:

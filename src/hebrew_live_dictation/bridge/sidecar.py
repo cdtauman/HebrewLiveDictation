@@ -332,15 +332,22 @@ def offline_model_required(config) -> bool:
         return False
 
 
-def model_status(config) -> dict:
-    """Local-model state for the UI (Onboarding/Engine): {name, downloaded, path}. Read-only;
-    no heavy import (presence is an on-disk check), so safe to call on any status query."""
+def model_status(config, active_download=None) -> dict:
+    """Local-model state for the UI (Onboarding/Engine). Read-only; no heavy import
+    (presence is an on-disk check), so safe to call on any status query."""
     try:
         from .. import models
-        return models.model_status(config)
+        status = models.model_status(config)
+        if active_download:
+            status["activeDownload"] = active_download
+            if active_download == status.get("name"):
+                status["state"] = "downloading"
+                status["downloaded"] = False
+        return status
     except Exception:
         logger.error("model_status failed:\n%s", traceback.format_exc())
-        return {"name": "", "downloaded": False, "path": ""}
+        return {"name": "", "downloaded": False, "state": "unknown", "path": "",
+                "activeDownload": active_download or ""}
 
 
 class ModelDownloadManager:
@@ -365,17 +372,27 @@ class ModelDownloadManager:
         with self._lock:
             return self._running
 
+    def status(self) -> dict:
+        active = self.active
+        return {"active": bool(active), "name": active or ""}
+
     def start(self, config, name=None) -> dict:
         from .. import models
         name = name or config.get("providers.whisper.model", models.DEFAULT_MODEL)
         with self._lock:
             if self._running is not None:
-                return {"started": False, "busy": True, "name": self._running}
+                return {"started": False, "busy": True, "name": self._running, "activeDownload": self._running}
+            try:
+                status = models.model_status(config, name)
+                if status.get("downloaded"):
+                    return {"started": False, "alreadyDownloaded": True, "name": name, "state": "ready"}
+            except Exception:
+                logger.error("model pre-download status failed:\n%s", traceback.format_exc())
             self._running = name
         self._emit("running", name)
         threading.Thread(target=self._run, args=(config, name),
                          name="ModelDownload", daemon=True).start()
-        return {"started": True, "name": name}
+        return {"started": True, "name": name, "state": "downloading"}
 
     def _run(self, config, name):
         from .. import models
@@ -1234,17 +1251,20 @@ _MODEL_DISPLAY = {
 }
 
 
-def model_catalog(config) -> dict:
+def model_catalog(config, active_download=None) -> dict:
     """The offline-model catalog for the Engine room: every known model with size · RAM · quality ·
     speed · recommended · downloaded · selected. Reuses the engine's MODEL_REGISTRY + readiness check."""
     try:
         from .. import models
-        storage = models.default_storage_dir(config)
         selected = config.get("providers.whisper.model", models.DEFAULT_MODEL)
         items = []
         for name in models.known_models():
             info = models.model_info(name) or {}
             disp = _MODEL_DISPLAY.get(name, {})
+            status = models.model_status(config, name)
+            state = status.get("state", "missing")
+            if active_download == name:
+                state = "downloading"
             items.append({
                 "name": name,
                 "sizeLabel": info.get("size_label", ""),
@@ -1252,10 +1272,14 @@ def model_catalog(config) -> dict:
                 "quality": disp.get("quality", ""),
                 "speed": disp.get("speed", ""),
                 "recommended": bool(disp.get("recommended", False)),
-                "downloaded": bool(models.is_downloaded(name, storage)),
+                "downloaded": bool(status.get("downloaded")),
+                "state": state,
+                "reason": status.get("reason", ""),
+                "missing": status.get("missing", []),
+                "modelPath": status.get("modelPath", ""),
                 "selected": name == selected,
             })
-        return {"items": items, "selected": selected}
+        return {"items": items, "selected": selected, "activeDownload": active_download or ""}
     except Exception:
         logger.error("model_catalog failed:\n%s", traceback.format_exc())
         return {"items": [], "selected": ""}
@@ -1726,9 +1750,9 @@ def run(pipe_name: str | None = None) -> int:
         if method == "listMicrophones":
             return list_microphones(config)
         if method == "getModelStatus":
-            return model_status(config)
+            return model_status(config, active_download=model_downloads.active)
         if method == "getModelCatalog":
-            return model_catalog(config)
+            return model_catalog(config, active_download=model_downloads.active)
         if method == "downloadModel":
             # Reject unknown model names at the boundary (Should-Fix); None = use the configured model.
             nm = params.get("name")

@@ -48,6 +48,10 @@ public sealed partial class EnginePage : Page
                 var r = await _host.Client.RpcAsync("getModelStatus");
                 downloaded = r.TryGetProperty("downloaded", out var d) && d.ValueKind == JsonValueKind.True;
                 name = r.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                string state = Str(r, "state");
+                DispatcherQueue.TryEnqueue(() =>
+                    RenderModel(downloaded ? "ready" : (string.IsNullOrEmpty(state) ? "absent" : state), name));
+                return;
             }
             catch { }
         }
@@ -57,6 +61,7 @@ public sealed partial class EnginePage : Page
     // ---- offline model catalog (PC2): list/select; download/delete reuse the selected model ----
     private bool _loadingCatalog;
     private string _selectedSizeLabel = "";   // size of the selected model, for honest download copy
+    private string _selectedModelState = "missing";
 
     private async Task LoadModelCatalogAsync()
     {
@@ -68,6 +73,7 @@ public sealed partial class EnginePage : Page
         var rows = new List<(string name, string label)>();
         string selectedMeta = "";
         string selectedSize = "";
+        _selectedModelState = "missing";
         if (r.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
         {
             foreach (var it in items.EnumerateArray())
@@ -79,9 +85,21 @@ public sealed partial class EnginePage : Page
                 int ram = it.TryGetProperty("ramMb", out var rm) && rm.TryGetInt32(out var rv) ? rv : 0;
                 bool downloaded = it.TryGetProperty("downloaded", out var d) && d.ValueKind == JsonValueKind.True;
                 bool recommended = it.TryGetProperty("recommended", out var rc) && rc.ValueKind == JsonValueKind.True;
-                string label = name + (recommended ? "  ★ מומלץ" : "") + (downloaded ? "  ✓ מותקן" : "");
+                string state = Str(it, "state");
+                string stateLabel = state switch
+                {
+                    "downloading" => "  downloading",
+                    "incomplete" => "  incomplete",
+                    _ => downloaded ? "  installed" : "",
+                };
+                string label = name + (recommended ? "  recommended" : "") + stateLabel;
                 string meta = $"{size} · זיכרון ~{ram}MB · איכות: {quality} · מהירות: {speed}";
-                if (name == selected) { selectedMeta = meta; selectedSize = size; }
+                if (name == selected)
+                {
+                    selectedMeta = meta;
+                    selectedSize = size;
+                    _selectedModelState = string.IsNullOrEmpty(state) ? (downloaded ? "ready" : "missing") : state;
+                }
                 rows.Add((name, label));
             }
         }
@@ -102,7 +120,7 @@ public sealed partial class EnginePage : Page
             if (!string.IsNullOrEmpty(selectedSize)) _selectedSizeLabel = selectedSize;
             // Re-render the status copy so the download text reflects the selected model's real size.
             if (ModelDownloadBtn.Visibility == Visibility.Visible && ModelDeleteBtn.Visibility != Visibility.Visible)
-                RenderModel("absent");
+                RenderModel(_selectedModelState);
             _loadingCatalog = false;
         });
     }
@@ -147,6 +165,13 @@ public sealed partial class EnginePage : Page
                 ModelDeleteBtn.Visibility = Visibility.Collapsed;
                 ModelRing.IsActive = true; ModelRing.Visibility = Visibility.Visible;
                 break;
+            case "incomplete":
+                ModelStatusText.Text = $"נמצאה הורדה חלקית או לא שמישה. הורידו מחדש את המודל{SizeSuffix()} כדי להשלים את ההתקנה.";
+                ModelDownloadBtn.Content = "הורד מחדש";
+                ModelDownloadBtn.Visibility = Visibility.Visible;
+                ModelDeleteBtn.Visibility = Visibility.Collapsed;
+                ModelRing.IsActive = false; ModelRing.Visibility = Visibility.Collapsed;
+                break;
             case "error":
                 ModelStatusText.Text = "הורדת המודל נכשלה — ייתכן ניתוק אינטרנט או הורדה חלקית. בדקו את החיבור ונסו שוב.";
                 ModelDownloadBtn.Content = "נסו שוב";
@@ -166,14 +191,36 @@ public sealed partial class EnginePage : Page
 
     private async void OnDownloadModel(object sender, RoutedEventArgs e)
     {
-        RenderModel("downloading");
+        string name = (ModelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        RenderModel("downloading", name);
         if (_host?.Client == null) { RenderModel("error"); return; }
         try
         {
-            var r = await _host.Client.RpcAsync("downloadModel");
+            var r = await _host.Client.RpcAsync(
+                "downloadModel",
+                string.IsNullOrEmpty(name) ? null : new { name });
             bool started = r.TryGetProperty("started", out var s) && s.GetBoolean();
             bool busy = r.TryGetProperty("busy", out var b) && b.GetBoolean();
-            if (!started && !busy) await RefreshModelStatusAsync();
+            bool alreadyDownloaded = r.TryGetProperty("alreadyDownloaded", out var ad) && ad.GetBoolean();
+            if (started)
+            {
+                await LoadModelCatalogAsync();
+            }
+            else if (alreadyDownloaded)
+            {
+                RenderModel("ready", name);
+                await LoadModelCatalogAsync();
+            }
+            else if (busy)
+            {
+                RenderModel("downloading", Str(r, "name"));
+                await LoadModelCatalogAsync();
+            }
+            else if (!started)
+            {
+                await RefreshModelStatusAsync();
+                await LoadModelCatalogAsync();
+            }
         }
         catch { RenderModel("error"); }
     }
@@ -212,6 +259,12 @@ public sealed partial class EnginePage : Page
     private async void OnModelDownloadChanged(string state, string name, string message)
     {
         if (state == "done") { await RefreshModelStatusAsync(); await LoadModelCatalogAsync(); return; }
+        if (state == "running")
+        {
+            DispatcherQueue.TryEnqueue(() => RenderModel("downloading", name));
+            await LoadModelCatalogAsync();
+            return;
+        }
         DispatcherQueue.TryEnqueue(() => RenderModel(
             state switch { "running" => "downloading", "error" => "error", _ => "absent" }, name));
     }

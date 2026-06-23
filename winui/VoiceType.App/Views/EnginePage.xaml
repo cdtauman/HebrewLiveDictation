@@ -44,6 +44,8 @@
                         </RadioButton>
                     </StackPanel>
                     <TextBlock x:Name="CurrentLabel" Style="{StaticResource CaptionMutedStyle}" />
+                    <TextBlock x:Name="ProviderStatusText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" />
                     <TextBlock Text="שפות: לא־מקוון (Whisper) תומך בשפות רבות. ב‑Google יש להוכיח את קוד השפה מול המודל והאזור. בוחרים שפה בחדר 'הכתבה'."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <TextBlock Text="השינוי ייכנס לתוקף בהכתבה הבאה." Style="{StaticResource CaptionMutedStyle}" />

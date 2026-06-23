@@ -18,6 +18,7 @@ from hebrew_live_dictation.bridge.sidecar import (
     make_callbacks,
     offline_is_primary_engine,
     offline_model_required,
+    provider_control_status,
     recent_history,
 )
 
@@ -325,6 +326,72 @@ class HealthTests(unittest.TestCase):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))
         with mock.patch("hebrew_live_dictation.models.model_status", side_effect=RuntimeError("x")):
             self.assertFalse(sidecar.model_downloaded(_FakeConfig({})))   # unknown -> not ready
+
+
+class ProviderControlPlaneTests(unittest.TestCase):
+    def test_provider_status_lists_registered_providers_and_capabilities(self):
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+            status = provider_control_status(_FakeConfig({"stt.provider": "google_v2", "stt.mode": "api"}))
+        self.assertEqual(status["mode"], "api")
+        self.assertEqual(status["configuredProvider"], "google_v2")
+        self.assertEqual(status["effectiveProvider"], "google_v2")
+        rows = {row["id"]: row for row in status["providers"]}
+        self.assertEqual(set(rows), {"deepgram", "google_v2", "groq", "whisper_local"})
+        self.assertTrue(rows["google_v2"]["capabilities"]["streaming"])
+        self.assertTrue(rows["google_v2"]["capabilities"]["interim"])
+        self.assertFalse(rows["whisper_local"]["capabilities"]["needsCredentials"])
+        self.assertEqual(rows["deepgram"]["status"], "needs_key")
+        self.assertEqual(rows["groq"]["status"], "needs_key")
+
+    def test_google_status_moves_from_needs_test_to_connection_verified(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            creds = os.path.join(tmp, "sa.json")
+            with open(creds, "w", encoding="utf-8") as f:
+                json.dump({"project_id": "proj"}, f)
+            cfg = _FakeConfig({
+                "stt.provider": "google_v2",
+                "stt.mode": "api",
+                "google.credential_mode": "service_account_json",
+                "google.credentials_path": creds,
+                "google.location": "eu",
+                "google.model": "latest_long",
+                "google.recognizer_id": "_",
+                "languages.primary": "iw-IL",
+            }, config_dir=tmp)
+            with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+                rows = {row["id"]: row for row in provider_control_status(cfg)["providers"]}
+            self.assertEqual(rows["google_v2"]["status"], "needs_test")
+            self.assertTrue(rows["google_v2"]["configured"])
+            self.assertFalse(rows["google_v2"]["ready"])
+            self.assertEqual(rows["google_v2"]["runtime"]["model"], "latest_long")
+
+            sidecar._set_google_verified(cfg)
+            with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+                rows = {row["id"]: row for row in provider_control_status(cfg)["providers"]}
+            self.assertEqual(rows["google_v2"]["status"], "connection_verified")
+            self.assertTrue(rows["google_v2"]["ready"])
+
+    def test_smart_auto_and_auto_fallback_plan_is_visible(self):
+        cfg = _FakeConfig({
+            "stt.provider": "google_v2",
+            "stt.mode": "smart_auto",
+            "providers.deepgram.api_key": "dg",
+            "providers.deepgram.model": "nova-2",
+            "providers.whisper.enabled": True,
+            "providers.whisper.model": "small",
+        })
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": True, "path": "/models"}):
+            status = provider_control_status(cfg)
+        self.assertEqual(status["mode"], "smart_auto")
+        self.assertEqual(status["smartAutoSelected"], "deepgram")
+        self.assertEqual(status["effectiveProvider"], "deepgram")
+        self.assertEqual(status["stream"], "auto_fallback")
+        self.assertTrue(status["fallbackEnabled"])
+        rows = {row["id"]: row for row in status["providers"]}
+        self.assertTrue(rows["deepgram"]["effective"])
+        self.assertEqual(rows["deepgram"]["status"], "key_configured_unverified")
+        self.assertTrue(rows["whisper_local"]["fallbackTarget"])
+        self.assertTrue(rows["whisper_local"]["ready"])
 
 
 class OfflineGateTests(unittest.TestCase):

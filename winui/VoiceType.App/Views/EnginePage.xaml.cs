@@ -250,6 +250,7 @@ public sealed partial class EnginePage : Page
         });
 
         await RefreshLabelAsync();
+        await LoadProviderStatusAsync();
         if (provider == "google_v2") await LoadGoogleConfigAsync();
     }
 
@@ -540,6 +541,7 @@ public sealed partial class EnginePage : Page
             return false;
         }
         await RefreshLabelAsync();
+        await LoadProviderStatusAsync();
         return true;
     }
 
@@ -595,4 +597,42 @@ public sealed partial class EnginePage : Page
         }
         catch { }
     }
+
+    private async Task LoadProviderStatusAsync()
+    {
+        if (_host?.Client == null) return;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getProviderStatus");
+            string mode = Str(r, "mode");
+            string configured = Str(r, "configuredProvider");
+            string effective = Str(r, "effectiveProvider");
+            string stream = Str(r, "stream");
+            bool fallback = r.TryGetProperty("fallbackEnabled", out var fb) && fb.ValueKind == JsonValueKind.True;
+            var rows = new List<string>();
+            if (r.TryGetProperty("providers", out var providers) && providers.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in providers.EnumerateArray())
+                {
+                    string id = Str(p, "id");
+                    string status = Str(p, "status");
+                    bool ready = p.TryGetProperty("ready", out var rd) && rd.ValueKind == JsonValueKind.True;
+                    bool eff = p.TryGetProperty("effective", out var ef) && ef.ValueKind == JsonValueKind.True;
+                    if (string.IsNullOrEmpty(id)) continue;
+                    rows.Add($"{id}:{(ready ? "ready" : status)}{(eff ? "*" : "")}");
+                }
+            }
+            string text = $"מצב ספקים: mode {mode} · נבחר {configured} · בפועל {effective} · stream {stream}"
+                          + (fallback ? " · fallback→whisper" : "");
+            if (rows.Count > 0) text += " · " + string.Join(" | ", rows);
+            DispatcherQueue.TryEnqueue(() => ProviderStatusText.Text = text);
+        }
+        catch
+        {
+            DispatcherQueue.TryEnqueue(() => ProviderStatusText.Text = "");
+        }
+    }
+
+    private static string Str(JsonElement o, string key)
+        => o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 }

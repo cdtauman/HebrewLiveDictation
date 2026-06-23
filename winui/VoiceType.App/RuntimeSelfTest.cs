@@ -106,6 +106,19 @@ internal static class RuntimeSelfTest
                 Check("bridge.getStatus", st.TryGetProperty("state", out var s) && s.GetString() == "idle",
                       "state=" + st.GetProperty("state").GetString());
 
+                var providerStatus = await client.RpcAsync("getProviderStatus");
+                bool providerShape = providerStatus.TryGetProperty("providers", out var ps)
+                                     && ps.ValueKind == JsonValueKind.Array
+                                     && ps.EnumerateArray().Any(p =>
+                                         p.TryGetProperty("id", out var id)
+                                         && id.GetString() == "google_v2"
+                                         && p.TryGetProperty("capabilities", out var pc)
+                                         && pc.TryGetProperty("streaming", out _))
+                                     && providerStatus.TryGetProperty("effectiveProvider", out _);
+                Check("bridge.getProviderStatus", providerShape,
+                      providerShape ? "provider control plane returned registry rows + routing"
+                                    : providerStatus.GetRawText());
+
                 var theme = (await client.RpcAsync("getConfig", new { key = "app.theme" }))
                             .GetProperty("value").GetString();
                 var wrote = await client.RpcAsync("setConfig", new { key = "app.theme", value = theme });

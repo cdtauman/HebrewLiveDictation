@@ -468,6 +468,190 @@ def compute_health(config) -> dict:
     }
 
 
+def _capabilities_dict(caps) -> dict:
+    """JSON-safe provider capability shape for the shell/diagnostics."""
+    return {
+        "streaming": bool(getattr(caps, "streaming", False)),
+        "batch": bool(getattr(caps, "batch", False)),
+        "interim": bool(getattr(caps, "interim", False)),
+        "offline": bool(getattr(caps, "offline", False)),
+        "fallbackTarget": bool(getattr(caps, "fallback_target", False)),
+        "needsCredentials": bool(getattr(caps, "needs_credentials", True)),
+    }
+
+
+_PROVIDER_LABELS = {
+    "google_v2": "Google STT V2",
+    "whisper_local": "Offline Whisper",
+    "deepgram": "Deepgram",
+    "groq": "Groq",
+}
+
+
+def _factory_provider_plan(config) -> dict:
+    """Read-only mirror of stt_factory's provider routing.
+
+    This is a control-plane explanation, not a factory. It tells the shell what
+    would be selected before actually starting dictation, including Smart Auto,
+    local enablement fallback, unknown-provider fallback, and AutoFallback wrap.
+    """
+    from ..stt.registry import REGISTRY
+    from ..stt_factory import DEFAULT_PROVIDER
+
+    mode = config.get("stt.mode", "api") or "api"
+    configured_provider = config.get("stt.provider", DEFAULT_PROVIDER) or DEFAULT_PROVIDER
+    provider = configured_provider
+    smart_auto_selected = ""
+
+    if mode == "local":
+        provider = "whisper_local"
+    elif mode == "smart_auto":
+        try:
+            from ..stt.auto_select import select_provider
+            provider = select_provider(config)
+            smart_auto_selected = provider
+        except Exception:
+            logger.error("provider control-plane smart_auto resolution failed:\n%s", traceback.format_exc())
+
+    whisper_enabled = bool(config.get("providers.whisper.enabled", False))
+    if provider == "whisper_local" and not whisper_enabled:
+        provider = DEFAULT_PROVIDER
+
+    if not REGISTRY.is_registered(provider):
+        provider = DEFAULT_PROVIDER
+
+    fallback_enabled = mode in ("auto_fallback", "smart_auto") and provider != "whisper_local" and whisper_enabled
+    stream = "auto_fallback" if fallback_enabled else provider
+    return {
+        "mode": mode,
+        "configuredProvider": configured_provider,
+        "effectiveProvider": provider,
+        "stream": stream,
+        "fallbackEnabled": bool(fallback_enabled),
+        "fallbackProvider": "whisper_local" if fallback_enabled else "",
+        "smartAutoSelected": smart_auto_selected,
+    }
+
+
+def _provider_credentials_present(config, provider: str) -> bool:
+    if provider == "google_v2":
+        return bool(google_config_status(config).get("hasCredentials"))
+    if provider in ("deepgram", "groq"):
+        try:
+            from .. import secrets_store
+            return bool(secrets_store.provider_api_key(config, provider))
+        except Exception:
+            return False
+    return True
+
+
+def provider_control_status(config) -> dict:
+    """Unified provider inventory/status for Engine room and diagnostics.
+
+    Phase 3 intentionally keeps this read-only. Later phases can add credential
+    editing and provider-specific testing on top of this stable shape.
+    """
+    try:
+        from ..stt.registry import REGISTRY
+        from .. import models
+    except Exception:
+        logger.error("provider control-plane import failed:\n%s", traceback.format_exc())
+        return {"mode": "", "configuredProvider": "", "effectiveProvider": "", "stream": "",
+                "fallbackEnabled": False, "fallbackProvider": "", "providers": []}
+
+    try:
+        plan = _factory_provider_plan(config)
+    except Exception:
+        logger.error("provider control-plane routing failed:\n%s", traceback.format_exc())
+        plan = {"mode": config.get("stt.mode", "api") or "api",
+                "configuredProvider": config.get("stt.provider", "google_v2") or "google_v2",
+                "effectiveProvider": "", "stream": "", "fallbackEnabled": False,
+                "fallbackProvider": "", "smartAutoSelected": ""}
+
+    google = google_config_status(config)
+    model_state = model_status(config)
+    whisper_enabled = bool(config.get("providers.whisper.enabled", False))
+
+    rows = []
+    for provider in REGISTRY.known():
+        caps = REGISTRY.capabilities(provider)
+        row = {
+            "id": provider,
+            "label": _PROVIDER_LABELS.get(provider, provider),
+            "capabilities": _capabilities_dict(caps),
+            "selected": provider == plan.get("configuredProvider"),
+            "effective": provider == plan.get("effectiveProvider"),
+            "fallbackTarget": provider == plan.get("fallbackProvider"),
+            "configured": False,
+            "ready": False,
+            "status": "not_configured",
+            "detail": "",
+        }
+
+        if provider == "google_v2":
+            verified = bool(google.get("verified"))
+            has_creds = bool(google.get("hasCredentials"))
+            row.update({
+                "configured": has_creds,
+                "ready": verified,
+                "status": "connection_verified" if verified else ("needs_test" if has_creds else "needs_credentials"),
+                "detail": (
+                    f"{google.get('model', '')} / {google.get('location', '')} / "
+                    f"{google.get('language', '')} / {google.get('recognizer', '')}"
+                ).strip(" /"),
+                "runtime": {
+                    "model": google.get("model", ""),
+                    "location": google.get("location", ""),
+                    "language": google.get("language", ""),
+                    "recognizer": google.get("recognizer", ""),
+                    "credentialMode": google.get("credentialMode", ""),
+                    "projectId": google.get("projectId", ""),
+                    "verified": verified,
+                },
+            })
+        elif provider == "whisper_local":
+            downloaded = bool(model_state.get("downloaded"))
+            selected_model = model_state.get("name") or config.get("providers.whisper.model", models.DEFAULT_MODEL)
+            row.update({
+                "configured": whisper_enabled,
+                "ready": whisper_enabled and downloaded,
+                "status": "ready" if whisper_enabled and downloaded else ("needs_model" if whisper_enabled else "disabled"),
+                "detail": f"model {selected_model}" + (" installed" if downloaded else " not installed"),
+                "runtime": {
+                    "model": selected_model,
+                    "downloaded": downloaded,
+                    "path": model_state.get("path", ""),
+                },
+            })
+        elif provider in ("deepgram", "groq"):
+            has_key = _provider_credentials_present(config, provider)
+            model_key = f"providers.{provider}.model"
+            row.update({
+                "configured": has_key,
+                "ready": has_key,
+                "status": "key_configured_unverified" if has_key else "needs_key",
+                "detail": f"model {config.get(model_key, '') or ''}".strip(),
+                "runtime": {
+                    "model": config.get(model_key, "") or "",
+                    "keyConfigured": has_key,
+                    "publicSetupPhase": 5 if provider == "deepgram" else 6,
+                },
+            })
+
+        rows.append(row)
+
+    return {
+        "mode": plan.get("mode", ""),
+        "configuredProvider": plan.get("configuredProvider", ""),
+        "effectiveProvider": plan.get("effectiveProvider", ""),
+        "stream": plan.get("stream", ""),
+        "fallbackEnabled": bool(plan.get("fallbackEnabled")),
+        "fallbackProvider": plan.get("fallbackProvider", ""),
+        "smartAutoSelected": plan.get("smartAutoSelected", ""),
+        "providers": rows,
+    }
+
+
 def list_microphones(config=None) -> dict:
     """Input devices for the Controls mic picker — a thin wrapper over the engine's own
     enumeration (AudioStream.list_devices, also used by the health check). Returns just the
@@ -1173,6 +1357,8 @@ def run(pipe_name: str | None = None) -> int:
             return config.as_dict()
         if method == "getHealth":
             return compute_health(config)
+        if method == "getProviderStatus":
+            return provider_control_status(config)
         if method == "getCapabilities":
             # Import probe of the dynamic insertion backends — used by the packaged smoke test.
             return engine_capabilities()

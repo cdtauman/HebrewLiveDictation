@@ -169,6 +169,12 @@ class GoogleVerifyGateTests(unittest.TestCase):
         cfg.set("google.model", "chirp_2")          # different model -> different signature
         self.assertFalse(sidecar._google_verified(cfg))
 
+    def test_language_change_invalidates(self):
+        cfg = self._cfg({"languages.primary": "iw-IL"})
+        sidecar._set_google_verified(cfg)
+        cfg.set("languages.primary", "he-IL")       # different dictation language -> different signature
+        self.assertFalse(sidecar._google_verified(cfg))
+
     def test_recognizer_change_invalidates(self):
         cfg = self._cfg()
         sidecar._set_google_verified(cfg)

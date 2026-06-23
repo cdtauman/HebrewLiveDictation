@@ -802,13 +802,16 @@ def _creds_fingerprint(config) -> str:
 
 def _google_signature(config) -> str:
     # Any input that changes WHICH recognizer/model/credentials the engine will use must invalidate a
-    # prior 'verified' (R1): project, region, recognizer, MODEL, credential mode/path, and the creds
-    # FILE fingerprint (so re-pointing the same path at a different key forces a re-test).
+    # prior connection verification: project, region, recognizer, model, language, credential mode/path,
+    # and the creds FILE fingerprint (so re-pointing the same path at a different key forces a re-test).
     return "|".join(str(x or "") for x in (
         config.get("google.project_id", ""),
         config.get("google.location", "eu"),
         config.get("google.recognizer_id", "_"),
         config.get("google.model", "chirp_3"),
+        config.get("languages.primary", "iw-IL"),
+        ",".join(config.get("languages.alternatives", []) or []),
+        config.get("languages.custom_code", ""),
         config.get("google.credential_mode", "service_account_json"),
         config.get("google.credentials_path", "") or config.get("google_credentials_path", ""),
         _creds_fingerprint(config),
@@ -862,12 +865,15 @@ def google_config_status(config) -> dict:
                 "hasCredentials": bool(has_creds and project_id), "projectId": project_id,
                 "location": config.get("google.location", "eu"),
                 "model": config.get("google.model", "chirp_3"),
+                "recognizer": config.get("google.recognizer_id", "_") or "_",
+                "credentialMode": config.get("google.credential_mode", "service_account_json"),
                 "provider": _effective_provider(config),
                 "language": config.get("languages.primary", "iw-IL")}
     except Exception:
         logger.error("google_config_status failed:\n%s", traceback.format_exc())
         return {"configured": False, "verified": False, "hasCredentials": False,
-                "projectId": "", "location": "", "model": "", "provider": "", "language": ""}
+                "projectId": "", "location": "", "model": "", "recognizer": "",
+                "credentialMode": "", "provider": "", "language": ""}
 
 
 def test_google_connection(config) -> dict:

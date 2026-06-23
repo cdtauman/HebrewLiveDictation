@@ -78,15 +78,15 @@ internal static class RuntimeSelfTest
                   $"spawned='{spawned}', derived={derivedMode}, " +
                   $"packagedEngine={RepoPaths.PackagedEnginePath() ?? "(none)"}");
 
-            // 1c) R3-Google stabilization: the pick-lists must include the entries needed to test the
-            //     live-words model (latest_long) and the Hebrew language-code suspect (he-IL).
+            // 1c) R3-Google stabilization: the pick-lists must include the entries needed to probe
+            //     Google model/language behavior. Presence in the UI is not proof of dictation.
             bool hasLatestLong = Views.EnginePage.GoogleModels.Any(m => m.tag == "latest_long");
             Check("engine.google.models", hasLatestLong,
-                  hasLatestLong ? "Google model list includes latest_long (live words / continuous)"
+                  hasLatestLong ? "Google model list includes latest_long (diagnostic candidate; not proof of live words)"
                                 : "latest_long missing from the Google model dropdown");
             bool hasHeIl = Views.DictationPage.Languages.Any(l => l.tag == "he-IL");
             Check("dictation.languages", hasHeIl,
-                  hasHeIl ? "Hebrew language list includes he-IL (alt Google code)"
+                  hasHeIl ? "Hebrew language list includes he-IL (diagnostic only; iw-IL remains documented default)"
                           : "he-IL missing from the dictation language list");
 
             // 2) Connect the C# client and exercise the contract from the WinUI side.

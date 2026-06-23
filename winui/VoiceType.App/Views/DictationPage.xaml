@@ -24,8 +24,8 @@
                                    Style="{StaticResource CaptionMutedStyle}" />
                     </StackPanel>
                     <!-- Items populated from DictationPage.Languages (one testable source of truth).
-                         Two Hebrew codes (iw-IL/he-IL): Google may behave differently; Offline maps
-                         both to 'he', so either is safe for Whisper (R3 item 3). -->
+                         Google documents iw-IL for Hebrew. he-IL is diagnostic only; Offline maps
+                         both to 'he', but Google must be proven by a real transcription probe. -->
                     <ComboBox x:Name="LanguageCombo" Grid.Column="1" MinWidth="200" VerticalAlignment="Center"
                               SelectionChanged="OnLanguageChanged" />
                 </Grid>

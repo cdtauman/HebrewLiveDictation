@@ -31,7 +31,7 @@
                         <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="Google (ענן)" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="איכות גבוהה לעברית. בחרו מודל בהמשך — מודלי Chirp מדויקים אך מחזירים טקסט סופי בלבד (ללא מילים חיות); ל'מילים בזמן אמת' בחרו Latest Long. דורש פרויקט Google Cloud והרשאות."
+                                <TextBlock Text="איכות גבוהה לעברית, אך בענן נדרשת בדיקת תמלול אמיתית מעבר לבדיקת חיבור. מודלי Chirp מדויקים ולעיתים סופיים בלבד; Latest Long ניסיוני עד שיוכח עם WAV/מיקרופון."
                                            TextWrapping="Wrap" Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>

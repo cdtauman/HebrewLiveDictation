@@ -24,12 +24,12 @@ public sealed partial class DictationPage : Page
     private AppHost? _host;
     private bool _loading;
 
-    // The dictation language list (one source of truth; the combo is populated from this). Both
-    // Hebrew codes are offered because Google may behave differently for iw-IL vs he-IL (R3 item 3).
+    // iw-IL is Google's documented Hebrew code. he-IL is exposed only as a diagnostic alias so
+    // runtime logs/probes can prove whether Google accepts it for a given project/model/region.
     internal static readonly (string tag, string label)[] Languages =
     {
         ("iw-IL", "עברית (iw-IL)"),
-        ("he-IL", "עברית (he-IL)"),
+        ("he-IL", "עברית (he-IL · ניסיוני)"),
         ("en-US", "English (US)"),
         ("ar-XA", "العربية"),
         ("ru-RU", "Русский"),
@@ -87,8 +87,7 @@ public sealed partial class DictationPage : Page
         bool ok = await Persist("languages.primary", lang);
         ok &= await Persist("languages.command_pack", pack);   // keep the pack consistent with language
         if (!ok) return;
-        PackLabel.Text = "פקודות קוליות: " + name;
-        await LoadCommandsAsync();
+        await LoadAsync();   // resync from persisted/normalized truth before showing pack/commands
     }
 
     private async void OnAutoPunctToggled(object sender, RoutedEventArgs e)

@@ -144,6 +144,29 @@ class CloudRecoveryTests(unittest.TestCase):
             self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
         self.assertEqual(cfg.get("stt.provider"), "whisper_local")
 
+    def test_unverified_deepgram_routes_to_offline(self):
+        cfg = self._cfg({"stt.provider": "deepgram", "stt.mode": "api",
+                         "providers.deepgram.api_key": "dg"})
+        self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
+        self.assertEqual(cfg.get("stt.mode"), "local")
+
+    def test_verified_deepgram_left_untouched(self):
+        cfg = self._cfg({"stt.provider": "deepgram", "stt.mode": "api",
+                         "providers.deepgram.api_key": "dg",
+                         "providers.deepgram.model": "nova-3",
+                         "languages.primary": "iw-IL"})
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "deepgram")
+
+    def test_smart_auto_unverified_deepgram_routes_to_offline(self):
+        cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "smart_auto",
+                         "providers.deepgram.api_key": "dg",
+                         "providers.whisper.enabled": False})
+        self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
+
 
 class GoogleVerifyGateTests(unittest.TestCase):
     """R1: the .google_verified marker must track the EXACT inputs the live client uses. Any change to
@@ -208,6 +231,57 @@ class GoogleVerifyGateTests(unittest.TestCase):
         res = sidecar.test_google_connection(cfg)
         self.assertFalse(res.get("ok"))
         self.assertFalse(sidecar._google_verified(cfg))
+
+
+class DeepgramVerifyGateTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def _cfg(self, extra=None):
+        d = {"providers.deepgram.api_key": "dg", "providers.deepgram.model": "nova-3",
+             "providers.deepgram.interim_results": True, "providers.deepgram.punctuate": True,
+             "languages.primary": "iw-IL"}
+        if extra:
+            d.update(extra)
+        return _FakeConfig(d, config_dir=self.dir)
+
+    def test_set_then_verified(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        self.assertTrue(sidecar._keyed_provider_verified(cfg, "deepgram"))
+
+    def test_model_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        cfg.set("providers.deepgram.model", "nova-2")
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "deepgram"))
+
+    def test_language_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        cfg.set("languages.primary", "en-US")
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "deepgram"))
+
+    def test_key_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        cfg.set("providers.deepgram.api_key", "different")
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "deepgram"))
+
+    def test_test_connection_success_sets_marker(self):
+        cfg = self._cfg()
+        with mock.patch("hebrew_live_dictation.stt.verify.verify", return_value=(True, "OK")):
+            res = sidecar.test_deepgram_connection(cfg)
+        self.assertTrue(res.get("ok"))
+        self.assertTrue(sidecar._keyed_provider_verified(cfg, "deepgram"))
+
+    def test_failed_test_connection_clears_marker(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        with mock.patch("hebrew_live_dictation.stt.verify.verify", return_value=(False, "bad key")):
+            res = sidecar.test_deepgram_connection(cfg)
+        self.assertFalse(res.get("ok"))
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "deepgram"))
 
 
 class ShellSelfTargetBlockTests(unittest.TestCase):
@@ -373,6 +447,7 @@ class ProviderControlPlaneTests(unittest.TestCase):
             self.assertTrue(rows["google_v2"]["ready"])
 
     def test_smart_auto_and_auto_fallback_plan_is_visible(self):
+        tmp = tempfile.mkdtemp()
         cfg = _FakeConfig({
             "stt.provider": "google_v2",
             "stt.mode": "smart_auto",
@@ -380,7 +455,7 @@ class ProviderControlPlaneTests(unittest.TestCase):
             "providers.deepgram.model": "nova-2",
             "providers.whisper.enabled": True,
             "providers.whisper.model": "small",
-        })
+        }, config_dir=tmp)
         with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": True, "path": "/models"}):
             status = provider_control_status(cfg)
         self.assertEqual(status["mode"], "smart_auto")
@@ -390,25 +465,32 @@ class ProviderControlPlaneTests(unittest.TestCase):
         self.assertTrue(status["fallbackEnabled"])
         rows = {row["id"]: row for row in status["providers"]}
         self.assertTrue(rows["deepgram"]["effective"])
-        self.assertEqual(rows["deepgram"]["status"], "key_configured_unverified")
+        self.assertEqual(rows["deepgram"]["status"], "needs_test")
         self.assertTrue(rows["whisper_local"]["fallbackTarget"])
         self.assertTrue(rows["whisper_local"]["ready"])
 
     def test_keyed_provider_status_includes_storage_without_secret(self):
+        tmp = tempfile.mkdtemp()
         cfg = _FakeConfig({
             "stt.provider": "deepgram",
             "stt.mode": "api",
             "providers.deepgram.api_key": "plaintext-legacy",
             "providers.deepgram.model": "nova-2",
-        })
+        }, config_dir=tmp)
         with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
             status = provider_control_status(cfg)
         deepgram = {row["id"]: row for row in status["providers"]}["deepgram"]
 
-        self.assertEqual(deepgram["status"], "key_configured_unverified")
+        self.assertEqual(deepgram["status"], "needs_test")
         self.assertTrue(deepgram["credentialStore"]["plaintextPresent"])
         self.assertEqual(deepgram["runtime"]["credentialStorage"], "plaintext_config")
         self.assertNotIn("plaintext-legacy", json.dumps(deepgram, ensure_ascii=False))
+
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+            verified = {row["id"]: row for row in provider_control_status(cfg)["providers"]}["deepgram"]
+        self.assertEqual(verified["status"], "connection_verified")
+        self.assertTrue(verified["ready"])
 
     def test_provider_credential_status_rejects_google_key_storage(self):
         status = provider_credential_status(_FakeConfig({}), "google_v2")

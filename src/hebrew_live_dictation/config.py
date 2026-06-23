@@ -91,7 +91,9 @@ DEFAULT_SETTINGS = {
             "segment_silence_ms": 700,
         },
         "deepgram": {
-            "model": "nova-2",
+            "model": "nova-3",
+            "interim_results": True,
+            "punctuate": True,
         },
         "groq": {
             "model": "whisper-large-v3",

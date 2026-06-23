@@ -45,11 +45,30 @@ class DeepgramUnitTests(unittest.TestCase):
 
     def test_build_url_contains_expected_params(self):
         url = DeepgramStream(self._config())._build_url()
-        self.assertIn("model=nova-2", url)
+        self.assertIn("model=nova-3", url)
         self.assertIn("language=he", url)
         self.assertIn("encoding=linear16", url)
         self.assertIn("sample_rate=16000", url)
         self.assertIn("interim_results=true", url)
+        self.assertIn("punctuate=true", url)
+
+    def test_build_url_uses_provider_specific_flags(self):
+        url = DeepgramStream(
+            self._config(
+                **{
+                    "google.interim_results": True,
+                    "google.automatic_punctuation": True,
+                    "providers.deepgram.interim_results": False,
+                    "providers.deepgram.punctuate": False,
+                }
+            )
+        )._build_url()
+        self.assertIn("interim_results=false", url)
+        self.assertIn("punctuate=false", url)
+
+    def test_language_maps_hebrew_aliases_to_deepgram_he(self):
+        self.assertIn("language=he", DeepgramStream(self._config(**{"languages.primary": "he-IL"}))._build_url())
+        self.assertIn("language=he", DeepgramStream(self._config(**{"languages.primary": "iw-IL"}))._build_url())
 
     def test_handle_message_final_and_interim(self):
         events = []

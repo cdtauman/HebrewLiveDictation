@@ -38,7 +38,7 @@
                         <RadioButton x:Name="OptChoose" GroupName="engine" Tag="choose" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="ספק ענן אחר" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="Deepgram/Groq — עדיין לא נתמכים בגרסה זו; הבחירה תעביר אתכם ללא־מקוון."
+                                <TextBlock Text="Deepgram זמין לבדיקה עם מפתח API מאובטח. Groq יושלם בשלב הבא."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
@@ -113,12 +113,17 @@
             <Border x:Name="ChooseCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
                 <StackPanel Spacing="8">
                     <TextBlock Text="ספק זיהוי" Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="אפשר לשמור מפתחות API במנהל האישורים של Windows. שימוש מלא ב-Deepgram/Groq יושלם בשלבים הבאים."
+                    <TextBlock Text="Deepgram שומר את המפתח במנהל האישורים של Windows, דורש בדיקת חיבור, ותומך במילים חיות. Groq יושלם בשלב הבא."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <ComboBox x:Name="ProviderCombo" MinWidth="240" SelectionChanged="OnProviderChanged">
                         <ComboBoxItem Tag="deepgram" Content="Deepgram" />
-                        <ComboBoxItem Tag="groq" Content="Groq" />
+                        <ComboBoxItem Tag="groq" Content="Groq (שלב 6)" />
                     </ComboBox>
+                    <StackPanel x:Name="DeepgramModelRow" Spacing="4">
+                        <TextBlock Text="Deepgram model" Style="{StaticResource CaptionMutedStyle}" />
+                        <ComboBox x:Name="DeepgramModelCombo" HorizontalAlignment="Stretch"
+                                  SelectionChanged="OnDeepgramModelChanged" />
+                    </StackPanel>
                     <StackPanel Spacing="4">
                         <TextBlock Text="API key" Style="{StaticResource CaptionMutedStyle}" />
                         <PasswordBox x:Name="ProviderKeyBox" PlaceholderText="Paste API key to save in OS keyring" />
@@ -126,8 +131,12 @@
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <Button x:Name="SaveProviderKeyBtn" Content="שמור מפתח" Click="OnSaveProviderKey" />
                         <Button x:Name="ClearProviderKeyBtn" Content="נקה מפתח" Click="OnClearProviderKey" />
+                        <Button x:Name="TestProviderBtn" Content="בדיקת Deepgram" Click="OnTestProviderConnection" />
+                        <ProgressRing x:Name="ProviderTestRing" IsActive="False" Visibility="Collapsed" Width="20" Height="20" />
                     </StackPanel>
                     <TextBlock x:Name="ProviderKeyStatusText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" />
+                    <TextBlock x:Name="ProviderTestStatusText" Style="{StaticResource CaptionMutedStyle}"
                                TextWrapping="Wrap" />
                 </StackPanel>
             </Border>

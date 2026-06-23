@@ -14,6 +14,7 @@ without network access.
 import json
 import logging
 import threading
+from urllib.parse import urlencode
 
 from .base import ProviderCapabilities, SpeechClientBase
 
@@ -60,17 +61,17 @@ class DeepgramStream(SpeechClientBase):
 
     def _build_url(self):
         sample_rate = int(self.config.get("audio.sample_rate", 16000) or 16000)
-        model = self.config.get("providers.deepgram.model", "nova-2") or "nova-2"
+        model = self.config.get("providers.deepgram.model", "nova-3") or "nova-3"
         params = {
             "model": model,
             "language": self._language(),
             "encoding": "linear16",
             "sample_rate": str(sample_rate),
             "channels": "1",
-            "interim_results": "true" if self.config.get("google.interim_results", True) else "false",
-            "punctuate": "true" if self.config.get("google.automatic_punctuation", True) else "false",
+            "interim_results": "true" if self.config.get("providers.deepgram.interim_results", True) else "false",
+            "punctuate": "true" if self.config.get("providers.deepgram.punctuate", True) else "false",
         }
-        query = "&".join(f"{k}={v}" for k, v in params.items())
+        query = urlencode(params)
         return f"{_ENDPOINT}?{query}"
 
     def _handle_message(self, raw):

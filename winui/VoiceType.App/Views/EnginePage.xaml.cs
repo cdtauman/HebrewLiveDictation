@@ -251,8 +251,8 @@ public sealed partial class EnginePage : Page
 
         await RefreshLabelAsync();
         await LoadProviderStatusAsync();
-        await LoadProviderKeyStatusAsync();
         if (provider == "google_v2") await LoadGoogleConfigAsync();
+        else await LoadDeepgramConfigAsync();
     }
 
     // ---- Google Cloud setup (PC1) ----
@@ -267,6 +267,12 @@ public sealed partial class EnginePage : Page
         ("chirp", "Chirp — סופי בלבד · דורש הוכחת תמלול"),
         ("latest_long", "Latest Long — נתיב R3 מוכח כשמוגדר בדיוק"),
         ("latest_short", "Latest Short — אמירות קצרות בלבד"),
+    };
+
+    internal static readonly (string tag, string label)[] DeepgramModels =
+    {
+        ("nova-3", "Nova-3 · Hebrew live streaming"),
+        ("nova-2", "Nova-2 · legacy fallback"),
     };
 
     /// <summary>Longer, honest per-model guidance shown under the picker (R3 item 2).</summary>
@@ -307,6 +313,21 @@ public sealed partial class EnginePage : Page
             _loading = false;
         });
         await RefreshGoogleStatusAsync();
+    }
+
+    private async Task LoadDeepgramConfigAsync()
+    {
+        string model = await GetConfigString("providers.deepgram.model", "nova-3");
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _loading = true;
+            if (DeepgramModelCombo.Items.Count == 0)
+                foreach (var (t, label) in DeepgramModels)
+                    DeepgramModelCombo.Items.Add(new ComboBoxItem { Content = label, Tag = t });
+            SelectComboByTag(DeepgramModelCombo, model, "nova-3");
+            _loading = false;
+        });
+        await LoadProviderKeyStatusAsync();
     }
 
     private static void SelectComboByTag(ComboBox combo, string tag, string fallback)
@@ -460,14 +481,11 @@ public sealed partial class EnginePage : Page
             _loading = true;
             GoogleCard.Visibility = Visibility.Collapsed;
             ChooseCard.Visibility = Visibility.Visible;
-            BackupCard.Visibility = Visibility.Collapsed;
+            BackupCard.Visibility = Visibility.Visible;
             if (ProviderCombo.SelectedItem == null) ProviderCombo.SelectedIndex = 0;
             _loading = false;
-            // Phase 4 exposes secure key storage only. Deepgram/Groq activation and
-            // provider-specific diagnostics are productized in Phases 5/6, so keep the
-            // runtime on the safe offline engine while credentials are being prepared.
-            await Finish(await ApplyOffline());
-            await LoadProviderKeyStatusAsync();
+            await LoadDeepgramConfigAsync();
+            await Finish(await ApplySelectedCloudProviderIfReadyAsync());
             return;
         }
 
@@ -508,14 +526,102 @@ public sealed partial class EnginePage : Page
     private async void OnBackupToggled(object sender, RoutedEventArgs e)
     {
         if (_loading || OptOffline.IsChecked == true) return;   // offline has no cloud to back up
+        if (OptChoose.IsChecked == true)
+        {
+            await Finish(await ApplySelectedCloudProviderIfReadyAsync());
+            return;
+        }
         await Finish(await ApplyCloudMode());
     }
 
     private async void OnProviderChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || OptChoose.IsChecked != true) return;
+        await LoadDeepgramConfigAsync();
+        await Finish(await ApplySelectedCloudProviderIfReadyAsync());
+    }
+
+    private async void OnDeepgramModelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string tag = (DeepgramModelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "nova-3";
+        if (!await SetConfig("providers.deepgram.model", tag))
+        {
+            await Finish(false);
+            return;
+        }
+        DispatcherQueue.TryEnqueue(() =>
+            ProviderTestStatusText.Text = "Deepgram model changed; run Test connection again before using it.");
         await LoadProviderKeyStatusAsync();
-        await LoadProviderStatusAsync();
+        if (OptChoose.IsChecked == true)
+            await Finish(await ApplySelectedCloudProviderIfReadyAsync());
+    }
+
+    private async void OnTestProviderConnection(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Client == null) return;
+        string provider = SelectedProvider();
+        if (provider != "deepgram")
+        {
+            DispatcherQueue.TryEnqueue(() =>
+                ProviderTestStatusText.Text = "Groq יושלם בשלב 6. Deepgram זמין לבדיקה עכשיו.");
+            return;
+        }
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ProviderTestRing.IsActive = true;
+            ProviderTestRing.Visibility = Visibility.Visible;
+            TestProviderBtn.IsEnabled = false;
+            ProviderTestStatusText.Text = "בודק Deepgram...";
+        });
+        bool ok = false;
+        string msg = "";
+        try
+        {
+            var r = await _host.Client.RpcAsync("testConnection", new { provider = "deepgram" }, timeoutMs: 20000);
+            ok = r.TryGetProperty("ok", out var o) && o.ValueKind == JsonValueKind.True;
+            msg = Str(r, "message");
+        }
+        catch (Exception ex) { msg = "Deepgram test failed: " + ex.Message; }
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ProviderTestRing.IsActive = false;
+            ProviderTestRing.Visibility = Visibility.Collapsed;
+            ProviderTestStatusText.Text = msg;
+        });
+        await LoadProviderKeyStatusAsync();
+        await Finish(ok ? await ApplySelectedCloudProviderIfReadyAsync() : await ApplyOffline());
+    }
+
+    private async Task<bool> ApplySelectedCloudProviderIfReadyAsync()
+    {
+        string provider = SelectedProvider();
+        if (provider != "deepgram")
+        {
+            DispatcherQueue.TryEnqueue(() =>
+                ProviderTestStatusText.Text = "Groq יושלם בשלב 6. בינתיים המנוע נשאר לא־מקוון.");
+            return await ApplyOffline();
+        }
+        if (!await ProviderVerifiedAsync(provider))
+        {
+            DispatcherQueue.TryEnqueue(() =>
+                ProviderTestStatusText.Text = "Deepgram דורש מפתח ובדיקת חיבור לפני שימוש בהכתבה.");
+            return await ApplyOffline();
+        }
+        bool ok = await SetConfig("stt.provider", "deepgram");
+        ok &= await ApplyCloudMode();
+        return ok;
+    }
+
+    private async Task<bool> ProviderVerifiedAsync(string provider)
+    {
+        if (_host?.Client == null) return false;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getProviderCredentialStatus", new { provider });
+            return r.TryGetProperty("verified", out var v) && v.ValueKind == JsonValueKind.True;
+        }
+        catch { return false; }
     }
 
     private async Task LoadProviderKeyStatusAsync()
@@ -530,18 +636,28 @@ public sealed partial class EnginePage : Page
             bool stored = r.TryGetProperty("storedInKeyring", out var st) && st.ValueKind == JsonValueKind.True;
             bool plaintext = r.TryGetProperty("plaintextPresent", out var pt) && pt.ValueKind == JsonValueKind.True;
             bool keyring = r.TryGetProperty("keyringAvailable", out var ka) && ka.ValueKind == JsonValueKind.True;
+            bool verified = r.TryGetProperty("verified", out var vf) && vf.ValueKind == JsonValueKind.True;
             string storage = Str(r, "storage");
             string message = Str(r, "message");
+            string model = Str(r, "model");
+            string language = Str(r, "language");
+            string statusExtra = (verified ? " · verified" : "")
+                                 + (!string.IsNullOrEmpty(model) ? $" · model={model}" : "")
+                                 + (!string.IsNullOrEmpty(language) ? $" · language={language}" : "");
             DispatcherQueue.TryEnqueue(() =>
             {
                 ProviderKeyBox.Password = "";
+                bool deepgram = provider == "deepgram";
+                DeepgramModelRow.Visibility = deepgram ? Visibility.Visible : Visibility.Collapsed;
                 ProviderKeyBox.PlaceholderText = configured
                     ? "API key saved; the value is not shown"
                     : "Paste API key to save in OS keyring";
                 SaveProviderKeyBtn.IsEnabled = supported && keyring;
                 ClearProviderKeyBtn.IsEnabled = supported && configured;
+                TestProviderBtn.IsEnabled = deepgram && configured;
+                TestProviderBtn.Content = deepgram ? "בדיקת Deepgram" : "בדיקה זמינה בשלב הבא";
                 ProviderKeyStatusText.Text =
-                    $"{provider}: {message} storage={storage}"
+                    $"{provider}: {message} storage={storage}{statusExtra}"
                     + (stored ? " · keyring" : "")
                     + (plaintext ? " · legacy plaintext present" : "");
             });
@@ -580,7 +696,10 @@ public sealed partial class EnginePage : Page
             DispatcherQueue.TryEnqueue(() => ProviderKeyStatusText.Text = $"{provider}: save failed.");
         }
         await LoadProviderKeyStatusAsync();
-        await LoadProviderStatusAsync();
+        if (OptChoose.IsChecked == true)
+            await Finish(await ApplySelectedCloudProviderIfReadyAsync());
+        else
+            await LoadProviderStatusAsync();
     }
 
     private async void OnClearProviderKey(object sender, RoutedEventArgs e)
@@ -604,7 +723,10 @@ public sealed partial class EnginePage : Page
             DispatcherQueue.TryEnqueue(() => ProviderKeyStatusText.Text = $"{provider}: clear failed.");
         }
         await LoadProviderKeyStatusAsync();
-        await LoadProviderStatusAsync();
+        if (OptChoose.IsChecked == true)
+            await Finish(await ApplySelectedCloudProviderIfReadyAsync());
+        else
+            await LoadProviderStatusAsync();
     }
 
     /// <summary>Apply the cloud-mode pair: backup on -> stt.mode=auto_fallback AND the
@@ -633,6 +755,7 @@ public sealed partial class EnginePage : Page
         }
         await RefreshLabelAsync();
         await LoadProviderStatusAsync();
+        await LoadProviderKeyStatusAsync();
         return true;
     }
 

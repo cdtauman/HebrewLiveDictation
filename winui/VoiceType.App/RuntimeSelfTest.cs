@@ -88,6 +88,10 @@ internal static class RuntimeSelfTest
             Check("dictation.languages", hasHeIl,
                   hasHeIl ? "Hebrew language list includes he-IL (diagnostic only; iw-IL remains documented default)"
                           : "he-IL missing from the dictation language list");
+            bool hasDeepgramNova3 = Views.EnginePage.DeepgramModels.Any(m => m.tag == "nova-3");
+            Check("engine.deepgram.models", hasDeepgramNova3,
+                  hasDeepgramNova3 ? "Deepgram model list includes nova-3 for Hebrew streaming"
+                                   : "nova-3 missing from the Deepgram model dropdown");
 
             // 2) Connect the C# client and exercise the contract from the WinUI side.
             using var client = new BridgeClient(pipeShort);

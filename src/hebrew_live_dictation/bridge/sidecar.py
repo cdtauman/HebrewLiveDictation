@@ -15,6 +15,7 @@ to the sidecar it spawned (never a stale/orphan one).
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import logging
 import os
@@ -551,6 +552,10 @@ def provider_credential_status(config, provider: str) -> dict:
     try:
         from .. import secrets_store
         status = secrets_store.provider_key_status(config, provider)
+        if provider == "deepgram":
+            status["verified"] = _keyed_provider_verified(config, provider)
+            status["model"] = config.get("providers.deepgram.model", "nova-3")
+            status["language"] = _deepgram_language(config)
         status["message"] = _credential_status_message(status)
         return status
     except Exception:
@@ -569,8 +574,11 @@ def save_provider_api_key(config, provider: str, api_key: str) -> dict:
     provider = (provider or "").strip().lower()
     try:
         from .. import secrets_store
+        _clear_keyed_provider_verified(config, provider)
         result = secrets_store.save_provider_api_key(config, provider, api_key)
         status = secrets_store.provider_key_status(config, provider)
+        if provider == "deepgram":
+            status["verified"] = _keyed_provider_verified(config, provider)
         result["status"] = status
         result["message"] = _credential_mutation_message(result, status)
         return result
@@ -584,8 +592,11 @@ def clear_provider_api_key(config, provider: str) -> dict:
     provider = (provider or "").strip().lower()
     try:
         from .. import secrets_store
+        _clear_keyed_provider_verified(config, provider)
         result = secrets_store.clear_provider_api_key(config, provider)
         status = secrets_store.provider_key_status(config, provider)
+        if provider == "deepgram":
+            status["verified"] = False
         result["status"] = status
         result["message"] = _credential_mutation_message(result, status)
         return result
@@ -606,11 +617,102 @@ def migrate_plaintext_provider_secrets(config) -> dict:
         return {"ok": False, "migrated": []}
 
 
+def _keyed_provider_marker_path(config, provider: str) -> str:
+    safe = "".join(ch for ch in provider if ch.isalnum() or ch in ("_", "-"))
+    return os.path.join(_google_dir(config), f".{safe}_verified")
+
+
+def _keyed_provider_signature(config, provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    key_hash = ""
+    try:
+        from .. import secrets_store
+        key = secrets_store.provider_api_key(config, provider)
+        if key:
+            key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        key_hash = ""
+    if provider == "deepgram":
+        return "|".join(str(x or "") for x in (
+            provider,
+            config.get("providers.deepgram.model", "nova-3"),
+            _deepgram_language(config),
+            bool(config.get("providers.deepgram.interim_results", True)),
+            bool(config.get("providers.deepgram.punctuate", True)),
+            key_hash,
+        ))
+    return "|".join((provider, key_hash))
+
+
+def _keyed_provider_verified(config, provider: str) -> bool:
+    provider = (provider or "").strip().lower()
+    try:
+        with open(_keyed_provider_marker_path(config, provider), "r", encoding="utf-8") as f:
+            return f.read().strip() == _keyed_provider_signature(config, provider)
+    except Exception:
+        return False
+
+
+def _set_keyed_provider_verified(config, provider: str) -> None:
+    provider = (provider or "").strip().lower()
+    try:
+        os.makedirs(_google_dir(config), exist_ok=True)
+        with open(_keyed_provider_marker_path(config, provider), "w", encoding="utf-8") as f:
+            f.write(_keyed_provider_signature(config, provider))
+    except Exception:
+        logger.warning("could not write %s verify marker:\n%s", provider, traceback.format_exc())
+
+
+def _clear_keyed_provider_verified(config, provider: str) -> None:
+    provider = (provider or "").strip().lower()
+    try:
+        os.remove(_keyed_provider_marker_path(config, provider))
+    except FileNotFoundError:
+        pass
+    except Exception:
+        logger.warning("could not clear %s verify marker:\n%s", provider, traceback.format_exc())
+
+
+def _deepgram_language(config) -> str:
+    primary = (config.get("languages.primary", "iw-IL") or "iw-IL")
+    code = primary.split("-")[0].lower()
+    return "he" if code == "iw" else code
+
+
+def test_deepgram_connection(config) -> dict:
+    """Verify the current Deepgram key/model/language tuple without returning the key."""
+    _clear_keyed_provider_verified(config, "deepgram")
+    try:
+        from ..stt import verify
+        ok, message = verify.verify(config, "deepgram")
+        if ok:
+            _set_keyed_provider_verified(config, "deepgram")
+            return {
+                "ok": True,
+                "message": (
+                    "Deepgram key connection verified "
+                    f"(model {config.get('providers.deepgram.model', 'nova-3')}, "
+                    f"language {_deepgram_language(config)} will be used; this is not a transcript proof)."
+                ),
+            }
+        from .. import app_logging
+        return {"ok": False, "message": app_logging.redact_sensitive(message)}
+    except Exception as e:
+        from .. import app_logging
+        msg = app_logging.redact_sensitive(str(e))
+        if len(msg) > 220:
+            msg = msg[:220] + "..."
+        logger.warning("Deepgram test connection failed: %s", msg)
+        return {"ok": False, "message": "Deepgram connection failed: " + msg}
+
+
 def _credential_status_message(status: dict) -> str:
     if not status.get("supported"):
         return "Provider API-key storage is not supported for this provider."
+    if status.get("verified"):
+        return "API key connection verified; real dictation still requires a transcript."
     if status.get("storedInKeyring"):
-        return "API key is stored in the OS keyring."
+        return "API key is stored in the OS keyring; run Test connection before using this provider."
     if status.get("plaintextPresent"):
         return "Legacy plaintext key exists in settings; migration to keyring is pending."
     if not status.get("keyringAvailable"):
@@ -720,16 +822,21 @@ def provider_control_status(config) -> dict:
                 credential_store = {"configured": _provider_credentials_present(config, provider),
                                     "storage": "unknown"}
             has_key = bool(credential_store.get("configured"))
+            verified = bool(credential_store.get("verified")) if provider == "deepgram" else has_key
             model_key = f"providers.{provider}.model"
+            status = "connection_verified" if verified else ("needs_test" if has_key else "needs_key")
+            if provider == "groq" and has_key:
+                status = "key_configured_unverified"
             row.update({
                 "configured": has_key,
-                "ready": has_key,
-                "status": "key_configured_unverified" if has_key else "needs_key",
+                "ready": verified,
+                "status": status,
                 "detail": f"model {config.get(model_key, '') or ''}".strip(),
                 "credentialStore": credential_store,
                 "runtime": {
                     "model": config.get(model_key, "") or "",
                     "keyConfigured": has_key,
+                    "verified": verified,
                     "credentialStorage": credential_store.get("storage", ""),
                     "publicSetupPhase": 5 if provider == "deepgram" else 6,
                 },
@@ -1228,9 +1335,11 @@ def _cloud_provider_usable(config, provider) -> bool:
     (don't wrongly claim usable); safe-True only for key-based providers on error."""
     if provider == "google_v2":
         return _google_verified(config)
+    if provider == "deepgram":
+        return _keyed_provider_verified(config, "deepgram")
     try:
         from ..stt import auto_select
-        if provider in ("deepgram", "groq"):
+        if provider == "groq":
             return bool(auto_select._has_key(config, provider))
     except Exception:
         return True
@@ -1254,8 +1363,8 @@ def recover_unconfigured_cloud(config, emit=None) -> bool:
             effective = auto_select.select_provider(config)
         except Exception:
             effective = provider
-        if effective != "google_v2":
-            return False   # smart_auto picked a keyed/local provider — leave it
+        if effective == "whisper_local":
+            return False   # smart_auto picked local; leave it to the factory
     elif mode not in ("api", "auto_fallback"):
         return False
     if effective not in _CLOUD_PROVIDERS or _cloud_provider_usable(config, effective):
@@ -1479,6 +1588,8 @@ def run(pipe_name: str | None = None) -> int:
             provider = params.get("provider", "google_v2")
             if provider == "google_v2":
                 return test_google_connection(config)
+            if provider == "deepgram":
+                return test_deepgram_connection(config)
             return {"ok": False, "message": f"בדיקת חיבור אינה זמינה עבור '{provider}'."}
         if method == "getCommands":
             return command_reference(config)

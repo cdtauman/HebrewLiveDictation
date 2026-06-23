@@ -22,7 +22,7 @@
                         <TextBlock x:Name="StatusText" Text="מוכן" Style="{StaticResource DisplayTextStyle}" />
                     </StackPanel>
                     <TextBlock x:Name="StatusHint"
-                               Text="לחצו F8 בכל מקום כדי להכתיב — הטקסט ייכתב היכן שאתם עובדים."
+                               Text="לחצו F8 בכל מקום, דברו, ועצרו — הטקסט הסופי ייכתב בחלון היעד."
                                Style="{StaticResource PageSubtitleStyle}" />
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button x:Name="PrimaryButton" Content="התחל הכתבה"

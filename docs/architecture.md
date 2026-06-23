@@ -1,150 +1,174 @@
-# Hebrew Live Dictation Architecture
+# VoiceType Architecture
 
-## Product Goal
+This document describes the current WinUI branch. Older Qt/PySide architecture
+notes are historical evidence only; the controlling completion ledger is
+`docs/final-product-completion-plan.md`.
 
-Hebrew Live Dictation v1 Beta brings a practical Gboard-like Hebrew dictation workflow to Windows. It is intentionally not marketed as full Gboard parity: Android Gboard is a system keyboard/IME with deep composition support, while v1 is a desktop app that commits final text into the active Windows target.
+This document does not approve a public beta or release.
 
-The product promise for v1 is:
+## Product Boundary
 
-- Hebrew-first dictation on Windows.
-- Google Speech-to-Text V2 with Chirp 3.
-- Stable final-only external commits, with live interim typing exposed as an experimental option.
-- Local spoken punctuation, emoji phrases, and session-scoped editing commands.
-- Clear privacy defaults and clean public-beta packaging.
+VoiceType is a Hebrew-first Windows dictation app. The stable product behavior is
+final-only insertion into the active target: the user starts dictation, speaks,
+stops, and the final transcript is committed once to the captured target.
 
-True live composition-string behavior is reserved for v2 through Microsoft TSF/IME.
+Live words are display feedback in VoiceType surfaces such as the HUD and Remote.
+They are not a promise of live composition in the target app. True IME-style live
+composition remains a TSF/IME Labs track and is not part of the stable path.
 
-## Runtime Flow
+## Process Model
+
+The product runs as two cooperating processes:
+
+- `VoiceType.exe`: WinUI 3 shell, rooms, HUD, Remote, tray, and diagnostics.
+- Python engine sidecar: audio, STT providers, config, history, insertion, and
+  provider diagnostics.
+
+The shell communicates with the sidecar through a per-launch named-pipe JSON-RPC
+bridge. The Python engine remains the source of truth for runtime config and
+dictation behavior; the shell reads and writes settings only through bridge RPCs.
 
 ```mermaid
 flowchart LR
-    Mic["AudioSource\nsounddevice RawInputStream"] --> VAD["Optional local VAD\nring buffer + padding"]
-    VAD --> STT["SpeechClient\nGoogle STT V2 Chirp 3"]
-    STT --> Events["STT events\ninterim/final/speech_start/speech_end/error/status"]
-    Events --> Controller["DictationController\nsentence accumulation + endpointing"]
-    Controller --> Commands["CommandParser\nlocal command packs"]
-    Commands --> Committer["TextCommitter\nfinal-only commit"]
-    Committer --> Target["Windows target app\nWord/Notepad/browser/etc."]
+    Shell["WinUI shell\nHome/Dictation/Engine/History/Settings"] --> Bridge["Named-pipe JSON-RPC"]
+    Bridge --> Sidecar["Python sidecar\nconfig + controller"]
+    Mic["Microphone\n16 kHz PCM target"] --> Audio["audio_stream + optional VAD"]
+    Audio --> Factory["stt_factory / registry"]
+    Factory --> Google["Google STT V2"]
+    Factory --> Offline["Whisper local"]
+    Factory --> Cloud["Deepgram/Groq modules\nproductization pending"]
+    Google --> Controller["DictationController"]
+    Offline --> Controller
+    Cloud --> Controller
+    Controller --> Events["status/text/target/fallback/history events"]
+    Events --> Bridge
+    Controller --> Injector["text_injector\nfinal-only default"]
+    Injector --> Target["Captured Windows target"]
 ```
 
-## Main Modules
+## Main Runtime Modules
 
-- `src/hebrew_live_dictation/config.py`: schema v4 settings, migration, normalization, defaults.
-- `src/hebrew_live_dictation/audio_stream.py`: 16 kHz LINEAR16 microphone capture, 100 ms frames by default.
-- `src/hebrew_live_dictation/vad.py`: optional local RMS-based VAD gate with pre-roll and speech padding.
-- `src/hebrew_live_dictation/google_stt_v2_stream.py`: Google Speech-to-Text V2 streaming, Chirp 3, endpointing, fallback, stream rotation.
-- `src/hebrew_live_dictation/dictation_controller.py`: application state, event handling, final-only accumulation.
-- `src/hebrew_live_dictation/language_packs.py`: punctuation, emoji phrases, and supported voice commands.
-- `src/hebrew_live_dictation/text_injector.py`: session-scoped insertion, undo/delete/replace, Word/UIA/Unicode keyboard paths.
-- `src/hebrew_live_dictation/qt_app.py`: the only public UI, including tray and no-focus overlay.
+- `src/hebrew_live_dictation/bridge/sidecar.py`: WinUI bridge adapter, config
+  RPCs, status events, start guard, provider verification status, model and
+  history RPCs.
+- `src/hebrew_live_dictation/dictation_controller.py`: session state, STT event
+  handling, final accumulation, history, and injection coordination.
+- `src/hebrew_live_dictation/stt/registry.py` and
+  `src/hebrew_live_dictation/stt_factory.py`: provider selection and fallback
+  routing.
+- `src/hebrew_live_dictation/google_stt_v2_stream.py`: Google Speech-to-Text V2
+  streaming requests, response parsing, interims/finals, no-text failure
+  surfacing, and Google fallback model/location behavior.
+- `src/hebrew_live_dictation/stt/whisper_local.py`: local Whisper dictation.
+- `src/hebrew_live_dictation/text_injector.py`: target capture and final text
+  insertion via Word COM, UI Automation, Unicode keyboard, or clipboard paths.
+- `src/hebrew_live_dictation/config.py`: schema defaults, migrations, and
+  normalization.
+- `winui/VoiceType.App/AppHost.cs`: shell-side bridge owner and event router.
+- `winui/VoiceType.App/Views/EnginePage.xaml.cs`: provider/config UI.
+- `winui/VoiceType.App/Overlays.cs`: HUD and Remote display surfaces.
 
-## Public Interfaces
+## Configuration Truth
 
-The stable internal contracts are defined in `src/hebrew_live_dictation/interfaces.py`:
+Important current defaults:
 
-- `AudioSource`
-- `SpeechClient`
-- `TextCommitter`
-- `CommandParser`
-- `STTEvent`
-
-Supported STT event types are:
-
-- `interim`
-- `final`
-- `speech_start`
-- `speech_end`
-- `error`
-- `status`
-
-## Configuration Contract
-
-Schema v4 is the v1 Beta contract. Important defaults:
-
-- `google.api_version`: always normalized to `v2`.
-- `google.location`: `eu`.
-- `google.fallback_location`: `us`.
-- `google.model`: `chirp_3`.
-- `google.fallback_model`: `chirp_3`.
-- `languages.primary`: `iw-IL`.
-- `dictation.input_backend`: `v1`.
-- `dictation.live_typing_mode`: `final_only`, with `live` available as an experimental UI option.
+- `stt.provider`: provider selected by the engine room.
+- `stt.mode`: `api`, `local`, `auto_fallback`, or `smart_auto`.
+- `google.api_version`: normalized to `v2`.
+- `google.location`: default `eu`.
+- `google.model`: default `chirp_3`, but the R3-proven Google combo is
+  `latest_long / eu / iw-IL / _`.
+- `google.recognizer_id`: default `_`.
+- `languages.primary`: default `iw-IL`.
+- `dictation.live_typing_mode`: normalized to `final_only` in the WinUI beta
+  path.
 - `audio.sample_rate`: `16000`.
 - `speech.frame_ms`: `100`.
-- `speech.endpointing`: `true`.
-- `speech.auto_stop_on_silence`: `false`; dictation stays active until manual stop by default.
-- `speech.max_stream_seconds`: `285`.
-- `speech.vad_enabled`: `false`.
-- `tsf.handshake_timeout_ms`: `100`.
+- `speech.auto_stop_on_silence`: `false`; manual stop is the default.
 - `tsf.experimental_transport_enabled`: `false`.
 
-Local user settings are created only under `%APPDATA%\VoiceType\settings.json`. The repository ships `settings.example.json` only.
+The Engine room's active-config line is the UI truth for what the runtime will
+attempt. If it does not match engine logs, the logs win and the mismatch is a bug.
 
-## Google STT Rules
+## Google STT V2 Rules
 
-v1 supports one STT path:
+Google readiness has three separate meanings and they must not be collapsed:
 
-- Google Speech-to-Text V2.
-- Chirp 3 model id: `chirp_3`.
-- Primary region: `eu`.
-- Fallback: `us / chirp_3`.
-- Recognition audio: `LINEAR16`, mono, `16 kHz`.
-- Streaming frame size: `100 ms` by default.
-- If the selected microphone rejects 16 kHz, capture falls back to the device default sample rate and is resampled to 16 kHz before streaming.
-- Streaming request chunks: below `25 KB`.
-- Stream rotation: before the 5 minute limit.
-- Google voice activity events are enabled when available. Google speech timeouts are sent only when the user enables automatic stop after silence.
+- Credentials/config present: a key path, ADC, project, model, location, language,
+  and recognizer are configured.
+- Connection verified: the app could authenticate and validate the recognizer
+  path for the current verification signature.
+- Dictation proven: a real streaming transcription returned non-empty text for
+  the exact runtime combo.
 
-Google spoken punctuation/spoken emoji are not exposed in the v1 UI because Chirp model behavior differs by model and locale. The app provides local command packs for spoken punctuation and emoji phrases.
+Test Connection is a connection/recognizer check. It is not proof that the
+selected model/location/language will return transcripts or live words.
 
-## Commands Supported in v1
+The current proven Google path for R3 regression protection is:
 
-Supported command groups:
+- provider: `google_v2`
+- model: `latest_long`
+- location: `eu`
+- language: `iw-IL`
+- recognizer: `_`
 
-- Punctuation and new line/new paragraph.
-- Emoji phrases.
-- Stop dictation.
-- Delete last word.
-- Delete last sentence.
-- Clear all session text.
-- Undo session edit.
-- Send/Enter.
-- Next field/Tab.
-- Replace phrase within current dictation session.
-- Delete phrase within current dictation session.
+That proof protects the known working path, but it is not a blanket guarantee for
+other Google projects, custom recognizers, regions, language aliases, or model
+families. Advanced Google combinations remain diagnostic until a probe or real
+dictation session returns non-empty text.
 
-Unsupported commands are intentionally absent. In particular, arbitrary `select phrase` is not supported in v1 because reliable cross-application selection requires a deeper editor/IME integration.
+Chirp-family models are treated as final-only for product copy. Latest models are
+also not assumed to support live words until real streaming responses contain
+interims.
 
-## Privacy
+## Offline Rules
 
-Default behavior:
+Offline dictation uses Whisper and is private/local after the selected model is
+downloaded. The app must not claim offline dictation is ready unless the model's
+on-disk completeness checks pass. The explicit download flow is the supported
+acquisition path; hidden first-use downloads are not a readiness signal.
 
-- Credentials paths are redacted in logs.
-- Transcript content is not logged unless debug transcript logging is explicitly enabled.
-- Injector diagnostics store lengths and action metadata, not transcript text, in normal logs.
-- Runtime logs live under `%APPDATA%\VoiceType`.
-- The release audit blocks local settings, logs, caches, personal paths, and common secret patterns.
+## Fallback Rules
 
-## Live Typing Boundary
+Cloud engines can route to offline when configured fallback behavior allows it,
+but a no-text cloud session is not success. The user must see an actionable
+status when Google connects but returns no useful transcript.
 
-The `live` mode inserts interim text into the active application while speech is still being recognized. It is useful for fast feedback, but it remains experimental in v1 because plain Windows text injection cannot behave like a real IME composition string in every RTL field.
+Fallback must not create duplicate final insertion, false history entries, or a
+claim that the cloud provider itself passed dictation.
 
-For release confidence, `final_only` remains the recommended and default mode.
+## UI Truth Rules
 
-## v2 Direction
+The WinUI shell should consistently distinguish:
 
-The correct route for true Gboard-style live composition on Windows is Microsoft Text Services Framework. v2 must start as a separate TSF/IME architecture spike rather than a direct replacement for the Python beta.
+- configured vs not configured
+- connection verified vs dictation proven
+- final-only insertion vs live display words
+- stable default behavior vs Labs/experimental behavior
+- unsigned test artifact vs public beta/release
 
-v2 design rules:
+Home copy should describe final insertion honestly. Engine copy should show the
+exact runtime provider/model/location/language/recognizer/auth tuple. Docs and
+UI must not claim public-beta readiness merely because CI can build an unsigned
+artifact.
 
-- Python remains the source of truth for audio, Google STT, settings, privacy, and fallback.
-- TSF is optional and enabled only after a fast compatibility handshake succeeds.
-- Protected apps, AppContainer/UWP targets, IPC failures, focus loss, stale composition, or uncertain edit scope must fail closed to the v1 final-only path.
-- Advanced editing commands may mutate only verified current-session text, never arbitrary historical text in third-party apps.
-- TSF registration is never performed by normal app startup. Native registration is a separate explicit, dry-run-first maintenance action with symmetrical unregister.
-- TSF focus/context access is isolated to a verified active dictation target and generation.
-- v2 Native source includes both `VoiceTypeTsfHelloPeer.exe` and the in-process `VoiceTypeTsfTextService.dll`. The DLL reads the active Python session advertisement from `%APPDATA%\VoiceType\tsf_session.json`, performs the framed IPC hello, and applies composition updates only through TSF edit sessions.
-- Advanced speech settings expose additional Google V2 presets, while the stable default remains `iw-IL / eu / chirp_3`.
-- `final_only` remains the default until the TSF path passes the v2 compatibility matrix.
+## Packaging Boundary
 
-See [v2 TSF Risk Plan](v2_tsf_risk_plan.md) before implementing any TSF, composition, IPC, or advanced editing work.
+The GitHub Actions `VoiceType-winui-beta-unsigned` artifact is a test artifact.
+It proves build/package mechanics for the current branch; it is unsigned and not
+a public release. Authenticode signing, final manual target matrix proof, and
+release approval are separate gates.
+
+## Labs Boundary
+
+The following remain Labs or future work until their own gates pass:
+
+- live target typing into external apps
+- TSF/IME composition
+- advanced Google combinations outside proven configs
+- Deepgram/Groq public setup UX
+- Smart Auto as a default
+- unattended auto-update install
+
+See `docs/final-product-completion-plan.md` for the 20-phase completion program
+and `docs/winui-beta-test-checklist.md` for manual gate evidence.

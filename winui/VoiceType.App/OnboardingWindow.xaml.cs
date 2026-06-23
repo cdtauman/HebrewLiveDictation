@@ -471,11 +471,11 @@ public sealed partial class OnboardingWindow : Window
     /// of truth used by both ApplyEngine and the self-test, so the assertion can't drift from
     /// behavior.
     ///
-    /// BOTH choices run truly offline (whisper_local / local) right now. Recommended does NOT
+    /// BOTH choices run truly offline (whisper_local / local) right now. The cloud option does NOT
     /// switch to Google here: without credentials the cloud provider throws at startup before
-    /// auto_fallback can engage, so claiming offline-via-fallback would be false. Recommended
-    /// only pre-seeds the Google model so that when the user adds a key in the Engine room the
-    /// upgrade is one step. We never persist api/auto_fallback without credentials.</summary>
+    /// auto_fallback can engage, so claiming offline-via-fallback would be false. It only
+    /// pre-seeds the Google model so the Engine room has an explicit starting value. We never
+    /// persist api/auto_fallback without credentials and proof.</summary>
     internal static (string key, object value)[] EngineConfig(string tag) => tag == "recommended"
         ? new (string, object)[] { ("stt.provider", "whisper_local"), ("providers.whisper.enabled", true), ("stt.mode", "local"), ("google.model", "chirp_3") }
         : new (string, object)[] { ("stt.provider", "whisper_local"), ("providers.whisper.enabled", true), ("stt.mode", "local") };

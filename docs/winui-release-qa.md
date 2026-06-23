@@ -1,5 +1,13 @@
 # WinUI Release QA & Packaging Readiness
 
+> **Current status:** this is a QA/readiness reference, not release approval.
+> The active 20-phase completion ledger is
+> [final-product-completion-plan.md](final-product-completion-plan.md), and the
+> current manual artifact checklist is
+> [winui-beta-test-checklist.md](winui-beta-test-checklist.md). Treat historical
+> phase/changelog sections below as evidence, not as a blanket claim that every
+> provider, target app, or public-beta gate is currently passed.
+
 This supersedes the build/release sections of [qa.md](qa.md) for the WinUI shell. The
 Python engine and its own gates (config migration, STT providers, text injection, updater,
 release signing) are unchanged and still covered by [qa.md](qa.md) and the Python suite.
@@ -18,8 +26,9 @@ Both must be green before any release build.
 $env:PYTHONPATH="src"; python -m unittest discover -s tests -t . -p "test_*.py"
 ```
 
-Currently **267 tests** across 31 files. Beyond the engine coverage listed in
-[qa.md](qa.md), the WinUI seam adds:
+Run the suite and record the count from the current branch; do not rely on stale
+counts in historical notes. Beyond the engine coverage listed in [qa.md](qa.md),
+the WinUI seam adds:
 
 - `test_bridge_server.py`, `test_sidecar_lifecycle.py`, `test_sidecar_callbacks.py`,
   `test_sidecar_health.py` — the named-pipe server, the sidecar adapter, the status/target/
@@ -33,8 +42,8 @@ The adapter rule holds: no engine module is modified; the sidecar only wraps the
 VoiceType.exe --selftest    # writes winui/winui_runtime_report.txt ; "result: N/N passed"
 ```
 
-Currently **39 checks**. This is the WinUI-side parity gate; it maps onto the §13 migration
-risk register:
+The exact check count changes as self-test coverage grows. This is the WinUI-side
+parity gate; it maps onto the migration risk register:
 
 | Self-test checks | §13 risk verified |
 | --- | --- |
@@ -490,7 +499,7 @@ onboarding (offline-first); persisted engine + shell logs; tray; CI beta artifac
 **B. Missing from the original vision:** live/interim "words-while-speaking" for the **offline** engine
 (`whisper_local` emits no interims; the HUD shows live words only for a streaming provider, and the Remote
 shows none); an **offline model catalog** (only one hard-coded `small` model — weak quality); cloud as a
-real **Recommended** path (Google Chirp 3 config + test); Advanced/Labs depth (VAD/recognizer) — deferred.
+real configurable path with exact-combo proof; Advanced/Labs depth (VAD/recognizer) — deferred.
 
 **C. Regressed from the legacy Qt app** (`qt_app.py` had these; WinUI dropped them): **Google setup UI**
 (project_id · model · region · credential-mode · service-account JSON file picker); **provider selection +
@@ -500,7 +509,7 @@ editing commands — delete last word/sentence, replace/delete phrase, send/next
 command pack + the Dictation command reference, not regressed in capability.)
 
 **D. Do first (highest "real product" impact):** (1) **Cloud/Google setup** — biggest regression and the
-path to *good* Hebrew quality (Chirp 3), since the offline `small` model is weak; (2) **offline model
+path to better Hebrew quality when the exact Google combo is proven, since the offline `small` model is weak; (2) **offline model
 manager** — let users pick a larger/better model; (3) **live/interim in HUD + Remote** for streaming
 providers.
 
@@ -543,8 +552,8 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
 
 ### Product Completion — running changelog
 
-- **PC1 — Google/Chirp setup (done).** Engine room now has a real **Google Cloud config card** (shown
-  when "Google Chirp 3" is selected): Project ID · Region · Model (chirp_3/chirp_2/…) · Recognizer ID ·
+- **PC1 — Google/STT V2 setup (done).** Engine room now has a real **Google Cloud config card** (shown
+  when Google is selected): Project ID · Region · Model (chirp_3/chirp_2/latest_*) · Recognizer ID ·
   credential mode (service-account JSON / ADC) · **JSON file picker** · **Test connection** (live
   `list_recognizers` check) · honest **configured / not-configured / failed** status. New sidecar RPCs
   `getGoogleStatus` + `testConnection` (reuse the engine's credential/project resolution; no protected
@@ -577,8 +586,8 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   RTL-correct python-docx path, or plain TXT), exporting all stored transcripts (one source of truth).
   (2) **Diagnostics — support files** — Settings → Diagnostics now lists the **engine log** and **shell
   log** paths ("files for support") so users know exactly what to send. (3) **Provider/language clarity** —
-  Engine room states that Offline/Whisper is multilingual while Google Chirp 3 is best for Hebrew, and
-  points to the Dictation room for language choice. *Deferred (honest):* updater/update-check surface ("only
+  Engine room states that Offline/Whisper is multilingual while Google language/model/region support must
+  be proven, and points to the Dictation room for language choice. *Deferred (honest):* updater/update-check surface ("only
   if safe" — skipped, no functional check shipped); advanced VAD/recognizer Labs (avoid overbuild); manual
   local-model import. *Tests:* Python 282/282; WinUI 0 errors; dev self-test 39/39; DOCX writer produces a
   valid file. *Core path unaffected.* **Next: PC5 (record manual-matrix status).**
@@ -589,8 +598,8 @@ ROI); DOCX export; updater UI; advanced VAD/recognizer Labs settings.
   real hardware. Honest status:
   - **Manually confirmed (earlier P5 pre-smoke):** offline → **F8/Remote** → final clipboard insertion into
     Notepad, matching history. This remains the only human-confirmed path.
-  - **Needs a human pass (NOT yet done):** Google **Chirp 3** end-to-end with real GCP credentials (Test
-    connection + actual cloud dictation); downloading a **larger model** (e.g. medium) and its quality;
+  - **Needs a human pass (NOT yet done):** Google end-to-end with real GCP credentials and the exact
+    chosen model/location/language/recognizer (Test connection + actual cloud dictation); downloading a **larger model** (e.g. medium) and its quality;
     **live interim words** visibly appearing in HUD/Remote during a *streaming/cloud* session; **DOCX**
     export opening correctly in Word; and the full **P5 focus-safety matrix** (Word/Gmail/WhatsApp/VS Code).
   - The full P5 matrix stays **DEFERRED**; these new surfaces are added to it as items to run. No results

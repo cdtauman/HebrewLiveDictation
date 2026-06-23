@@ -77,9 +77,9 @@
                             <RadioButton x:Name="OptRecommended" GroupName="Engine" Tag="recommended"
                                          Checked="OnEngineChoice">
                                 <StackPanel Spacing="2">
-                                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="מומלץ — Google Chirp 3 (להגדרה בהמשך)" />
+                                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Google Cloud (להגדרה והוכחה בהמשך)" />
                                     <TextBlock Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap"
-                                               Text="עברית מצוינת, אך צריך מפתח Google. עד שתגדירו אותו בחדר ‘מנוע’, ההכתבה תעבוד לא־מקוון (Whisper) — לא נטען ש‑Google פעיל לפני שהוגדר." />
+                                               Text="דורש מפתח Google, בדיקת חיבור ותמלול אמיתי לשילוב המדויק. עד שזה מוגדר ומוכח בחדר ‘מנוע’, ההכתבה תעבוד לא־מקוון (Whisper)." />
                                 </StackPanel>
                             </RadioButton>
                         </StackPanel>

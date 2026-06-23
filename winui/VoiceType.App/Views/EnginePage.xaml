@@ -12,7 +12,7 @@
 
             <StackPanel Spacing="4">
                 <TextBlock Text="מנוע" Style="{StaticResource PageTitleStyle}" />
-                <TextBlock Text="איכות הזיהוי והחיבור. בוחרים פעם אחת — ושוכחים מזה."
+                <TextBlock Text="איכות הזיהוי, חיבורי ענן, והאמת המדויקת של מה שירוץ."
                            Style="{StaticResource PageSubtitleStyle}" />
             </StackPanel>
 
@@ -31,7 +31,7 @@
                         <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="Google (ענן)" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="איכות גבוהה לעברית, אך בענן נדרשת בדיקת תמלול אמיתית מעבר לבדיקת חיבור. מודלי Chirp מדויקים ולעיתים סופיים בלבד; Latest Long ניסיוני עד שיוכח עם WAV/מיקרופון."
+                                <TextBlock Text="ענן דורש הוכחה לפי השילוב המדויק: מודל, אזור, שפה ו־Recognizer. בדיקת חיבור אינה הוכחת הכתבה; Latest Long הוא הנתיב שנבדק ל‑R3 כשמוגדר בדיוק."
                                            TextWrapping="Wrap" Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
@@ -44,7 +44,7 @@
                         </RadioButton>
                     </StackPanel>
                     <TextBlock x:Name="CurrentLabel" Style="{StaticResource CaptionMutedStyle}" />
-                    <TextBlock Text="שפות: לא־מקוון (Whisper) תומך בשפות רבות; Google Chirp 3 מצטיין בעברית. בוחרים שפה בחדר 'הכתבה'."
+                    <TextBlock Text="שפות: לא־מקוון (Whisper) תומך בשפות רבות. ב‑Google יש להוכיח את קוד השפה מול המודל והאזור. בוחרים שפה בחדר 'הכתבה'."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <TextBlock Text="השינוי ייכנס לתוקף בהכתבה הבאה." Style="{StaticResource CaptionMutedStyle}" />
                 </StackPanel>

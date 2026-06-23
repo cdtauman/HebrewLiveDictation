@@ -108,7 +108,7 @@
                 <StackPanel Spacing="4">
                     <TextBlock Text="אודות" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock x:Name="AboutText" Text="VoiceType" Style="{StaticResource BodyMutedStyle}" />
-                    <TextBlock Text="הכתבה קולית בעברית — לחצו, דברו, והמילים מופיעות במקום שבו אתם עובדים."
+                    <TextBlock Text="הכתבה קולית בעברית — לחצו, דברו, ועצרו; הטקסט הסופי ייכתב במקום שבו אתם עובדים."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>

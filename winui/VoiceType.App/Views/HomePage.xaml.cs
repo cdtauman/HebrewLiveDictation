@@ -97,7 +97,7 @@ public sealed partial class HomePage : Page
             default:
                 StatusDot.Fill = Palette.Ready(d);
                 StatusText.Text = "מוכן";
-                StatusHint.Text = "לחצו F8 בכל מקום כדי להכתיב — הטקסט ייכתב היכן שאתם עובדים.";
+                StatusHint.Text = "לחצו F8 בכל מקום, דברו, ועצרו — הטקסט הסופי ייכתב בחלון היעד.";
                 PrimaryButton.Content = "התחל הכתבה";
                 break;
         }

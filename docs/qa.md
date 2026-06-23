@@ -57,7 +57,9 @@ Verify:
 - First-run onboarding.
 - Missing credentials error.
 - ADC missing error.
-- Model label shows Chirp 3 and region only.
+- Engine room shows the exact runtime provider/model/location/language/recognizer/auth tuple.
+- Google status distinguishes connection verified from real dictation proven.
+- Live words are display-only unless a Labs target-typing gate is explicitly enabled.
 
 ## Release Gate
 
@@ -90,7 +92,8 @@ Expected:
 - No TSF/IME composition layer.
 - External live interim typing is experimental; final-only remains the recommended default.
 - Session-scoped editing only; arbitrary editing outside the current dictation session depends on target app behavior.
-- Recognition quality depends on Google Cloud, microphone quality, network latency, and locale/model support.
+- Recognition quality depends on the selected provider, microphone quality, network latency, project entitlements,
+  and the exact language/model/location/recognizer combination.
 
 ## v2 TSF Spike Gate
 

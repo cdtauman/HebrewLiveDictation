@@ -8,6 +8,11 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - **Supported dictation paths** (the only ones that gate): focus the target app → start/stop with **F8**
   or the **floating Remote** → final transcript inserted once. Home/Tray start are secondary (record only).
 - **Artifact under test:** `VoiceType-winui-beta-unsigned` from GitHub Actions run ____________ (sha ________).
+- **Release status:** this artifact is an unsigned manual-test artifact. It is **not** release approval,
+  public-beta approval, or proof that Google R3 passed on this machine.
+- **Google status terms:** **connection verified** means credentials/project/recognizer checked. **Dictation
+  proven** means the exact runtime model/location/language/recognizer produced non-empty text in a real
+  streaming session. Do not mark one as the other.
 
 ---
 
@@ -25,11 +30,13 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] History room shows each dictation, text matches what landed.
 - [ ] Nothing was ever typed into VoiceType itself / File Explorer / the wrong window.
 
-## 2. Google / Chirp — **G only after probe PASS; otherwise experimental**
-- [ ] Engine room → choose **Google Chirp 3** → enter Project ID → pick **Service Account (JSON)** → Browse the key.
+## 2. Google / STT V2 — **G only after probe PASS; otherwise experimental**
+- [ ] Engine room → choose **Google (ענן)** → enter Project ID → pick **Service Account (JSON)** → Browse the key.
 - [ ] **Test connection passes** → status says **connection verified**. Do **not** mark dictation verified from this alone.
-- [ ] **Probe PASS:** run `tools/google_stt_probe.py` with a known Hebrew WAV. At least one supported
+- [ ] **Probe PASS:** run `tools/google_stt_probe.py` with a known Hebrew WAV. At least one exact
       model/location/language/recognizer combo returns a non-empty transcript.
+- [ ] **Known protected combo:** if testing the current R3-proven path, use
+      `latest_long / eu / iw-IL / _`. Any different combo is a new proof target, not inherited proof.
 - [ ] **Runtime truth:** Engine active-config line and engine log show the same model/location/language/recognizer
       that passed the probe.
 - [ ] **Real Google dictation:** focus Notepad → F8 → speak Hebrew → final text lands once (cloud quality).

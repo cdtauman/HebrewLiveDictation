@@ -260,21 +260,21 @@ public sealed partial class EnginePage : Page
     // and live/interim behavior must be proven by a real transcription probe.
     internal static readonly (string tag, string label)[] GoogleModels =
     {
-        ("chirp_3", "Chirp 3 — דיוק מרבי · ללא מילים חיות"),
-        ("chirp_2", "Chirp 2 — דיוק גבוה · ללא מילים חיות"),
-        ("chirp", "Chirp — ללא מילים חיות"),
-        ("latest_long", "Latest Long — ניסיוני · דורש בדיקת תמלול"),
+        ("chirp_3", "Chirp 3 — סופי בלבד · דורש הוכחת תמלול"),
+        ("chirp_2", "Chirp 2 — סופי בלבד · דורש הוכחת תמלול"),
+        ("chirp", "Chirp — סופי בלבד · דורש הוכחת תמלול"),
+        ("latest_long", "Latest Long — נתיב R3 מוכח כשמוגדר בדיוק"),
         ("latest_short", "Latest Short — אמירות קצרות בלבד"),
     };
 
     /// <summary>Longer, honest per-model guidance shown under the picker (R3 item 2).</summary>
     private static string GoogleModelMeta(string tag) => tag switch
     {
-        "chirp_3" => "Chirp 3: הדיוק הטוב ביותר לעברית, אך מחזיר טקסט סופי בלבד — בלי מילים חיות תוך כדי דיבור. ייתכן שלא יחזיר טקסט בכל שילוב אזור/שפה.",
-        "chirp_2" => "Chirp 2: דיוק גבוה, טקסט סופי בלבד (ללא מילים חיות).",
-        "chirp" => "Chirp: משפחת Chirp הוותיקה, טקסט סופי בלבד (ללא מילים חיות).",
-        "latest_long" => "Latest Long: ניסיוני לעברית באפליקציה זו. בחרו בו רק אחרי בדיקת תמלול אמיתית עם WAV/מיקרופון; חיבור תקין לבדו אינו מוכיח מילים חיות.",
-        "latest_short" => "Latest Short: לאמירות קצרות; עשוי להחזיר טקסט רק בסוף — לא מתאים להכתבה ארוכה.",
+        "chirp_3" => "Chirp 3: מתייחס כהחזרה סופית בלבד — בלי מילים חיות. אם הוא מחזיר ריק בשילוב אזור/שפה, עברו לנתיב שנבדק במקום להניח שהחיבור מוכיח תמלול.",
+        "chirp_2" => "Chirp 2: מתייחס כסופי בלבד (ללא מילים חיות) ודורש בדיקת תמלול אמיתית לשילוב שבחרתם.",
+        "chirp" => "Chirp: משפחת Chirp הוותיקה; סופי בלבד ודורש בדיקת תמלול אמיתית לשילוב שבחרתם.",
+        "latest_long" => "Latest Long: נתיב R3 שנבדק בהצלחה הוא latest_long / eu / iw-IL / _. גם כאן נדרש חיבור מאומת בפרויקט שלכם והכתבה אמיתית לפני שמסמנים PASS.",
+        "latest_short" => "Latest Short: לאמירות קצרות; לא להניח מילים חיות או התאמה להכתבה ארוכה בלי בדיקת תמלול.",
         _ => "",
     };
 
@@ -337,12 +337,12 @@ public sealed partial class EnginePage : Page
             }
             catch { }
         }
-        bool requestsLiveWords = model.StartsWith("latest");
+        bool requestsLiveWords = model == "latest_long";
         // Honest: this is connection verification only. Real dictation/live words require a transcript probe.
         DispatcherQueue.TryEnqueue(() =>
         {
             GoogleStatusText.Text = verified
-                ? $"חיבור מאומת ✓  (פרויקט {projectId}). תמלול Google עדיין דורש בדיקת הכתבה אמיתית."
+                ? $"חיבור מאומת ✓  (פרויקט {projectId}). זה אינו PASS של הכתבה עד שתמלול אמיתי מחזיר טקסט."
                 : hasCreds
                     ? "פרטים קיימים אך החיבור לא נבדק. עד בדיקת חיבור ההכתבה תשתמש בלא־מקוון."
                     : "לא מוגדר. הזינו Project ID ובחרו קובץ הרשאות (JSON), או השתמשו בלא־מקוון.";
@@ -351,7 +351,7 @@ public sealed partial class EnginePage : Page
                 ? ""
                 : $"פעיל: Google · מודל {model} · אזור {location} · שפה {language} · Recognizer {recognizer} · Auth {credentialMode} · "
                   + (verified ? "חיבור מאומת ✓" : "חיבור לא נבדק") + " · "
-                  + (requestsLiveWords ? "מבקש מילים חיות; לא מאומת עד תמלול אמיתי" : "כנראה סופי בלבד; לא מאומת עד תמלול אמיתי");
+                  + (requestsLiveWords ? "מבקש מילים חיות; PASS רק אחרי interims/final בפועל" : "סופי בלבד או לא ידוע; PASS רק אחרי תמלול בפועל");
         });
     }
 
@@ -458,7 +458,7 @@ public sealed partial class EnginePage : Page
             // PC1 supports Google only; the other cloud providers (Deepgram/Groq) are not configurable
             // yet, so honestly route to Offline rather than leave a dead path.
             await ShowMessageAsync("ספק זה אינו נתמך עדיין",
-                "Deepgram/Groq עדיין אינם ניתנים להגדרה בגרסה זו. עוברים למנוע הלא־מקוון. (Google Cloud כן זמין — בחרו 'Google Chirp 3'.)");
+                "Deepgram/Groq עדיין אינם ניתנים להגדרה בגרסה זו. עוברים למנוע הלא־מקוון. Google Cloud זמין דרך בחירת Google (ענן), אך דורש חיבור ותמלול מוכחים.");
             _loading = true;
             OptOffline.IsChecked = true;
             GoogleCard.Visibility = Visibility.Collapsed;
@@ -471,10 +471,10 @@ public sealed partial class EnginePage : Page
 
         if (tag == "recommended")
         {
-            // Google Chirp 3 — a real configurable cloud path. provider=google_v2; the config card below
-            // captures project/region/model/credentials and offers a live Test connection. If credentials
-            // are missing it is reported as not-configured here, and the engine routes to offline at the
-            // next start (recover_unconfigured_cloud) so the user is never stuck on a dead path.
+            // Google STT V2 — a configurable cloud path. The card captures the exact runtime
+            // tuple and offers Test connection, but dictation proof still requires a real
+            // transcript from that tuple. If credentials are missing, the engine routes to
+            // offline at the next start so the user is never stuck on a dead path.
             GoogleCard.Visibility = Visibility.Visible;
             ChooseCard.Visibility = Visibility.Collapsed;
             BackupCard.Visibility = Visibility.Visible;
@@ -494,7 +494,7 @@ public sealed partial class EnginePage : Page
         await Finish(await ApplyOffline());
     }
 
-    /// <summary>Apply the offline (local Whisper) engine — the only engine usable in this beta.</summary>
+    /// <summary>Apply the offline (local Whisper) engine — the safe local baseline.</summary>
     private async Task<bool> ApplyOffline()
     {
         bool ok = await SetConfig("stt.provider", "whisper_local");

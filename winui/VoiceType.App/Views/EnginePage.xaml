@@ -28,6 +28,13 @@
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
+                        <RadioButton x:Name="OptSmart" GroupName="engine" Tag="smart_auto" Checked="OnEngineChoice">
+                            <StackPanel Spacing="2" Margin="6,0,0,0">
+                                <TextBlock Text="Smart Auto" Style="{StaticResource SectionHeaderStyle}" />
+                                <TextBlock Text="Chooses the best configured provider and keeps Offline as backup when the local model is installed. Experimental: exact routing is shown below."
+                                           TextWrapping="Wrap" Style="{StaticResource CaptionMutedStyle}" />
+                            </StackPanel>
+                        </RadioButton>
                         <RadioButton x:Name="OptRecommended" GroupName="engine" Tag="recommended" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="Google (ענן)" Style="{StaticResource SectionHeaderStyle}" />
@@ -38,7 +45,7 @@
                         <RadioButton x:Name="OptChoose" GroupName="engine" Tag="choose" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="ספק ענן אחר" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="Deepgram זמין לבדיקה עם מפתח API מאובטח. Groq יושלם בשלב הבא."
+                                <TextBlock Text="Deepgram is live streaming; Groq is final-only. Both require a saved API key and Test connection."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
@@ -49,6 +56,17 @@
                     <TextBlock Text="שפות: לא־מקוון (Whisper) תומך בשפות רבות. ב‑Google יש להוכיח את קוד השפה מול המודל והאזור. בוחרים שפה בחדר 'הכתבה'."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <TextBlock Text="השינוי ייכנס לתוקף בהכתבה הבאה." Style="{StaticResource CaptionMutedStyle}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Smart Auto routing — shown only when Smart Auto is selected -->
+            <Border x:Name="SmartAutoCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Smart Auto routing" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock x:Name="SmartAutoStatusText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="Smart Auto is not the public-beta default. Verify cloud providers with Test connection, and install the Offline model before relying on backup."
+                               Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 

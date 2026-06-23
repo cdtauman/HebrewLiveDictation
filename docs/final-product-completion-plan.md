@@ -175,7 +175,7 @@ Already present in the current WinUI branch:
 - Offline Whisper provider.
 - Offline model catalog, download, delete, and readiness checks.
 - STT registry with Google, Whisper, Deepgram, Groq, and fallback modules.
-- AutoFallback and Smart Auto backend behavior.
+- AutoFallback and Smart Auto backend behavior plus Engine-room routing status.
 - WinUI Home, Dictation, Engine, Controls, History, and Settings rooms.
 - HUD and Remote overlay surfaces.
 - final-only target insertion default.

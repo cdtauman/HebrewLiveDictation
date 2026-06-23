@@ -546,6 +546,82 @@ def _provider_credentials_present(config, provider: str) -> bool:
     return True
 
 
+def _routing_status(plan: dict, rows: list[dict], model_state: dict) -> dict:
+    row_by_id = {row.get("id", ""): row for row in rows}
+    mode = plan.get("mode", "") or ""
+    effective = plan.get("effectiveProvider", "") or ""
+    configured = plan.get("configuredProvider", "") or ""
+    stream = plan.get("stream", "") or ""
+    smart = plan.get("smartAutoSelected", "") or ""
+    fallback_enabled = bool(plan.get("fallbackEnabled"))
+    fallback_provider = plan.get("fallbackProvider", "") or ""
+
+    primary = row_by_id.get(effective, {})
+    primary_ready = bool(primary.get("ready"))
+    primary_status = primary.get("status", "")
+    primary_label = primary.get("label", effective)
+
+    offline = row_by_id.get("whisper_local", {})
+    offline_ready = bool(offline.get("ready"))
+    offline_model = ""
+    try:
+        offline_model = str((offline.get("runtime") or {}).get("model") or model_state.get("name") or "")
+    except Exception:
+        offline_model = str(model_state.get("name") or "")
+
+    backup_ready = bool(fallback_enabled and fallback_provider == "whisper_local" and offline_ready)
+    effective_is_cloud = effective in _CLOUD_PROVIDERS
+    cloud_usable = (not effective_is_cloud) or bool(primary_ready)
+
+    if effective == "whisper_local":
+        if offline_ready:
+            start_gate = "ready"
+            message = f"Offline Whisper is ready with model {offline_model or 'selected'}."
+        else:
+            start_gate = "needs_model"
+            message = "Offline is selected, but the local model is not installed yet."
+    elif effective_is_cloud and not cloud_usable:
+        start_gate = "will_route_offline"
+        message = f"{primary_label} is selected by routing but is not connection-verified; start guard will route to Offline."
+    elif fallback_enabled and not backup_ready:
+        start_gate = "ready_without_backup"
+        message = f"{primary_label} can start, but offline backup needs an installed local model."
+    else:
+        start_gate = "ready"
+        message = f"{primary_label} is the active recognition path."
+
+    backup_message = (
+        "Offline backup ready."
+        if backup_ready else
+        ("Offline backup enabled but model is not installed." if fallback_enabled else "Offline backup is off.")
+    )
+    summary = (
+        f"Smart Auto will try {primary_label}."
+        if mode == "smart_auto" and smart else
+        f"Active provider is {primary_label}."
+    )
+    if stream == "auto_fallback":
+        summary += " Offline backup wrapper is active."
+
+    return {
+        "mode": mode,
+        "configuredProvider": configured,
+        "effectiveProvider": effective,
+        "effectiveLabel": primary_label,
+        "effectiveStatus": primary_status,
+        "smartAutoSelected": smart,
+        "stream": stream,
+        "fallbackEnabled": fallback_enabled,
+        "fallbackProvider": fallback_provider,
+        "backupReady": backup_ready,
+        "backupModel": offline_model,
+        "startGate": start_gate,
+        "summary": summary,
+        "message": message,
+        "backupMessage": backup_message,
+    }
+
+
 def provider_credential_status(config, provider: str) -> dict:
     """Credential status for keyed cloud providers; never returns the key itself."""
     provider = (provider or "").strip().lower()
@@ -897,6 +973,8 @@ def provider_control_status(config) -> dict:
 
         rows.append(row)
 
+    routing = _routing_status(plan, rows, model_state)
+
     return {
         "mode": plan.get("mode", ""),
         "configuredProvider": plan.get("configuredProvider", ""),
@@ -905,6 +983,7 @@ def provider_control_status(config) -> dict:
         "fallbackEnabled": bool(plan.get("fallbackEnabled")),
         "fallbackProvider": plan.get("fallbackProvider", ""),
         "smartAutoSelected": plan.get("smartAutoSelected", ""),
+        "routing": routing,
         "providers": rows,
     }
 

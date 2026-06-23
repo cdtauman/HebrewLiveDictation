@@ -137,6 +137,12 @@ status when Google connects but returns no useful transcript.
 Fallback must not create duplicate final insertion, false history entries, or a
 claim that the cloud provider itself passed dictation.
 
+The provider control plane exposes a routing summary for the Engine room:
+effective provider, Smart Auto pick, fallback wrapper state, backup readiness,
+and the start gate (`ready`, `needs_model`, `ready_without_backup`, or
+`will_route_offline`). The UI should show that summary instead of asking testers
+to infer behavior from raw `stt.mode` and `stt.provider` keys.
+
 ## UI Truth Rules
 
 The WinUI shell should consistently distinguish:

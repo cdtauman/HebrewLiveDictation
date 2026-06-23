@@ -221,6 +221,13 @@ public sealed partial class EnginePage : Page
     internal bool ModelDownloadVisibleForTest => ModelDownloadBtn.Visibility == Visibility.Visible;
     internal bool ModelDeleteVisibleForTest => ModelDeleteBtn.Visibility == Visibility.Visible;
     internal bool ModelRingActiveForTest => ModelRing.IsActive;
+    internal void RenderSmartAutoForTest(string text)
+    {
+        SmartAutoCard.Visibility = Visibility.Visible;
+        SmartAutoStatusText.Text = text;
+    }
+    internal bool SmartAutoCardVisibleForTest => SmartAutoCard.Visibility == Visibility.Visible;
+    internal string SmartAutoStatusForTest => SmartAutoStatusText.Text;
 
     private async Task LoadAsync()
     {
@@ -230,9 +237,11 @@ public sealed partial class EnginePage : Page
         DispatcherQueue.TryEnqueue(() =>
         {
             _loading = true;
-            BackupToggle.IsOn = mode == "auto_fallback";
+            BackupToggle.IsOn = mode == "auto_fallback" || mode == "smart_auto";
 
-            if (provider == "whisper_local" || mode == "local")
+            if (mode == "smart_auto")
+                OptSmart.IsChecked = true;
+            else if (provider == "whisper_local" || mode == "local")
                 OptOffline.IsChecked = true;
             else if (provider == "google_v2")
                 OptRecommended.IsChecked = true;
@@ -243,7 +252,10 @@ public sealed partial class EnginePage : Page
             }
 
             bool offline = OptOffline.IsChecked == true;
+            bool smart = OptSmart.IsChecked == true;
             BackupCard.Visibility = offline ? Visibility.Collapsed : Visibility.Visible;
+            if (smart) BackupCard.Visibility = Visibility.Collapsed;
+            SmartAutoCard.Visibility = smart ? Visibility.Visible : Visibility.Collapsed;
             ChooseCard.Visibility = OptChoose.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             GoogleCard.Visibility = OptRecommended.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
             _loading = false;
@@ -251,8 +263,11 @@ public sealed partial class EnginePage : Page
 
         await RefreshLabelAsync();
         await LoadProviderStatusAsync();
-        if (provider == "google_v2") await LoadGoogleConfigAsync();
-        else await LoadSelectedProviderConfigAsync();
+        if (mode != "smart_auto")
+        {
+            if (provider == "google_v2") await LoadGoogleConfigAsync();
+            else await LoadSelectedProviderConfigAsync();
+        }
     }
 
     // ---- Google Cloud setup (PC1) ----
@@ -507,12 +522,27 @@ public sealed partial class EnginePage : Page
         {
             _loading = true;
             GoogleCard.Visibility = Visibility.Collapsed;
+            SmartAutoCard.Visibility = Visibility.Collapsed;
             ChooseCard.Visibility = Visibility.Visible;
             BackupCard.Visibility = Visibility.Visible;
             if (ProviderCombo.SelectedItem == null) ProviderCombo.SelectedIndex = 0;
             _loading = false;
             await LoadSelectedProviderConfigAsync();
             await Finish(await ApplySelectedCloudProviderIfReadyAsync());
+            return;
+        }
+
+        if (tag == "smart_auto")
+        {
+            GoogleCard.Visibility = Visibility.Collapsed;
+            ChooseCard.Visibility = Visibility.Collapsed;
+            SmartAutoCard.Visibility = Visibility.Visible;
+            BackupCard.Visibility = Visibility.Collapsed;
+            _loading = true;
+            BackupToggle.IsOn = true;
+            _loading = false;
+            if (!await Finish(await ApplySmartAuto())) return;
+            await LoadProviderStatusAsync();
             return;
         }
 
@@ -524,6 +554,7 @@ public sealed partial class EnginePage : Page
             // offline at the next start so the user is never stuck on a dead path.
             GoogleCard.Visibility = Visibility.Visible;
             ChooseCard.Visibility = Visibility.Collapsed;
+            SmartAutoCard.Visibility = Visibility.Collapsed;
             BackupCard.Visibility = Visibility.Visible;
             bool ok = await SetConfig("stt.provider", "google_v2");
             if (string.IsNullOrEmpty(await GetConfigString("google.model", "")))
@@ -537,6 +568,7 @@ public sealed partial class EnginePage : Page
         // offline
         GoogleCard.Visibility = Visibility.Collapsed;
         ChooseCard.Visibility = Visibility.Collapsed;
+        SmartAutoCard.Visibility = Visibility.Collapsed;
         BackupCard.Visibility = Visibility.Collapsed;
         await Finish(await ApplyOffline());
     }
@@ -550,9 +582,19 @@ public sealed partial class EnginePage : Page
         return ok;
     }
 
+    /// <summary>Smart Auto keeps provider choice in the engine and enables local Whisper as
+    /// the fallback target. The model still has to be installed before backup/offline can work.</summary>
+    private async Task<bool> ApplySmartAuto()
+    {
+        bool ok = await SetConfig("stt.provider", "google_v2");
+        ok &= await SetConfig("providers.whisper.enabled", true);
+        ok &= await SetConfig("stt.mode", "smart_auto");
+        return ok;
+    }
+
     private async void OnBackupToggled(object sender, RoutedEventArgs e)
     {
-        if (_loading || OptOffline.IsChecked == true) return;   // offline has no cloud to back up
+        if (_loading || OptOffline.IsChecked == true || OptSmart.IsChecked == true) return;   // offline/smart manage backup internally
         if (OptChoose.IsChecked == true)
         {
             await Finish(await ApplySelectedCloudProviderIfReadyAsync());
@@ -870,6 +912,24 @@ public sealed partial class EnginePage : Page
             string effective = Str(r, "effectiveProvider");
             string stream = Str(r, "stream");
             bool fallback = r.TryGetProperty("fallbackEnabled", out var fb) && fb.ValueKind == JsonValueKind.True;
+            string routingText = "";
+            string smartText = "";
+            if (r.TryGetProperty("routing", out var routing) && routing.ValueKind == JsonValueKind.Object)
+            {
+                string summary = Str(routing, "summary");
+                string message = Str(routing, "message");
+                string backupMessage = Str(routing, "backupMessage");
+                string startGate = Str(routing, "startGate");
+                string smartPick = Str(routing, "smartAutoSelected");
+                bool backupReady = routing.TryGetProperty("backupReady", out var br) && br.ValueKind == JsonValueKind.True;
+                routingText = $"{summary} {message} {backupMessage} start={startGate}";
+                if (mode == "smart_auto")
+                {
+                    smartText = $"{summary} {message} {backupMessage}"
+                                + (!string.IsNullOrEmpty(smartPick) ? $" Selected={smartPick}." : "")
+                                + $" Backup={(backupReady ? "ready" : "not ready")}.";
+                }
+            }
             var rows = new List<string>();
             if (r.TryGetProperty("providers", out var providers) && providers.ValueKind == JsonValueKind.Array)
             {
@@ -883,14 +943,26 @@ public sealed partial class EnginePage : Page
                     rows.Add($"{id}:{(ready ? "ready" : status)}{(eff ? "*" : "")}");
                 }
             }
-            string text = $"מצב ספקים: mode {mode} · נבחר {configured} · בפועל {effective} · stream {stream}"
-                          + (fallback ? " · fallback→whisper" : "");
+            string text = !string.IsNullOrWhiteSpace(routingText)
+                ? $"Routing: {routingText}"
+                : $"מצב ספקים: mode {mode} · נבחר {configured} · בפועל {effective} · stream {stream}"
+                  + (fallback ? " · fallback→whisper" : "");
             if (rows.Count > 0) text += " · " + string.Join(" | ", rows);
-            DispatcherQueue.TryEnqueue(() => ProviderStatusText.Text = text);
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ProviderStatusText.Text = text;
+                SmartAutoStatusText.Text = string.IsNullOrWhiteSpace(smartText)
+                    ? "Smart Auto chooses among configured cloud providers and Offline, then shows the exact route here."
+                    : smartText;
+            });
         }
         catch
         {
-            DispatcherQueue.TryEnqueue(() => ProviderStatusText.Text = "");
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ProviderStatusText.Text = "";
+                SmartAutoStatusText.Text = "";
+            });
         }
     }
 

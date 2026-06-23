@@ -55,6 +55,12 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] HUD/Remote live words are **SKIP** for Groq because Groq is final-only in this app.
 - [ ] Change Groq model/language/key → verification returns to needs-test and dictation routes to Offline until re-tested.
 
+## 2c. Smart Auto / offline backup — **I until full provider proof**
+- [ ] Engine room → choose **Smart Auto**. Routing text shows the effective provider, start gate, and backup readiness.
+- [ ] With an installed Offline model, Smart Auto reports backup ready when it selects a cloud provider.
+- [ ] Without an installed Offline model, AutoFallback/Smart Auto says backup is not ready; it must not imply offline rescue is available.
+- [ ] If Smart Auto selects an unverified cloud provider, status says it will route to Offline rather than pretending cloud is ready.
+
 ## 3. Full P5 app matrix — **G**  (each via F8 **and** Remote)
 - [ ] **Word** (COM): Hebrew lands correctly, RTL, once.
 - [ ] **Chrome / Gmail** (UIA): lands in the compose box, correct.

@@ -123,8 +123,12 @@ internal static class RuntimeSelfTest
                                          && p.TryGetProperty("capabilities", out var pc)
                                          && pc.TryGetProperty("streaming", out _))
                                      && providerStatus.TryGetProperty("effectiveProvider", out _);
-                Check("bridge.getProviderStatus", providerShape,
-                      providerShape ? "provider control plane returned registry rows + routing"
+                bool routingShape = providerStatus.TryGetProperty("routing", out var routing)
+                                    && routing.ValueKind == JsonValueKind.Object
+                                    && routing.TryGetProperty("startGate", out _)
+                                    && routing.TryGetProperty("backupReady", out _);
+                Check("bridge.getProviderStatus", providerShape && routingShape,
+                      providerShape && routingShape ? "provider control plane returned registry rows + routing"
                                     : providerStatus.GetRawText());
 
                 var credentialStatus = await client.RpcAsync("getProviderCredentialStatus", new { provider = "deepgram" });
@@ -426,6 +430,10 @@ internal static class RuntimeSelfTest
                 bool dlOk = ep.ModelRingActiveForTest && !ep.ModelDownloadVisibleForTest;
                 Check("engine.model_management", absentOk && readyOk && dlOk,
                       "download when absent, delete when present, ring while downloading");
+                ep.RenderSmartAutoForTest("Smart Auto route ready");
+                Check("engine.smart_auto.surface",
+                      ep.SmartAutoCardVisibleForTest && ep.SmartAutoStatusForTest.Contains("route", StringComparison.OrdinalIgnoreCase),
+                      "Smart Auto routing card renders status text");
             }
             catch (Exception ex) { Check("engine.model_management", false, XamlDetail(ex)); }
 

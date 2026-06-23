@@ -537,11 +537,53 @@ class ProviderControlPlaneTests(unittest.TestCase):
         self.assertEqual(status["effectiveProvider"], "deepgram")
         self.assertEqual(status["stream"], "auto_fallback")
         self.assertTrue(status["fallbackEnabled"])
+        self.assertEqual(status["routing"]["startGate"], "will_route_offline")
+        self.assertTrue(status["routing"]["backupReady"])
+        self.assertIn("not connection-verified", status["routing"]["message"])
         rows = {row["id"]: row for row in status["providers"]}
         self.assertTrue(rows["deepgram"]["effective"])
         self.assertEqual(rows["deepgram"]["status"], "needs_test")
         self.assertTrue(rows["whisper_local"]["fallbackTarget"])
         self.assertTrue(rows["whisper_local"]["ready"])
+
+    def test_smart_auto_routing_ready_when_cloud_verified_and_backup_ready(self):
+        tmp = tempfile.mkdtemp()
+        cfg = _FakeConfig({
+            "stt.provider": "google_v2",
+            "stt.mode": "smart_auto",
+            "providers.deepgram.api_key": "dg",
+            "providers.deepgram.model": "nova-3",
+            "providers.deepgram.interim_results": True,
+            "providers.deepgram.punctuate": True,
+            "providers.whisper.enabled": True,
+            "providers.whisper.model": "small",
+            "languages.primary": "iw-IL",
+        }, config_dir=tmp)
+        sidecar._set_keyed_provider_verified(cfg, "deepgram")
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": True, "path": "/models"}):
+            status = provider_control_status(cfg)
+        self.assertEqual(status["routing"]["startGate"], "ready")
+        self.assertTrue(status["routing"]["backupReady"])
+        self.assertEqual(status["routing"]["smartAutoSelected"], "deepgram")
+
+    def test_auto_fallback_routing_reports_missing_backup_model(self):
+        tmp = tempfile.mkdtemp()
+        cfg = _FakeConfig({
+            "stt.provider": "google_v2",
+            "stt.mode": "auto_fallback",
+            "providers.whisper.enabled": True,
+            "providers.whisper.model": "small",
+            "google.project_id": "proj",
+            "google.location": "eu",
+            "google.recognizer_id": "_",
+            "google.credential_mode": "adc",
+        }, config_dir=tmp)
+        sidecar._set_google_verified(cfg)
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+            status = provider_control_status(cfg)
+        self.assertEqual(status["routing"]["startGate"], "ready_without_backup")
+        self.assertFalse(status["routing"]["backupReady"])
+        self.assertIn("not installed", status["routing"]["backupMessage"])
 
     def test_keyed_provider_status_includes_storage_without_secret(self):
         tmp = tempfile.mkdtemp()

@@ -231,7 +231,9 @@ class Config:
         # back so a failed persist can never leave memory diverged from disk (callers/IPC
         # would otherwise read back an unsaved value and a UI resync would be a no-op).
         snapshot = copy.deepcopy(self.settings)
-        self._set_path(self._resolve_key(key), value)
+        resolved = self._resolve_key(key)
+        self._set_path(resolved, value)
+        self._enable_google_advanced_if_needed(resolved, value)
         self._normalize_settings()
         if self.save():
             return True
@@ -241,7 +243,9 @@ class Config:
     def update(self, values: dict[str, Any]) -> bool:
         snapshot = copy.deepcopy(self.settings)
         for key, value in values.items():
-            self._set_path(self._resolve_key(key), value)
+            resolved = self._resolve_key(key)
+            self._set_path(resolved, value)
+            self._enable_google_advanced_if_needed(resolved, value)
         self._normalize_settings()
         if self.save():
             return True
@@ -288,6 +292,21 @@ class Config:
             current[index] = value
         else:
             current[last] = value
+
+    def _enable_google_advanced_if_needed(self, resolved_key: str, value: Any):
+        """An explicit UI/API choice must not be silently normalized away.
+
+        Stable beta defaults still use eu/us + chirp_3. But once a caller deliberately
+        selects an advanced Google model or region that this app exposes, preserve that
+        selection by flipping the advanced flag before normalization runs.
+        """
+        google = self.settings.setdefault("google", {})
+        if resolved_key in {"google.model", "google.fallback_model"}:
+            if value in set(model_ids(include_advanced=True)) - set(model_ids(include_advanced=False)):
+                google["advanced_options"] = True
+        if resolved_key in {"google.location", "google.fallback_location"}:
+            if value in set(SUPPORTED_LOCATIONS) - {"eu", "us"}:
+                google["advanced_options"] = True
 
     @staticmethod
     def _deep_merge(base: dict, incoming: dict) -> dict:
@@ -372,9 +391,6 @@ class Config:
         languages = self.settings.setdefault("languages", {})
         custom_code = str(languages.get("custom_code", "") or "").strip()
         primary = custom_code or languages.get("primary", "iw-IL")
-        if primary == "he-IL":
-            primary = "iw-IL"
-            languages["primary"] = primary
         alternatives = languages.get("alternatives", [])
         if isinstance(alternatives, str):
             alternatives = [part.strip() for part in alternatives.split(",") if part.strip()]

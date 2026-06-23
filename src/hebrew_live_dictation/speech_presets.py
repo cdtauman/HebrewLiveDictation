@@ -39,6 +39,7 @@ SUPPORTED_LOCATIONS = (
 
 LANGUAGE_PRESET_LIST = (
     LanguagePreset("iw-IL", "Hebrew", "he", True),
+    LanguagePreset("he-IL", "Hebrew (diagnostic alias)", "he", True),
     LanguagePreset("en-US", "English (United States)", "en"),
     LanguagePreset("en-GB", "English (United Kingdom)", "en", primary_location="eu", fallback_location="us"),
     LanguagePreset("ar-XA", "Arabic", "ar", True, primary_location="asia-southeast1", fallback_location="global"),

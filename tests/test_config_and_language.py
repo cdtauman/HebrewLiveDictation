@@ -71,7 +71,7 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertEqual(config.get("dictation.live_typing_mode"), "final_only")
             self.assertEqual(config.get("dictation.input_backend"), "v1")
             self.assertEqual(config.get("dictation.paste_method"), "unicode")
-            self.assertEqual(config.get("languages.primary"), "iw-IL")
+            self.assertEqual(config.get("languages.primary"), "he-IL")
             self.assertEqual(config.get("languages.alternatives"), ["en-US"])
             self.assertEqual(config.get("google.api_version"), "v2")
             self.assertEqual(config.get("google.location"), "eu")
@@ -135,6 +135,33 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertEqual(config.get("google.model"), "chirp_3")
             self.assertEqual(config.get("google.fallback_model"), "chirp_3")
             self.assertEqual(config.get("audio.block_size"), 1600)
+
+    def test_explicit_advanced_google_model_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.set("google.model", "latest_long"))
+
+            self.assertTrue(config.get("google.advanced_options"))
+            self.assertEqual(config.get("google.model"), "latest_long")
+
+    def test_explicit_advanced_google_location_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.set("google.location", "europe-west4"))
+
+            self.assertTrue(config.get("google.advanced_options"))
+            self.assertEqual(config.get("google.location"), "europe-west4")
+
+    def test_he_il_language_persists_as_diagnostic_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.set("languages.primary", "he-IL"))
+
+            self.assertEqual(config.get("languages.primary"), "he-IL")
+            self.assertEqual(config.get("languages.command_pack"), "he")
 
     def test_english_pack_formats_punctuation(self):
         self.assertEqual(format_text("hello comma world period", "en-US"), "hello, world.")

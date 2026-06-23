@@ -85,10 +85,29 @@ Important current defaults:
 - `audio.sample_rate`: `16000`.
 - `speech.frame_ms`: `100`.
 - `speech.auto_stop_on_silence`: `false`; manual stop is the default.
+- `speech.endpointing`: `true`; cloud speech activity events may be sent when
+  supported.
+- `speech.vad_enabled`: `false`; local VAD is opt-in.
+- `speech.vad_threshold`, `speech.vad_padding_ms`, and
+  `speech.vad_min_silence_ms`: local energy gate controls.
+- `providers.whisper.segment_silence_ms`: final segment boundary for local
+  Whisper and Groq-style final-only segmentation.
 - `tsf.experimental_transport_enabled`: `false`.
 
 The Engine room's active-config line is the UI truth for what the runtime will
 attempt. If it does not match engine logs, the logs win and the mismatch is a bug.
+
+## Audio / VAD Rules
+
+The Controls room owns microphone and advanced audio/VAD settings. It writes the
+same keys consumed by `DictationController`, `AudioStream`,
+`GoogleSTTV2Stream`, `WhisperLocalStream`, and the Groq segmenter.
+
+For the beta line, the target speech sample rate stays fixed at 16 kHz. The
+audio layer may open a Windows device at its native default rate and resample
+back to the target rate, but the UI must not invite arbitrary sample-rate
+changes until all providers prove that path. Manual stop remains the safe
+default; automatic cloud stop is opt-in.
 
 ## Google STT V2 Rules
 

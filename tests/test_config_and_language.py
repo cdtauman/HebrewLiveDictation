@@ -171,6 +171,30 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertEqual(config.get("languages.primary"), "he-IL")
             self.assertEqual(config.get("languages.command_pack"), "he")
 
+    def test_advanced_audio_vad_settings_normalize(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.update({
+                "speech.frame_ms": 10,
+                "speech.vad_threshold": 2.0,
+                "speech.vad_padding_ms": -25,
+                "speech.vad_min_silence_ms": 50,
+                "speech.speech_start_timeout_seconds": 0.1,
+                "speech.speech_end_timeout_seconds": 120.0,
+                "speech.max_stream_seconds": 999,
+                "providers.whisper.segment_silence_ms": 50,
+            }))
+
+            self.assertEqual(config.get("speech.frame_ms"), 100)
+            self.assertEqual(config.get("speech.vad_threshold"), 1.0)
+            self.assertEqual(config.get("speech.vad_padding_ms"), 0)
+            self.assertEqual(config.get("speech.vad_min_silence_ms"), 100)
+            self.assertEqual(config.get("speech.speech_start_timeout_seconds"), 0.5)
+            self.assertEqual(config.get("speech.speech_end_timeout_seconds"), 60.0)
+            self.assertEqual(config.get("speech.max_stream_seconds"), 295)
+            self.assertEqual(config.get("providers.whisper.segment_silence_ms"), 200)
+
     def test_english_pack_formats_punctuation(self):
         self.assertEqual(format_text("hello comma world period", "en-US"), "hello, world.")
 

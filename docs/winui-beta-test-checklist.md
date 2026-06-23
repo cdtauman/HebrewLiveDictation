@@ -91,6 +91,12 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] Settings → Diagnostics shows engine state, config path, **engine log** + **shell log** paths.
 - [ ] "Copy diagnostics" produces a redacted block (home dir shown as `~`, no secrets).
 
+## Audio / VAD advanced — **I**
+- [ ] Controls room -> change frame length -> start a new dictation session -> engine log shows matching `target_block_size`.
+- [ ] Toggle cloud speech events / auto-stop -> Google sessions still require manual proof; no silent stop is counted as pass unless intended.
+- [ ] Enable local VAD -> adjust threshold/padding/silence -> Offline dictation still starts, no crash, no hidden sample-rate change.
+- [ ] Disable local VAD -> dependent VAD controls become inactive and dictation returns to full-audio streaming.
+
 ---
 
 ## Sending logs (on any FAIL)

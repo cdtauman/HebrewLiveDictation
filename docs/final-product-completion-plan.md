@@ -175,6 +175,8 @@ Already present in the current WinUI branch:
 - Offline Whisper provider.
 - Offline model catalog, selected-model download/delete, incomplete-cache recovery,
   active-download state, and readiness checks.
+- Controls-room audio/VAD advanced settings for frame length, endpointing,
+  auto-stop timing, local VAD, and final-only segment silence.
 - STT registry with Google, Whisper, Deepgram, Groq, and fallback modules.
 - AutoFallback and Smart Auto backend behavior plus Engine-room routing status.
 - WinUI Home, Dictation, Engine, Controls, History, and Settings rooms.

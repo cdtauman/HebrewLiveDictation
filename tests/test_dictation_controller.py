@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from hebrew_live_dictation.dictation_controller import DictationController
 from hebrew_live_dictation.i18n import tr
@@ -186,6 +187,55 @@ class DictationControllerModeTests(unittest.TestCase):
 
         self.assertEqual(controller.injector.calls, [("final", "שלום לכולם")])
         self.assertEqual(controller.accumulated_final_text, "")
+
+
+    def test_start_listening_passes_advanced_audio_vad_settings_to_audio_stream(self):
+        seen = {}
+
+        class FakeAudioStream:
+            def __init__(self, **kwargs):
+                seen["audio_kwargs"] = kwargs
+
+            def start(self):
+                return True
+
+            def get_queue(self):
+                return object()
+
+            def stop(self):
+                seen["audio_stopped"] = True
+
+        class FakeSttStream:
+            def start(self, audio_queue):
+                seen["stt_started"] = audio_queue
+
+        config = DummyConfig({
+            "audio.sample_rate": 16000,
+            "speech.frame_ms": 50,
+            "microphone_device": 7,
+            "speech.vad_enabled": True,
+            "speech.vad_threshold": 0.35,
+            "speech.vad_padding_ms": 180,
+            "speech.vad_min_silence_ms": 650,
+        })
+        controller = DictationController(config)
+        controller.injector = FakeInjector()
+
+        with mock.patch("hebrew_live_dictation.dictation_controller.AudioStream", FakeAudioStream):
+            with mock.patch("hebrew_live_dictation.dictation_controller.create_stt_stream",
+                            return_value=FakeSttStream()):
+                controller.start_listening()
+
+        self.assertEqual(seen["audio_kwargs"], {
+            "device_id": 7,
+            "sample_rate": 16000,
+            "block_size": 800,
+            "vad_enabled": True,
+            "vad_threshold": 0.35,
+            "vad_padding_ms": 180,
+            "vad_min_silence_ms": 650,
+        })
+        self.assertIsNotNone(seen["stt_started"])
 
 
 if __name__ == "__main__":

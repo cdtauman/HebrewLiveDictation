@@ -55,6 +55,101 @@
                 </Grid>
             </Border>
 
+            <!-- Audio / VAD advanced controls -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="הקלטה ו־VAD" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="הגדרות מתקדמות למיקרופון, חיתוך שקט וזיהוי דיבור."
+                                   Style="{StaticResource CaptionMutedStyle}" />
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="אורך מסגרת" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="קצב הדגימה נשאר 16 kHz; כאן בוחרים את גודל מקטע ההקלטה."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ComboBox x:Name="FrameCombo" Grid.Column="1" MinWidth="180" VerticalAlignment="Center"
+                                  SelectionChanged="OnFrameChanged" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="אירועי דיבור בענן" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="Google מקבל סימון התחלה/סיום דיבור כשהמנוע תומך בכך."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="EndpointToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnEndpointingToggled" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="עצירה אוטומטית בשקט" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="כבוי כברירת מחדל; עצירה ידנית נשארת ההתנהגות הבטוחה."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="AutoStopToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnAutoStopToggled" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,150" RowDefinitions="Auto,Auto" RowSpacing="10">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="זמן המתנה להתחלת דיבור (שניות)"
+                                   VerticalAlignment="Center" />
+                        <NumberBox x:Name="SpeechStartTimeoutBox" Grid.Row="0" Grid.Column="1"
+                                   Minimum="0.5" Maximum="60" SmallChange="0.5" LargeChange="2"
+                                   SpinButtonPlacementMode="Compact" Tag="speech.speech_start_timeout_seconds"
+                                   ValueChanged="OnAudioDoubleChanged" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="זמן שקט לסיום דיבור (שניות)"
+                                   VerticalAlignment="Center" />
+                        <NumberBox x:Name="SpeechEndTimeoutBox" Grid.Row="1" Grid.Column="1"
+                                   Minimum="0.5" Maximum="60" SmallChange="0.5" LargeChange="2"
+                                   SpinButtonPlacementMode="Compact" Tag="speech.speech_end_timeout_seconds"
+                                   ValueChanged="OnAudioDoubleChanged" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="סינון שקט מקומי" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="משחרר למנוע רק מקטעים שנראים כמו דיבור, עם קדם־דיבור קצר."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="VadToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnVadToggled" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,220,52" ColumnSpacing="10">
+                        <TextBlock Grid.Column="0" Text="סף דיבור" VerticalAlignment="Center" />
+                        <Slider x:Name="VadThresholdSlider" Grid.Column="1" Minimum="0.1" Maximum="0.9"
+                                StepFrequency="0.05" ValueChanged="OnVadThresholdChanged" />
+                        <TextBlock x:Name="VadThresholdValue" Grid.Column="2" TextAlignment="Right"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,150" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="קדם־דיבור לשמירה (ms)"
+                                   VerticalAlignment="Center" />
+                        <NumberBox x:Name="VadPaddingBox" Grid.Row="0" Grid.Column="1"
+                                   Minimum="0" Maximum="2000" SmallChange="20" LargeChange="100"
+                                   SpinButtonPlacementMode="Compact" Tag="speech.vad_padding_ms"
+                                   ValueChanged="OnAudioIntChanged" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="שקט לסגירת VAD (ms)"
+                                   VerticalAlignment="Center" />
+                        <NumberBox x:Name="VadMinSilenceBox" Grid.Row="1" Grid.Column="1"
+                                   Minimum="100" Maximum="5000" SmallChange="50" LargeChange="250"
+                                   SpinButtonPlacementMode="Compact" Tag="speech.vad_min_silence_ms"
+                                   ValueChanged="OnAudioIntChanged" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="פער שקט ל־Whisper/Groq (ms)"
+                                   VerticalAlignment="Center" />
+                        <NumberBox x:Name="SegmentSilenceBox" Grid.Row="2" Grid.Column="1"
+                                   Minimum="200" Maximum="5000" SmallChange="50" LargeChange="250"
+                                   SpinButtonPlacementMode="Compact" Tag="providers.whisper.segment_silence_ms"
+                                   ValueChanged="OnAudioIntChanged" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- On-screen surfaces (live) -->
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="16">

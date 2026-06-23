@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Navigation;
 
 namespace VoiceType.Shell.Views;
@@ -32,6 +33,16 @@ public sealed partial class ControlsPage : Page
         string mode = await GetString("hotkeys.mode", "toggle");
         bool hud = await GetBool("app.show_overlay", true);
         bool remote = await GetBool("toolbar.enabled", false);
+        int frameMs = await GetInt("speech.frame_ms", 100);
+        bool endpointing = await GetBool("speech.endpointing", true);
+        bool autoStop = await GetBool("speech.auto_stop_on_silence", false);
+        double startTimeout = await GetDouble("speech.speech_start_timeout_seconds", 5.0);
+        double endTimeout = await GetDouble("speech.speech_end_timeout_seconds", 1.0);
+        bool vad = await GetBool("speech.vad_enabled", false);
+        double vadThreshold = await GetDouble("speech.vad_threshold", 0.5);
+        int vadPadding = await GetInt("speech.vad_padding_ms", 240);
+        int vadMinSilence = await GetInt("speech.vad_min_silence_ms", 500);
+        int segmentSilence = await GetInt("providers.whisper.segment_silence_ms", 700);
 
         DispatcherQueue.TryEnqueue(() =>
         {
@@ -41,6 +52,18 @@ public sealed partial class ControlsPage : Page
             ApplyHotkeyHint(mode);
             HudToggle.IsOn = hud;
             RemoteToggle.IsOn = remote;
+            PopulateFrames(frameMs);
+            EndpointToggle.IsOn = endpointing;
+            AutoStopToggle.IsOn = autoStop;
+            SpeechStartTimeoutBox.Value = startTimeout;
+            SpeechEndTimeoutBox.Value = endTimeout;
+            VadToggle.IsOn = vad;
+            VadThresholdSlider.Value = vadThreshold;
+            UpdateVadThresholdLabel(vadThreshold);
+            VadPaddingBox.Value = vadPadding;
+            VadMinSilenceBox.Value = vadMinSilence;
+            SegmentSilenceBox.Value = segmentSilence;
+            ApplyAudioAvailability();
             _loading = false;
         });
 
@@ -95,6 +118,132 @@ public sealed partial class ControlsPage : Page
         object? value = string.IsNullOrEmpty(tag) ? null : (int.TryParse(tag, out var n) ? n : null);
         await Persist("audio.microphone_device", value);
     }
+
+    private static readonly (int value, string label)[] FramePresets =
+    {
+        (50, "50 ms"),
+        (100, "100 ms"),
+        (200, "200 ms"),
+    };
+
+    private void PopulateFrames(int current)
+    {
+        FrameCombo.Items.Clear();
+        ComboBoxItem? selected = null;
+        foreach (var (value, label) in FramePresets)
+        {
+            var item = new ComboBoxItem { Content = label, Tag = value.ToString() };
+            FrameCombo.Items.Add(item);
+            if (value == current) selected = item;
+        }
+        if (selected == null && current > 0)
+        {
+            selected = new ComboBoxItem { Content = $"{current} ms", Tag = current.ToString() };
+            FrameCombo.Items.Add(selected);
+        }
+        FrameCombo.SelectedItem = selected ?? (FrameCombo.Items.Count > 0 ? FrameCombo.Items[1] : null);
+    }
+
+    private async void OnFrameChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string tag = (FrameCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "100";
+        if (int.TryParse(tag, out var frameMs))
+            await Persist("speech.frame_ms", frameMs);
+    }
+
+    private async void OnEndpointingToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        ApplyAudioAvailability();
+        await Persist("speech.endpointing", EndpointToggle.IsOn);
+    }
+
+    private async void OnAutoStopToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        ApplyAudioAvailability();
+        await Persist("speech.auto_stop_on_silence", AutoStopToggle.IsOn);
+    }
+
+    private async void OnVadToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        ApplyAudioAvailability();
+        await Persist("speech.vad_enabled", VadToggle.IsOn);
+    }
+
+    private async void OnVadThresholdChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        UpdateVadThresholdLabel(e.NewValue);
+        if (_loading) return;
+        await Persist("speech.vad_threshold", Math.Round(e.NewValue, 2));
+    }
+
+    private async void OnAudioIntChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_loading) return;
+        string key = sender.Tag as string ?? "";
+        if (string.IsNullOrWhiteSpace(key)) return;
+        int value = CoerceInt(sender, args.NewValue);
+        sender.Value = value;
+        await Persist(key, value);
+    }
+
+    private async void OnAudioDoubleChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_loading) return;
+        string key = sender.Tag as string ?? "";
+        if (string.IsNullOrWhiteSpace(key)) return;
+        double value = CoerceDouble(sender, args.NewValue);
+        sender.Value = value;
+        await Persist(key, value);
+    }
+
+    private static int CoerceInt(NumberBox box, double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value)) value = box.Minimum;
+        return (int)Math.Round(Math.Clamp(value, box.Minimum, box.Maximum));
+    }
+
+    private static double CoerceDouble(NumberBox box, double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value)) value = box.Minimum;
+        return Math.Round(Math.Clamp(value, box.Minimum, box.Maximum), 1);
+    }
+
+    private void UpdateVadThresholdLabel(double value)
+        => VadThresholdValue.Text = Math.Round(value, 2).ToString("0.00");
+
+    private void ApplyAudioAvailability()
+    {
+        bool endpointing = EndpointToggle.IsOn;
+        bool autoStop = AutoStopToggle.IsOn;
+        bool vad = VadToggle.IsOn;
+
+        AutoStopToggle.IsEnabled = endpointing;
+        SpeechStartTimeoutBox.IsEnabled = endpointing && autoStop;
+        SpeechEndTimeoutBox.IsEnabled = endpointing && autoStop;
+
+        VadThresholdSlider.IsEnabled = vad;
+        VadPaddingBox.IsEnabled = vad;
+        VadMinSilenceBox.IsEnabled = vad;
+        SegmentSilenceBox.IsEnabled = vad;
+    }
+
+    // ---- runtime self-test hooks (render only; no RPC/audio) ----
+    internal void RenderAudioAdvancedForTest(bool vad, bool endpointing, bool autoStop)
+    {
+        VadToggle.IsOn = vad;
+        EndpointToggle.IsOn = endpointing;
+        AutoStopToggle.IsOn = autoStop;
+        ApplyAudioAvailability();
+    }
+    internal bool VadControlsEnabledForTest =>
+        VadThresholdSlider.IsEnabled && VadPaddingBox.IsEnabled && VadMinSilenceBox.IsEnabled && SegmentSilenceBox.IsEnabled;
+    internal bool AutoStopControlsEnabledForTest =>
+        SpeechStartTimeoutBox.IsEnabled && SpeechEndTimeoutBox.IsEnabled;
+    internal bool AutoStopToggleEnabledForTest => AutoStopToggle.IsEnabled;
 
     private async void OnModeChoice(object sender, RoutedEventArgs e)
     {
@@ -222,6 +371,38 @@ public sealed partial class ControlsPage : Page
             {
                 if (v.ValueKind == JsonValueKind.True) return true;
                 if (v.ValueKind == JsonValueKind.False) return false;
+            }
+        }
+        catch { }
+        return fallback;
+    }
+
+    private async Task<int> GetInt(string key, int fallback)
+    {
+        if (_host?.Client == null) return fallback;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v))
+            {
+                if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n)) return n;
+                if (v.ValueKind == JsonValueKind.String && int.TryParse(v.GetString(), out var s)) return s;
+            }
+        }
+        catch { }
+        return fallback;
+    }
+
+    private async Task<double> GetDouble(string key, double fallback)
+    {
+        if (_host?.Client == null) return fallback;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v))
+            {
+                if (v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var n)) return n;
+                if (v.ValueKind == JsonValueKind.String && double.TryParse(v.GetString(), out var s)) return s;
             }
         }
         catch { }

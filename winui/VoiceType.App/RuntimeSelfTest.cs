@@ -417,6 +417,28 @@ internal static class RuntimeSelfTest
             }
             catch (Exception ex) { Check("onboarding.offline_readiness", false, XamlDetail(ex)); }
 
+            // 6h.1) Controls-room advanced audio/VAD rendering: dependent timing controls stay
+            //       disabled until their parent feature is enabled (render only; no RPC/audio).
+            try
+            {
+                var cp = new Views.ControlsPage();
+                cp.RenderAudioAdvancedForTest(vad: false, endpointing: true, autoStop: false);
+                bool quietDefaults = !cp.VadControlsEnabledForTest
+                                     && cp.AutoStopToggleEnabledForTest
+                                     && !cp.AutoStopControlsEnabledForTest;
+                cp.RenderAudioAdvancedForTest(vad: true, endpointing: true, autoStop: true);
+                bool allEnabled = cp.VadControlsEnabledForTest
+                                  && cp.AutoStopToggleEnabledForTest
+                                  && cp.AutoStopControlsEnabledForTest;
+                cp.RenderAudioAdvancedForTest(vad: true, endpointing: false, autoStop: true);
+                bool endpointOff = cp.VadControlsEnabledForTest
+                                   && !cp.AutoStopToggleEnabledForTest
+                                   && !cp.AutoStopControlsEnabledForTest;
+                Check("controls.audio_vad.surface", quietDefaults && allEnabled && endpointOff,
+                      "advanced audio/VAD controls gate dependent settings honestly");
+            }
+            catch (Exception ex) { Check("controls.audio_vad.surface", false, XamlDetail(ex)); }
+
             // 6i) Engine-room offline model management: download offered when absent, delete
             //     offered when present, ring while downloading (render only — no RPC/download).
             try

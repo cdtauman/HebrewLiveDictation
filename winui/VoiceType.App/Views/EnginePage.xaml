@@ -113,10 +113,22 @@
             <Border x:Name="ChooseCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
                 <StackPanel Spacing="8">
                     <TextBlock Text="ספק זיהוי" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="אפשר לשמור מפתחות API במנהל האישורים של Windows. שימוש מלא ב-Deepgram/Groq יושלם בשלבים הבאים."
+                               Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <ComboBox x:Name="ProviderCombo" MinWidth="240" SelectionChanged="OnProviderChanged">
                         <ComboBoxItem Tag="deepgram" Content="Deepgram" />
                         <ComboBoxItem Tag="groq" Content="Groq" />
                     </ComboBox>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="API key" Style="{StaticResource CaptionMutedStyle}" />
+                        <PasswordBox x:Name="ProviderKeyBox" PlaceholderText="Paste API key to save in OS keyring" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button x:Name="SaveProviderKeyBtn" Content="שמור מפתח" Click="OnSaveProviderKey" />
+                        <Button x:Name="ClearProviderKeyBtn" Content="נקה מפתח" Click="OnClearProviderKey" />
+                    </StackPanel>
+                    <TextBlock x:Name="ProviderKeyStatusText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
 

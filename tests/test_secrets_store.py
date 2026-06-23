@@ -50,6 +50,73 @@ class SecretsStoreTests(unittest.TestCase):
         kr = FailingSetKeyring()
         self.assertFalse(secrets_store.set_secret("k", "v", keyring_module=kr))
 
+    def test_provider_key_status_never_returns_secret(self):
+        kr = FakeKeyring()
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            result = secrets_store.save_provider_api_key(config, "deepgram", "dg-secret", keyring_module=kr)
+            self.assertTrue(result["ok"])
+
+            status = secrets_store.provider_key_status(config, "deepgram", keyring_module=kr)
+
+            self.assertTrue(status["configured"])
+            self.assertTrue(status["storedInKeyring"])
+            self.assertEqual(status["storage"], "keyring")
+            self.assertNotIn("apiKey", status)
+            self.assertNotIn("secret", jsonish(status).lower())
+
+    def test_provider_api_key_normalizes_provider_name(self):
+        kr = FakeKeyring()
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            secrets_store.save_provider_api_key(config, "deepgram", "dg-secret", keyring_module=kr)
+            self.assertEqual(
+                secrets_store.provider_api_key(config, "Deepgram", keyring_module=kr),
+                "dg-secret",
+            )
+
+    def test_provider_save_rejects_unknown_or_empty_key(self):
+        kr = FakeKeyring()
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            self.assertEqual(
+                secrets_store.save_provider_api_key(config, "google_v2", "x", keyring_module=kr)["error"],
+                "unsupported_provider",
+            )
+            self.assertEqual(
+                secrets_store.save_provider_api_key(config, "deepgram", "   ", keyring_module=kr)["error"],
+                "empty_key",
+            )
+
+    def test_provider_save_clears_legacy_plaintext_after_keyring_readback(self):
+        kr = FakeKeyring()
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.update({"providers.deepgram.api_key": "legacy"})
+
+            result = secrets_store.save_provider_api_key(config, "deepgram", "new-secret", keyring_module=kr)
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(config.get("providers.deepgram.api_key", ""), "")
+            self.assertEqual(
+                secrets_store.get_secret("providers_deepgram_api_key", keyring_module=kr),
+                "new-secret",
+            )
+
+    def test_provider_clear_removes_keyring_and_plaintext(self):
+        kr = FakeKeyring()
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.update({"providers.groq.api_key": "legacy"})
+            secrets_store.set_secret("providers_groq_api_key", "stored", keyring_module=kr)
+
+            result = secrets_store.clear_provider_api_key(config, "groq", keyring_module=kr)
+            status = secrets_store.provider_key_status(config, "groq", keyring_module=kr)
+
+            self.assertTrue(result["ok"])
+            self.assertFalse(status["configured"])
+            self.assertEqual(config.get("providers.groq.api_key", ""), "")
+
 
 class _NoneModule:
     """A fake that raises on use, exercising the error-handling paths."""
@@ -62,6 +129,11 @@ class _NoneModule:
 
     def delete_password(self, *a, **k):
         raise RuntimeError("no backend")
+
+
+def jsonish(value) -> str:
+    import json
+    return json.dumps(value, sort_keys=True)
 
 
 class MigrationTests(unittest.TestCase):

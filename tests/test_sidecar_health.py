@@ -18,6 +18,7 @@ from hebrew_live_dictation.bridge.sidecar import (
     make_callbacks,
     offline_is_primary_engine,
     offline_model_required,
+    provider_credential_status,
     provider_control_status,
     recent_history,
 )
@@ -392,6 +393,27 @@ class ProviderControlPlaneTests(unittest.TestCase):
         self.assertEqual(rows["deepgram"]["status"], "key_configured_unverified")
         self.assertTrue(rows["whisper_local"]["fallbackTarget"])
         self.assertTrue(rows["whisper_local"]["ready"])
+
+    def test_keyed_provider_status_includes_storage_without_secret(self):
+        cfg = _FakeConfig({
+            "stt.provider": "deepgram",
+            "stt.mode": "api",
+            "providers.deepgram.api_key": "plaintext-legacy",
+            "providers.deepgram.model": "nova-2",
+        })
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+            status = provider_control_status(cfg)
+        deepgram = {row["id"]: row for row in status["providers"]}["deepgram"]
+
+        self.assertEqual(deepgram["status"], "key_configured_unverified")
+        self.assertTrue(deepgram["credentialStore"]["plaintextPresent"])
+        self.assertEqual(deepgram["runtime"]["credentialStorage"], "plaintext_config")
+        self.assertNotIn("plaintext-legacy", json.dumps(deepgram, ensure_ascii=False))
+
+    def test_provider_credential_status_rejects_google_key_storage(self):
+        status = provider_credential_status(_FakeConfig({}), "google_v2")
+        self.assertFalse(status["supported"])
+        self.assertFalse(status["configured"])
 
 
 class OfflineGateTests(unittest.TestCase):

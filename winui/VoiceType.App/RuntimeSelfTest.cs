@@ -119,6 +119,16 @@ internal static class RuntimeSelfTest
                       providerShape ? "provider control plane returned registry rows + routing"
                                     : providerStatus.GetRawText());
 
+                var credentialStatus = await client.RpcAsync("getProviderCredentialStatus", new { provider = "deepgram" });
+                bool credentialShape = credentialStatus.TryGetProperty("provider", out var cpv)
+                                       && cpv.GetString() == "deepgram"
+                                       && credentialStatus.TryGetProperty("configured", out _)
+                                       && credentialStatus.TryGetProperty("storage", out _)
+                                       && !credentialStatus.TryGetProperty("apiKey", out _);
+                Check("bridge.providerCredentialStatus", credentialShape,
+                      credentialShape ? "provider credential status returned no-secret storage metadata"
+                                      : credentialStatus.GetRawText());
+
                 var theme = (await client.RpcAsync("getConfig", new { key = "app.theme" }))
                             .GetProperty("value").GetString();
                 var wrote = await client.RpcAsync("setConfig", new { key = "app.theme", value = theme });

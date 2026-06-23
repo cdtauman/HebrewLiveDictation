@@ -545,6 +545,96 @@ def _provider_credentials_present(config, provider: str) -> bool:
     return True
 
 
+def provider_credential_status(config, provider: str) -> dict:
+    """Credential status for keyed cloud providers; never returns the key itself."""
+    provider = (provider or "").strip().lower()
+    try:
+        from .. import secrets_store
+        status = secrets_store.provider_key_status(config, provider)
+        status["message"] = _credential_status_message(status)
+        return status
+    except Exception:
+        logger.error("provider credential status failed:\n%s", traceback.format_exc())
+        return {"provider": provider, "supported": False, "configured": False,
+                "storedInKeyring": False, "plaintextPresent": False,
+                "keyringAvailable": False, "storage": "error",
+                "message": "Could not read provider credential status."}
+
+
+def save_provider_api_key(config, provider: str, api_key: str) -> dict:
+    """Store a provider API key in the OS keyring via the engine boundary.
+
+    The API key is accepted only in params and is never included in the response.
+    """
+    provider = (provider or "").strip().lower()
+    try:
+        from .. import secrets_store
+        result = secrets_store.save_provider_api_key(config, provider, api_key)
+        status = secrets_store.provider_key_status(config, provider)
+        result["status"] = status
+        result["message"] = _credential_mutation_message(result, status)
+        return result
+    except Exception:
+        logger.error("provider API key save failed:\n%s", traceback.format_exc())
+        return {"ok": False, "provider": provider, "error": "save_failed",
+                "message": "Could not save provider API key."}
+
+
+def clear_provider_api_key(config, provider: str) -> dict:
+    provider = (provider or "").strip().lower()
+    try:
+        from .. import secrets_store
+        result = secrets_store.clear_provider_api_key(config, provider)
+        status = secrets_store.provider_key_status(config, provider)
+        result["status"] = status
+        result["message"] = _credential_mutation_message(result, status)
+        return result
+    except Exception:
+        logger.error("provider API key clear failed:\n%s", traceback.format_exc())
+        return {"ok": False, "provider": provider, "error": "clear_failed",
+                "message": "Could not clear provider API key."}
+
+
+def migrate_plaintext_provider_secrets(config) -> dict:
+    """One-shot startup migration from legacy plaintext keys to OS keyring."""
+    try:
+        from .. import secrets_store
+        migrated = secrets_store.migrate_plaintext_secrets(config)
+        return {"ok": True, "migrated": migrated}
+    except Exception:
+        logger.error("plaintext provider-secret migration failed:\n%s", traceback.format_exc())
+        return {"ok": False, "migrated": []}
+
+
+def _credential_status_message(status: dict) -> str:
+    if not status.get("supported"):
+        return "Provider API-key storage is not supported for this provider."
+    if status.get("storedInKeyring"):
+        return "API key is stored in the OS keyring."
+    if status.get("plaintextPresent"):
+        return "Legacy plaintext key exists in settings; migration to keyring is pending."
+    if not status.get("keyringAvailable"):
+        return "OS keyring is unavailable on this machine."
+    return "No API key is saved."
+
+
+def _credential_mutation_message(result: dict, status: dict) -> str:
+    if result.get("ok") and status.get("storedInKeyring"):
+        return "API key saved to the OS keyring."
+    if result.get("ok") and not status.get("configured"):
+        return "API key cleared."
+    err = result.get("error", "")
+    if err == "empty_key":
+        return "Enter an API key before saving."
+    if err == "unsupported_provider":
+        return "Provider API-key storage is not supported for this provider."
+    if err == "keyring_unavailable":
+        return "OS keyring is unavailable; key was not saved."
+    if err == "plaintext_clear_failed":
+        return "Key saved, but a legacy plaintext setting could not be cleared."
+    return "Credential operation failed."
+
+
 def provider_control_status(config) -> dict:
     """Unified provider inventory/status for Engine room and diagnostics.
 
@@ -624,16 +714,23 @@ def provider_control_status(config) -> dict:
                 },
             })
         elif provider in ("deepgram", "groq"):
-            has_key = _provider_credentials_present(config, provider)
+            try:
+                credential_store = provider_credential_status(config, provider)
+            except Exception:
+                credential_store = {"configured": _provider_credentials_present(config, provider),
+                                    "storage": "unknown"}
+            has_key = bool(credential_store.get("configured"))
             model_key = f"providers.{provider}.model"
             row.update({
                 "configured": has_key,
                 "ready": has_key,
                 "status": "key_configured_unverified" if has_key else "needs_key",
                 "detail": f"model {config.get(model_key, '') or ''}".strip(),
+                "credentialStore": credential_store,
                 "runtime": {
                     "model": config.get(model_key, "") or "",
                     "keyConfigured": has_key,
+                    "credentialStorage": credential_store.get("storage", ""),
                     "publicSetupPhase": 5 if provider == "deepgram" else 6,
                 },
             })
@@ -1208,6 +1305,10 @@ def run(pipe_name: str | None = None) -> int:
     appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
     config_dir = os.path.join(appdata, "VoiceType")
     config = Config(config_dir)
+    try:
+        migrate_plaintext_provider_secrets(config)
+    except Exception:
+        logger.error("provider-secret migration hook failed:\n%s", traceback.format_exc())
     # Persist the engine log next to settings so packaged (engine.exe) runs are diagnosable.
     # run() otherwise only had logging.basicConfig (console -> piped to the shell, never on disk),
     # which left packaged field failures with no engine log to inspect.
@@ -1359,6 +1460,12 @@ def run(pipe_name: str | None = None) -> int:
             return compute_health(config)
         if method == "getProviderStatus":
             return provider_control_status(config)
+        if method == "getProviderCredentialStatus":
+            return provider_credential_status(config, params.get("provider", ""))
+        if method == "setProviderApiKey":
+            return save_provider_api_key(config, params.get("provider", ""), params.get("apiKey", ""))
+        if method == "clearProviderApiKey":
+            return clear_provider_api_key(config, params.get("provider", ""))
         if method == "getCapabilities":
             # Import probe of the dynamic insertion backends — used by the packaged smoke test.
             return engine_capabilities()

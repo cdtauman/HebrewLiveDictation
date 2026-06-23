@@ -28,10 +28,19 @@ SECRET_CONFIG_KEYS = (
     "providers.groq.api_key",
 )
 
+KEYED_PROVIDERS = ("deepgram", "groq")
+
 
 def _entry_name(config_key: str) -> str:
     """Map a dotted config key to a flat keyring entry name."""
     return config_key.replace(".", "_")
+
+
+def provider_secret_name(provider: str) -> str:
+    provider = (provider or "").strip().lower()
+    if provider not in KEYED_PROVIDERS:
+        raise ValueError(f"Unsupported keyed provider: {provider}")
+    return _entry_name(f"providers.{provider}.api_key")
 
 
 def _keyring():
@@ -98,7 +107,8 @@ def delete_secret(name: str, *, keyring_module=None) -> bool:
 def provider_api_key(config, provider: str, *, keyring_module=None) -> str:
     """Resolve a provider's API key: keyring first, then any legacy plaintext
     value in config. Returns "" if none is configured."""
-    name = _entry_name(f"providers.{provider}.api_key")
+    provider = (provider or "").strip().lower()
+    name = provider_secret_name(provider)
     key = get_secret(name, keyring_module=keyring_module)
     if key:
         return key
@@ -106,6 +116,97 @@ def provider_api_key(config, provider: str, *, keyring_module=None) -> str:
         return (config.get(f"providers.{provider}.api_key", "") or "").strip()
     except Exception:
         return ""
+
+
+def provider_key_status(config, provider: str, *, keyring_module=None) -> dict:
+    """Return provider-key storage status without returning the secret."""
+    provider = (provider or "").strip().lower()
+    if provider not in KEYED_PROVIDERS:
+        return {
+            "provider": provider,
+            "supported": False,
+            "configured": False,
+            "storedInKeyring": False,
+            "plaintextPresent": False,
+            "keyringAvailable": False,
+            "storage": "unsupported",
+        }
+    name = provider_secret_name(provider)
+    key = get_secret(name, keyring_module=keyring_module)
+    try:
+        plaintext = bool((config.get(f"providers.{provider}.api_key", "") or "").strip())
+    except Exception:
+        plaintext = False
+    stored = bool(key)
+    return {
+        "provider": provider,
+        "supported": True,
+        "configured": bool(stored or plaintext),
+        "storedInKeyring": stored,
+        "plaintextPresent": plaintext,
+        "keyringAvailable": keyring_available(keyring_module=keyring_module),
+        "storage": "keyring" if stored else ("plaintext_config" if plaintext else "missing"),
+    }
+
+
+def save_provider_api_key(config, provider: str, api_key: str, *, keyring_module=None) -> dict:
+    """Store a provider API key in the OS keyring and clear any plaintext config copy.
+
+    The returned dict is safe for UI/RPC responses: it never includes the secret.
+    """
+    provider = (provider or "").strip().lower()
+    value = (api_key or "").strip()
+    if provider not in KEYED_PROVIDERS:
+        return {"ok": False, "provider": provider, "error": "unsupported_provider"}
+    if not value:
+        return {"ok": False, "provider": provider, "error": "empty_key"}
+
+    name = provider_secret_name(provider)
+    if not set_secret(name, value, keyring_module=keyring_module):
+        return {"ok": False, "provider": provider, "error": "keyring_unavailable"}
+    if get_secret(name, keyring_module=keyring_module) != value:
+        return {"ok": False, "provider": provider, "error": "keyring_readback_failed"}
+
+    cleared = _clear_plaintext_config_key(config, provider)
+    return {
+        "ok": bool(cleared),
+        "provider": provider,
+        "error": "" if cleared else "plaintext_clear_failed",
+        "storage": "keyring",
+        "plaintextCleared": bool(cleared),
+    }
+
+
+def clear_provider_api_key(config, provider: str, *, keyring_module=None) -> dict:
+    provider = (provider or "").strip().lower()
+    if provider not in KEYED_PROVIDERS:
+        return {"ok": False, "provider": provider, "error": "unsupported_provider"}
+    name = provider_secret_name(provider)
+    had_key = bool(get_secret(name, keyring_module=keyring_module))
+    keyring_cleared = True if not had_key else delete_secret(name, keyring_module=keyring_module)
+    plaintext_cleared = _clear_plaintext_config_key(config, provider)
+    ok = bool(keyring_cleared and plaintext_cleared)
+    return {
+        "ok": ok,
+        "provider": provider,
+        "error": "" if ok else "clear_failed",
+        "storage": "missing",
+        "plaintextCleared": bool(plaintext_cleared),
+    }
+
+
+def _clear_plaintext_config_key(config, provider: str) -> bool:
+    config_key = f"providers.{provider}.api_key"
+    try:
+        current = (config.get(config_key, "") or "").strip()
+    except Exception:
+        current = ""
+    if not current:
+        return True
+    try:
+        return bool(config.set(config_key, ""))
+    except Exception:
+        return False
 
 
 def migrate_plaintext_secrets(config, *, keyring_module=None):

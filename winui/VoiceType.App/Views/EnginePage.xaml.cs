@@ -251,6 +251,7 @@ public sealed partial class EnginePage : Page
 
         await RefreshLabelAsync();
         await LoadProviderStatusAsync();
+        await LoadProviderKeyStatusAsync();
         if (provider == "google_v2") await LoadGoogleConfigAsync();
     }
 
@@ -456,17 +457,17 @@ public sealed partial class EnginePage : Page
 
         if (tag == "choose")
         {
-            // PC1 supports Google only; the other cloud providers (Deepgram/Groq) are not configurable
-            // yet, so honestly route to Offline rather than leave a dead path.
-            await ShowMessageAsync("ספק זה אינו נתמך עדיין",
-                "Deepgram/Groq עדיין אינם ניתנים להגדרה בגרסה זו. עוברים למנוע הלא־מקוון. Google Cloud זמין דרך בחירת Google (ענן), אך דורש חיבור ותמלול מוכחים.");
             _loading = true;
-            OptOffline.IsChecked = true;
             GoogleCard.Visibility = Visibility.Collapsed;
-            ChooseCard.Visibility = Visibility.Collapsed;
+            ChooseCard.Visibility = Visibility.Visible;
             BackupCard.Visibility = Visibility.Collapsed;
+            if (ProviderCombo.SelectedItem == null) ProviderCombo.SelectedIndex = 0;
             _loading = false;
+            // Phase 4 exposes secure key storage only. Deepgram/Groq activation and
+            // provider-specific diagnostics are productized in Phases 5/6, so keep the
+            // runtime on the safe offline engine while credentials are being prepared.
             await Finish(await ApplyOffline());
+            await LoadProviderKeyStatusAsync();
             return;
         }
 
@@ -513,7 +514,97 @@ public sealed partial class EnginePage : Page
     private async void OnProviderChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || OptChoose.IsChecked != true) return;
-        await Finish(await SetConfig("stt.provider", SelectedProvider()));
+        await LoadProviderKeyStatusAsync();
+        await LoadProviderStatusAsync();
+    }
+
+    private async Task LoadProviderKeyStatusAsync()
+    {
+        if (_host?.Client == null) return;
+        string provider = SelectedProvider();
+        try
+        {
+            var r = await _host.Client.RpcAsync("getProviderCredentialStatus", new { provider });
+            bool supported = r.TryGetProperty("supported", out var sp) && sp.ValueKind == JsonValueKind.True;
+            bool configured = r.TryGetProperty("configured", out var cf) && cf.ValueKind == JsonValueKind.True;
+            bool stored = r.TryGetProperty("storedInKeyring", out var st) && st.ValueKind == JsonValueKind.True;
+            bool plaintext = r.TryGetProperty("plaintextPresent", out var pt) && pt.ValueKind == JsonValueKind.True;
+            bool keyring = r.TryGetProperty("keyringAvailable", out var ka) && ka.ValueKind == JsonValueKind.True;
+            string storage = Str(r, "storage");
+            string message = Str(r, "message");
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ProviderKeyBox.Password = "";
+                ProviderKeyBox.PlaceholderText = configured
+                    ? "API key saved; the value is not shown"
+                    : "Paste API key to save in OS keyring";
+                SaveProviderKeyBtn.IsEnabled = supported && keyring;
+                ClearProviderKeyBtn.IsEnabled = supported && configured;
+                ProviderKeyStatusText.Text =
+                    $"{provider}: {message} storage={storage}"
+                    + (stored ? " · keyring" : "")
+                    + (plaintext ? " · legacy plaintext present" : "");
+            });
+        }
+        catch
+        {
+            DispatcherQueue.TryEnqueue(() => ProviderKeyStatusText.Text = "");
+        }
+    }
+
+    private async void OnSaveProviderKey(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Client == null) return;
+        string provider = SelectedProvider();
+        string key = ProviderKeyBox.Password.Trim();
+        if (string.IsNullOrEmpty(key))
+        {
+            DispatcherQueue.TryEnqueue(() => ProviderKeyStatusText.Text = $"{provider}: enter an API key before saving.");
+            return;
+        }
+        DispatcherQueue.TryEnqueue(() => SaveProviderKeyBtn.IsEnabled = false);
+        try
+        {
+            var r = await _host.Client.RpcAsync("setProviderApiKey", new { provider, apiKey = key });
+            string message = Str(r, "message");
+            bool ok = r.TryGetProperty("ok", out var o) && o.ValueKind == JsonValueKind.True;
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ProviderKeyBox.Password = "";
+                ProviderKeyStatusText.Text =
+                    $"{provider}: {(string.IsNullOrEmpty(message) ? (ok ? "API key saved." : "Save failed.") : message)}";
+            });
+        }
+        catch
+        {
+            DispatcherQueue.TryEnqueue(() => ProviderKeyStatusText.Text = $"{provider}: save failed.");
+        }
+        await LoadProviderKeyStatusAsync();
+        await LoadProviderStatusAsync();
+    }
+
+    private async void OnClearProviderKey(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Client == null) return;
+        string provider = SelectedProvider();
+        DispatcherQueue.TryEnqueue(() => ClearProviderKeyBtn.IsEnabled = false);
+        try
+        {
+            var r = await _host.Client.RpcAsync("clearProviderApiKey", new { provider });
+            string message = Str(r, "message");
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                ProviderKeyBox.Password = "";
+                ProviderKeyStatusText.Text =
+                    $"{provider}: {(string.IsNullOrEmpty(message) ? "API key cleared." : message)}";
+            });
+        }
+        catch
+        {
+            DispatcherQueue.TryEnqueue(() => ProviderKeyStatusText.Text = $"{provider}: clear failed.");
+        }
+        await LoadProviderKeyStatusAsync();
+        await LoadProviderStatusAsync();
     }
 
     /// <summary>Apply the cloud-mode pair: backup on -> stt.mode=auto_fallback AND the

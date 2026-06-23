@@ -25,13 +25,17 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] History room shows each dictation, text matches what landed.
 - [ ] Nothing was ever typed into VoiceType itself / File Explorer / the wrong window.
 
-## 2. Google / Chirp — **G**
+## 2. Google / Chirp — **G only after probe PASS; otherwise experimental**
 - [ ] Engine room → choose **Google Chirp 3** → enter Project ID → pick **Service Account (JSON)** → Browse the key.
-- [ ] **Test connection passes** → status shows **"מאומת ✓ … Google פעיל"**.
-- [ ] **Real Google dictation:** focus Notepad → F8 → speak Hebrew → final text lands (cloud quality).
+- [ ] **Test connection passes** → status says **connection verified**. Do **not** mark dictation verified from this alone.
+- [ ] **Probe PASS:** run `tools/google_stt_probe.py` with a known Hebrew WAV. At least one supported
+      model/location/language/recognizer combo returns a non-empty transcript.
+- [ ] **Runtime truth:** Engine active-config line and engine log show the same model/location/language/recognizer
+      that passed the probe.
+- [ ] **Real Google dictation:** focus Notepad → F8 → speak Hebrew → final text lands once (cloud quality).
 - [ ] **Custom recognizer valid:** set a real `recognizer_id` → Test connection passes.
 - [ ] **Custom recognizer invalid:** set a bogus `recognizer_id` → Test connection **fails with a clear message**.
-- [ ] **Change after verify:** after a passing test, change the **model** (or swap the JSON) → status returns to
+- [ ] **Change after verify:** after a passing test, change the **model/language** (or swap the JSON) → status returns to
       **"לא נבדק"** / not-verified (R1), and dictation routes to **Offline** until re-tested.
 - [ ] **ADC path** (if you use gcloud ADC): select ADC → Test connection → dictate.
 - [ ] **Runtime failure:** (e.g. revoke network) dictation routes to Offline with a clear status, no crash.
@@ -52,8 +56,9 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] Select medium → download → ready → dictate → delete → status returns to "not installed".
 - [ ] Cancel/interrupt a download (close mid-download) → no half-broken "ready" claim on next launch.
 
-## 5. Live / interim words (Gboard pillar) — **G** (only meaningful with Google streaming)
-- [ ] During a **Google** session, interim words appear in the **HUD** and the **Remote** as you speak.
+## 5. Live / interim words (Gboard pillar) — **G only for a probe-proven live-capable model**
+- [ ] During a **Google** session with a live-capable model, interim words appear in the **HUD** and the **Remote** as you speak.
+- [ ] If the selected/proven model is final-only, the UI says final-only and this interim-words step is **SKIP**, not PASS.
 - [ ] Interim words are **never typed into the target app** — only the final is inserted, once.
 
 ## 6. DOCX export — **G**

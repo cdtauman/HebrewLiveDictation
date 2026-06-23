@@ -154,6 +154,14 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertTrue(config.get("google.advanced_options"))
             self.assertEqual(config.get("google.location"), "europe-west4")
 
+    def test_groq_model_normalizes_to_supported_transcription_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.set("providers.groq.model", "not-a-groq-model"))
+
+            self.assertEqual(config.get("providers.groq.model"), "whisper-large-v3")
+
     def test_he_il_language_persists_as_diagnostic_code(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)

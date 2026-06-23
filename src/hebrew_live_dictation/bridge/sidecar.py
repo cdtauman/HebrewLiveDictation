@@ -552,10 +552,15 @@ def provider_credential_status(config, provider: str) -> dict:
     try:
         from .. import secrets_store
         status = secrets_store.provider_key_status(config, provider)
-        if provider == "deepgram":
+        if provider in ("deepgram", "groq"):
             status["verified"] = _keyed_provider_verified(config, provider)
-            status["model"] = config.get("providers.deepgram.model", "nova-3")
-            status["language"] = _deepgram_language(config)
+            if provider == "deepgram":
+                status["model"] = config.get("providers.deepgram.model", "nova-3")
+                status["language"] = _deepgram_language(config)
+            else:
+                status["model"] = config.get("providers.groq.model", "whisper-large-v3")
+                status["language"] = _groq_language(config)
+                status["finalOnly"] = True
         status["message"] = _credential_status_message(status)
         return status
     except Exception:
@@ -577,7 +582,7 @@ def save_provider_api_key(config, provider: str, api_key: str) -> dict:
         _clear_keyed_provider_verified(config, provider)
         result = secrets_store.save_provider_api_key(config, provider, api_key)
         status = secrets_store.provider_key_status(config, provider)
-        if provider == "deepgram":
+        if provider in ("deepgram", "groq"):
             status["verified"] = _keyed_provider_verified(config, provider)
         result["status"] = status
         result["message"] = _credential_mutation_message(result, status)
@@ -595,7 +600,7 @@ def clear_provider_api_key(config, provider: str) -> dict:
         _clear_keyed_provider_verified(config, provider)
         result = secrets_store.clear_provider_api_key(config, provider)
         status = secrets_store.provider_key_status(config, provider)
-        if provider == "deepgram":
+        if provider in ("deepgram", "groq"):
             status["verified"] = False
         result["status"] = status
         result["message"] = _credential_mutation_message(result, status)
@@ -641,6 +646,13 @@ def _keyed_provider_signature(config, provider: str) -> str:
             bool(config.get("providers.deepgram.punctuate", True)),
             key_hash,
         ))
+    if provider == "groq":
+        return "|".join(str(x or "") for x in (
+            provider,
+            config.get("providers.groq.model", "whisper-large-v3"),
+            _groq_language(config),
+            key_hash,
+        ))
     return "|".join((provider, key_hash))
 
 
@@ -673,10 +685,18 @@ def _clear_keyed_provider_verified(config, provider: str) -> None:
         logger.warning("could not clear %s verify marker:\n%s", provider, traceback.format_exc())
 
 
-def _deepgram_language(config) -> str:
+def _provider_language_639_1(config) -> str:
     primary = (config.get("languages.primary", "iw-IL") or "iw-IL")
     code = primary.split("-")[0].lower()
     return "he" if code == "iw" else code
+
+
+def _deepgram_language(config) -> str:
+    return _provider_language_639_1(config)
+
+
+def _groq_language(config) -> str:
+    return _provider_language_639_1(config)
 
 
 def test_deepgram_connection(config) -> dict:
@@ -704,6 +724,34 @@ def test_deepgram_connection(config) -> dict:
             msg = msg[:220] + "..."
         logger.warning("Deepgram test connection failed: %s", msg)
         return {"ok": False, "message": "Deepgram connection failed: " + msg}
+
+
+def test_groq_connection(config) -> dict:
+    """Verify the current Groq key/model/language tuple without returning the key."""
+    _clear_keyed_provider_verified(config, "groq")
+    try:
+        from ..stt import verify
+        ok, message = verify.verify(config, "groq")
+        if ok:
+            _set_keyed_provider_verified(config, "groq")
+            return {
+                "ok": True,
+                "message": (
+                    "Groq key connection verified "
+                    f"(model {config.get('providers.groq.model', 'whisper-large-v3')}, "
+                    f"language {_groq_language(config)} will be used; Groq is final-only, "
+                    "and this is not a transcript proof)."
+                ),
+            }
+        from .. import app_logging
+        return {"ok": False, "message": app_logging.redact_sensitive(message)}
+    except Exception as e:
+        from .. import app_logging
+        msg = app_logging.redact_sensitive(str(e))
+        if len(msg) > 220:
+            msg = msg[:220] + "..."
+        logger.warning("Groq test connection failed: %s", msg)
+        return {"ok": False, "message": "Groq connection failed: " + msg}
 
 
 def _credential_status_message(status: dict) -> str:
@@ -822,21 +870,26 @@ def provider_control_status(config) -> dict:
                 credential_store = {"configured": _provider_credentials_present(config, provider),
                                     "storage": "unknown"}
             has_key = bool(credential_store.get("configured"))
-            verified = bool(credential_store.get("verified")) if provider == "deepgram" else has_key
+            verified = bool(credential_store.get("verified"))
             model_key = f"providers.{provider}.model"
             status = "connection_verified" if verified else ("needs_test" if has_key else "needs_key")
-            if provider == "groq" and has_key:
-                status = "key_configured_unverified"
+            language = credential_store.get("language", "")
             row.update({
                 "configured": has_key,
                 "ready": verified,
                 "status": status,
-                "detail": f"model {config.get(model_key, '') or ''}".strip(),
+                "detail": (
+                    f"model {config.get(model_key, '') or ''}"
+                    + (f" / language {language}" if language else "")
+                    + (" / final-only" if provider == "groq" else "")
+                ).strip(),
                 "credentialStore": credential_store,
                 "runtime": {
                     "model": config.get(model_key, "") or "",
+                    "language": language,
                     "keyConfigured": has_key,
                     "verified": verified,
+                    "finalOnly": provider == "groq",
                     "credentialStorage": credential_store.get("storage", ""),
                     "publicSetupPhase": 5 if provider == "deepgram" else 6,
                 },
@@ -1337,12 +1390,8 @@ def _cloud_provider_usable(config, provider) -> bool:
         return _google_verified(config)
     if provider == "deepgram":
         return _keyed_provider_verified(config, "deepgram")
-    try:
-        from ..stt import auto_select
-        if provider == "groq":
-            return bool(auto_select._has_key(config, provider))
-    except Exception:
-        return True
+    if provider == "groq":
+        return _keyed_provider_verified(config, "groq")
     return True
 
 
@@ -1590,6 +1639,8 @@ def run(pipe_name: str | None = None) -> int:
                 return test_google_connection(config)
             if provider == "deepgram":
                 return test_deepgram_connection(config)
+            if provider == "groq":
+                return test_groq_connection(config)
             return {"ok": False, "message": f"בדיקת חיבור אינה זמינה עבור '{provider}'."}
         if method == "getCommands":
             return command_reference(config)

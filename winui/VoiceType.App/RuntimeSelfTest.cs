@@ -92,6 +92,10 @@ internal static class RuntimeSelfTest
             Check("engine.deepgram.models", hasDeepgramNova3,
                   hasDeepgramNova3 ? "Deepgram model list includes nova-3 for Hebrew streaming"
                                    : "nova-3 missing from the Deepgram model dropdown");
+            bool hasGroqWhisper = Views.EnginePage.GroqModels.Any(m => m.tag == "whisper-large-v3");
+            Check("engine.groq.models", hasGroqWhisper,
+                  hasGroqWhisper ? "Groq model list includes whisper-large-v3 final-only transcription"
+                                 : "whisper-large-v3 missing from the Groq model dropdown");
 
             // 2) Connect the C# client and exercise the contract from the WinUI side.
             using var client = new BridgeClient(pipeShort);

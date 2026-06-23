@@ -48,6 +48,17 @@ class VerifyTests(unittest.TestCase):
         ok, _ = verify_mod.verify(config, "groq", http_get=_get(200))
         self.assertTrue(ok)
 
+    def test_groq_no_key(self):
+        ok, msg = verify_mod.verify(self._config(), "groq", http_get=_get(200))
+        self.assertFalse(ok)
+        self.assertIn("No groq", msg)
+
+    def test_groq_rejected(self):
+        config = self._config(**{"providers.groq.api_key": "k"})
+        ok, msg = verify_mod.verify(config, "groq", http_get=_get(403))
+        self.assertFalse(ok)
+        self.assertIn("403", msg)
+
     def test_google_with_service_account_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)

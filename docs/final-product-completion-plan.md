@@ -189,7 +189,7 @@ Already present in the current WinUI branch:
 Partially present or hidden:
 
 - Deepgram backend and setup UX exist; real service PASS still requires a user key.
-- Groq backend exists, but public setup UX is not complete.
+- Groq backend and final-only setup UX exist; real service PASS still requires a user key.
 - Keyring-backed provider credential UX/migration exists for keyed cloud providers.
 - Updater backend exists, but WinUI update check/install UX is incomplete.
 - Audio feedback generator exists, but WinUI runtime playback/control is incomplete.

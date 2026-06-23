@@ -167,6 +167,29 @@ class CloudRecoveryTests(unittest.TestCase):
         self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
         self.assertEqual(cfg.get("stt.provider"), "whisper_local")
 
+    def test_unverified_groq_routes_to_offline(self):
+        cfg = self._cfg({"stt.provider": "groq", "stt.mode": "api",
+                         "providers.groq.api_key": "gq"})
+        self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
+        self.assertEqual(cfg.get("stt.mode"), "local")
+
+    def test_verified_groq_left_untouched(self):
+        cfg = self._cfg({"stt.provider": "groq", "stt.mode": "api",
+                         "providers.groq.api_key": "gq",
+                         "providers.groq.model": "whisper-large-v3",
+                         "languages.primary": "iw-IL"})
+        sidecar._set_keyed_provider_verified(cfg, "groq")
+        self.assertFalse(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "groq")
+
+    def test_smart_auto_unverified_groq_routes_to_offline(self):
+        cfg = self._cfg({"stt.provider": "google_v2", "stt.mode": "smart_auto",
+                         "providers.groq.api_key": "gq",
+                         "providers.whisper.enabled": False})
+        self.assertTrue(sidecar.recover_unconfigured_cloud(cfg))
+        self.assertEqual(cfg.get("stt.provider"), "whisper_local")
+
 
 class GoogleVerifyGateTests(unittest.TestCase):
     """R1: the .google_verified marker must track the EXACT inputs the live client uses. Any change to
@@ -282,6 +305,57 @@ class DeepgramVerifyGateTests(unittest.TestCase):
             res = sidecar.test_deepgram_connection(cfg)
         self.assertFalse(res.get("ok"))
         self.assertFalse(sidecar._keyed_provider_verified(cfg, "deepgram"))
+
+
+class GroqVerifyGateTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def _cfg(self, extra=None):
+        d = {"providers.groq.api_key": "gq", "providers.groq.model": "whisper-large-v3",
+             "languages.primary": "iw-IL"}
+        if extra:
+            d.update(extra)
+        return _FakeConfig(d, config_dir=self.dir)
+
+    def test_set_then_verified(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "groq")
+        self.assertTrue(sidecar._keyed_provider_verified(cfg, "groq"))
+
+    def test_model_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "groq")
+        cfg.set("providers.groq.model", "whisper-large-v3-turbo")
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "groq"))
+
+    def test_language_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "groq")
+        cfg.set("languages.primary", "en-US")
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "groq"))
+
+    def test_key_change_invalidates(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "groq")
+        cfg.set("providers.groq.api_key", "different")
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "groq"))
+
+    def test_test_connection_success_sets_marker(self):
+        cfg = self._cfg()
+        with mock.patch("hebrew_live_dictation.stt.verify.verify", return_value=(True, "OK")):
+            res = sidecar.test_groq_connection(cfg)
+        self.assertTrue(res.get("ok"))
+        self.assertTrue(sidecar._keyed_provider_verified(cfg, "groq"))
+        self.assertIn("final-only", res.get("message", ""))
+
+    def test_failed_test_connection_clears_marker(self):
+        cfg = self._cfg()
+        sidecar._set_keyed_provider_verified(cfg, "groq")
+        with mock.patch("hebrew_live_dictation.stt.verify.verify", return_value=(False, "bad key")):
+            res = sidecar.test_groq_connection(cfg)
+        self.assertFalse(res.get("ok"))
+        self.assertFalse(sidecar._keyed_provider_verified(cfg, "groq"))
 
 
 class ShellSelfTargetBlockTests(unittest.TestCase):
@@ -489,6 +563,31 @@ class ProviderControlPlaneTests(unittest.TestCase):
         sidecar._set_keyed_provider_verified(cfg, "deepgram")
         with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
             verified = {row["id"]: row for row in provider_control_status(cfg)["providers"]}["deepgram"]
+        self.assertEqual(verified["status"], "connection_verified")
+        self.assertTrue(verified["ready"])
+
+    def test_groq_status_requires_connection_marker(self):
+        tmp = tempfile.mkdtemp()
+        cfg = _FakeConfig({
+            "stt.provider": "groq",
+            "stt.mode": "api",
+            "providers.groq.api_key": "plaintext-groq",
+            "providers.groq.model": "whisper-large-v3-turbo",
+            "languages.primary": "iw-IL",
+        }, config_dir=tmp)
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+            groq = {row["id"]: row for row in provider_control_status(cfg)["providers"]}["groq"]
+
+        self.assertEqual(groq["status"], "needs_test")
+        self.assertFalse(groq["ready"])
+        self.assertEqual(groq["runtime"]["model"], "whisper-large-v3-turbo")
+        self.assertEqual(groq["runtime"]["language"], "he")
+        self.assertTrue(groq["runtime"]["finalOnly"])
+        self.assertNotIn("plaintext-groq", json.dumps(groq, ensure_ascii=False))
+
+        sidecar._set_keyed_provider_verified(cfg, "groq")
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+            verified = {row["id"]: row for row in provider_control_status(cfg)["providers"]}["groq"]
         self.assertEqual(verified["status"], "connection_verified")
         self.assertTrue(verified["ready"])
 

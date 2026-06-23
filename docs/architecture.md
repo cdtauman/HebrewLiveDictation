@@ -36,7 +36,7 @@ flowchart LR
     Audio --> Factory["stt_factory / registry"]
     Factory --> Google["Google STT V2"]
     Factory --> Offline["Whisper local"]
-    Factory --> Cloud["Deepgram productized\nGroq pending"]
+    Factory --> Cloud["Deepgram streaming\nGroq final-only"]
     Google --> Controller["DictationController"]
     Offline --> Controller
     Cloud --> Controller
@@ -166,7 +166,7 @@ The following remain Labs or future work until their own gates pass:
 - live target typing into external apps
 - TSF/IME composition
 - advanced Google combinations outside proven configs
-- Groq public setup UX
+- real Groq service PASS without a user key
 - Smart Auto as a default
 - unattended auto-update install
 

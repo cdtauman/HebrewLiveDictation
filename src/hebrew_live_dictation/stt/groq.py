@@ -22,6 +22,7 @@ from .segmenter import SilenceSegmenter
 logger = logging.getLogger("GroqStream")
 
 _ENDPOINT = "https://api.groq.com/openai/v1/audio/transcriptions"
+SUPPORTED_MODELS = ("whisper-large-v3", "whisper-large-v3-turbo")
 
 
 class GroqStream(SpeechClientBase):
@@ -54,6 +55,8 @@ class GroqStream(SpeechClientBase):
         import requests
 
         model = self.config.get("providers.groq.model", "whisper-large-v3") or "whisper-large-v3"
+        if model not in SUPPORTED_MODELS:
+            model = "whisper-large-v3"
         resp = requests.post(
             _ENDPOINT,
             headers={"Authorization": f"Bearer {key}"},

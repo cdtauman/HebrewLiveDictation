@@ -3,6 +3,7 @@ import queue
 import tempfile
 import unittest
 import wave
+from unittest import mock
 
 import numpy as np
 
@@ -57,6 +58,36 @@ class GroqUnitTests(unittest.TestCase):
         text = stream._transcribe_segment(_speech(), "k")
         self.assertEqual(text, "שלום עולם")
         self.assertTrue(captured["wav"].startswith(b"RIFF"))
+
+    def test_language_maps_hebrew_aliases_to_groq_he(self):
+        self.assertEqual(GroqStream(self._config(**{"languages.primary": "iw-IL"}))._language(), "he")
+        self.assertEqual(GroqStream(self._config(**{"languages.primary": "he-IL"}))._language(), "he")
+
+    def test_post_uses_selected_model_and_language(self):
+        config = self._config(**{
+            "providers.groq.model": "whisper-large-v3-turbo",
+            "languages.primary": "iw-IL",
+        })
+        stream = GroqStream(config)
+        resp = mock.Mock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {"text": "שלום"}
+        with mock.patch("requests.post", return_value=resp) as post:
+            self.assertEqual(stream._post(b"RIFF", "secret"), "שלום")
+        data = post.call_args.kwargs["data"]
+        self.assertEqual(data["model"], "whisper-large-v3-turbo")
+        self.assertEqual(data["language"], "he")
+        self.assertEqual(data["response_format"], "json")
+
+    def test_unknown_model_falls_back_to_default(self):
+        config = self._config(**{"providers.groq.model": "not-a-model"})
+        stream = GroqStream(config)
+        resp = mock.Mock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {"text": "שלום"}
+        with mock.patch("requests.post", return_value=resp) as post:
+            stream._post(b"RIFF", "secret")
+        self.assertEqual(post.call_args.kwargs["data"]["model"], "whisper-large-v3")
 
     def test_no_key_emits_terminal_error(self):
         events = []

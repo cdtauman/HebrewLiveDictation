@@ -47,6 +47,14 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] **ADC path** (if you use gcloud ADC): select ADC → Test connection → dictate.
 - [ ] **Runtime failure:** (e.g. revoke network) dictation routes to Offline with a clear status, no crash.
 
+## 2b. Groq final-only cloud — **I unless user key + transcript proof are supplied**
+- [ ] Engine room → choose **Provider / Groq** → select `whisper-large-v3` or `whisper-large-v3-turbo`.
+- [ ] Save the Groq API key; the UI never displays the saved value.
+- [ ] **Test connection passes** → status says connection verified for the selected model/language. This is not transcript proof.
+- [ ] Focus Notepad → start/stop dictation → final text lands once after stop or segment flush.
+- [ ] HUD/Remote live words are **SKIP** for Groq because Groq is final-only in this app.
+- [ ] Change Groq model/language/key → verification returns to needs-test and dictation routes to Offline until re-tested.
+
 ## 3. Full P5 app matrix — **G**  (each via F8 **and** Remote)
 - [ ] **Word** (COM): Hebrew lands correctly, RTL, once.
 - [ ] **Chrome / Gmail** (UIA): lands in the compose box, correct.

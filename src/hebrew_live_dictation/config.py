@@ -9,6 +9,7 @@ from .speech_presets import SUPPORTED_LOCATIONS, language_codes, model_ids, pres
 logger = logging.getLogger("Config")
 
 SCHEMA_VERSION = 4
+GROQ_MODEL_IDS = ("whisper-large-v3", "whisper-large-v3-turbo")
 
 DEFAULT_SETTINGS = {
     "schema_version": SCHEMA_VERSION,
@@ -471,6 +472,8 @@ class Config:
             deepgram["model"] = DEFAULT_SETTINGS["providers"]["deepgram"]["model"]
         groq = providers.setdefault("groq", {})
         if not isinstance(groq.get("model"), str) or not groq.get("model", "").strip():
+            groq["model"] = DEFAULT_SETTINGS["providers"]["groq"]["model"]
+        elif groq.get("model") not in GROQ_MODEL_IDS:
             groq["model"] = DEFAULT_SETTINGS["providers"]["groq"]["model"]
 
         models = self.settings.setdefault("models", {})

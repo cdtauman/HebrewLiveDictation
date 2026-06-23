@@ -252,7 +252,7 @@ public sealed partial class EnginePage : Page
         await RefreshLabelAsync();
         await LoadProviderStatusAsync();
         if (provider == "google_v2") await LoadGoogleConfigAsync();
-        else await LoadDeepgramConfigAsync();
+        else await LoadSelectedProviderConfigAsync();
     }
 
     // ---- Google Cloud setup (PC1) ----
@@ -273,6 +273,12 @@ public sealed partial class EnginePage : Page
     {
         ("nova-3", "Nova-3 · Hebrew live streaming"),
         ("nova-2", "Nova-2 · legacy fallback"),
+    };
+
+    internal static readonly (string tag, string label)[] GroqModels =
+    {
+        ("whisper-large-v3", "Whisper Large v3 · final-only Hebrew transcription"),
+        ("whisper-large-v3-turbo", "Whisper Large v3 Turbo · final-only, lower latency"),
     };
 
     /// <summary>Longer, honest per-model guidance shown under the picker (R3 item 2).</summary>
@@ -328,6 +334,27 @@ public sealed partial class EnginePage : Page
             _loading = false;
         });
         await LoadProviderKeyStatusAsync();
+    }
+
+    private async Task LoadGroqConfigAsync()
+    {
+        string model = await GetConfigString("providers.groq.model", "whisper-large-v3");
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _loading = true;
+            if (GroqModelCombo.Items.Count == 0)
+                foreach (var (t, label) in GroqModels)
+                    GroqModelCombo.Items.Add(new ComboBoxItem { Content = label, Tag = t });
+            SelectComboByTag(GroqModelCombo, model, "whisper-large-v3");
+            _loading = false;
+        });
+        await LoadProviderKeyStatusAsync();
+    }
+
+    private async Task LoadSelectedProviderConfigAsync()
+    {
+        if (SelectedProvider() == "groq") await LoadGroqConfigAsync();
+        else await LoadDeepgramConfigAsync();
     }
 
     private static void SelectComboByTag(ComboBox combo, string tag, string fallback)
@@ -484,7 +511,7 @@ public sealed partial class EnginePage : Page
             BackupCard.Visibility = Visibility.Visible;
             if (ProviderCombo.SelectedItem == null) ProviderCombo.SelectedIndex = 0;
             _loading = false;
-            await LoadDeepgramConfigAsync();
+            await LoadSelectedProviderConfigAsync();
             await Finish(await ApplySelectedCloudProviderIfReadyAsync());
             return;
         }
@@ -537,7 +564,7 @@ public sealed partial class EnginePage : Page
     private async void OnProviderChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading || OptChoose.IsChecked != true) return;
-        await LoadDeepgramConfigAsync();
+        await LoadSelectedProviderConfigAsync();
         await Finish(await ApplySelectedCloudProviderIfReadyAsync());
     }
 
@@ -557,14 +584,30 @@ public sealed partial class EnginePage : Page
             await Finish(await ApplySelectedCloudProviderIfReadyAsync());
     }
 
+    private async void OnGroqModelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string tag = (GroqModelCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "whisper-large-v3";
+        if (!await SetConfig("providers.groq.model", tag))
+        {
+            await Finish(false);
+            return;
+        }
+        DispatcherQueue.TryEnqueue(() =>
+            ProviderTestStatusText.Text = "Groq model changed; run Test connection again before using it. Groq is final-only.");
+        await LoadProviderKeyStatusAsync();
+        if (OptChoose.IsChecked == true)
+            await Finish(await ApplySelectedCloudProviderIfReadyAsync());
+    }
+
     private async void OnTestProviderConnection(object sender, RoutedEventArgs e)
     {
         if (_host?.Client == null) return;
         string provider = SelectedProvider();
-        if (provider != "deepgram")
+        if (provider != "deepgram" && provider != "groq")
         {
             DispatcherQueue.TryEnqueue(() =>
-                ProviderTestStatusText.Text = "Groq יושלם בשלב 6. Deepgram זמין לבדיקה עכשיו.");
+                ProviderTestStatusText.Text = $"{provider} is not available for API-key testing.");
             return;
         }
         DispatcherQueue.TryEnqueue(() =>
@@ -572,17 +615,17 @@ public sealed partial class EnginePage : Page
             ProviderTestRing.IsActive = true;
             ProviderTestRing.Visibility = Visibility.Visible;
             TestProviderBtn.IsEnabled = false;
-            ProviderTestStatusText.Text = "בודק Deepgram...";
+            ProviderTestStatusText.Text = $"Testing {provider} connection...";
         });
         bool ok = false;
         string msg = "";
         try
         {
-            var r = await _host.Client.RpcAsync("testConnection", new { provider = "deepgram" }, timeoutMs: 20000);
+            var r = await _host.Client.RpcAsync("testConnection", new { provider }, timeoutMs: 20000);
             ok = r.TryGetProperty("ok", out var o) && o.ValueKind == JsonValueKind.True;
             msg = Str(r, "message");
         }
-        catch (Exception ex) { msg = "Deepgram test failed: " + ex.Message; }
+        catch (Exception ex) { msg = $"{provider} test failed: " + ex.Message; }
         DispatcherQueue.TryEnqueue(() =>
         {
             ProviderTestRing.IsActive = false;
@@ -596,19 +639,19 @@ public sealed partial class EnginePage : Page
     private async Task<bool> ApplySelectedCloudProviderIfReadyAsync()
     {
         string provider = SelectedProvider();
-        if (provider != "deepgram")
+        if (provider != "deepgram" && provider != "groq")
         {
             DispatcherQueue.TryEnqueue(() =>
-                ProviderTestStatusText.Text = "Groq יושלם בשלב 6. בינתיים המנוע נשאר לא־מקוון.");
+                ProviderTestStatusText.Text = $"{provider} is not available yet; the engine remains Offline.");
             return await ApplyOffline();
         }
         if (!await ProviderVerifiedAsync(provider))
         {
             DispatcherQueue.TryEnqueue(() =>
-                ProviderTestStatusText.Text = "Deepgram דורש מפתח ובדיקת חיבור לפני שימוש בהכתבה.");
+                ProviderTestStatusText.Text = $"{provider} requires an API key and Test connection before dictation.");
             return await ApplyOffline();
         }
-        bool ok = await SetConfig("stt.provider", "deepgram");
+        bool ok = await SetConfig("stt.provider", provider);
         ok &= await ApplyCloudMode();
         return ok;
     }
@@ -641,21 +684,25 @@ public sealed partial class EnginePage : Page
             string message = Str(r, "message");
             string model = Str(r, "model");
             string language = Str(r, "language");
+            bool finalOnly = r.TryGetProperty("finalOnly", out var fo) && fo.ValueKind == JsonValueKind.True;
             string statusExtra = (verified ? " · verified" : "")
                                  + (!string.IsNullOrEmpty(model) ? $" · model={model}" : "")
                                  + (!string.IsNullOrEmpty(language) ? $" · language={language}" : "");
+            if (finalOnly) statusExtra += " · final-only";
             DispatcherQueue.TryEnqueue(() =>
             {
                 ProviderKeyBox.Password = "";
                 bool deepgram = provider == "deepgram";
+                bool groq = provider == "groq";
                 DeepgramModelRow.Visibility = deepgram ? Visibility.Visible : Visibility.Collapsed;
+                GroqModelRow.Visibility = groq ? Visibility.Visible : Visibility.Collapsed;
                 ProviderKeyBox.PlaceholderText = configured
                     ? "API key saved; the value is not shown"
                     : "Paste API key to save in OS keyring";
                 SaveProviderKeyBtn.IsEnabled = supported && keyring;
                 ClearProviderKeyBtn.IsEnabled = supported && configured;
-                TestProviderBtn.IsEnabled = deepgram && configured;
-                TestProviderBtn.Content = deepgram ? "בדיקת Deepgram" : "בדיקה זמינה בשלב הבא";
+                TestProviderBtn.IsEnabled = (deepgram || groq) && configured;
+                TestProviderBtn.Content = deepgram ? "בדיקת Deepgram" : (groq ? "בדיקת Groq" : "בדיקה לא זמינה");
                 ProviderKeyStatusText.Text =
                     $"{provider}: {message} storage={storage}{statusExtra}"
                     + (stored ? " · keyring" : "")

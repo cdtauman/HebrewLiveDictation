@@ -113,16 +113,21 @@
             <Border x:Name="ChooseCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
                 <StackPanel Spacing="8">
                     <TextBlock Text="ספק זיהוי" Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="Deepgram שומר את המפתח במנהל האישורים של Windows, דורש בדיקת חיבור, ותומך במילים חיות. Groq יושלם בשלב הבא."
+                    <TextBlock Text="Deepgram supports live streaming. Groq uses final-only Whisper transcription. Both store API keys in Windows Credential Manager and require Test connection before use."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <ComboBox x:Name="ProviderCombo" MinWidth="240" SelectionChanged="OnProviderChanged">
                         <ComboBoxItem Tag="deepgram" Content="Deepgram" />
-                        <ComboBoxItem Tag="groq" Content="Groq (שלב 6)" />
+                        <ComboBoxItem Tag="groq" Content="Groq" />
                     </ComboBox>
                     <StackPanel x:Name="DeepgramModelRow" Spacing="4">
                         <TextBlock Text="Deepgram model" Style="{StaticResource CaptionMutedStyle}" />
                         <ComboBox x:Name="DeepgramModelCombo" HorizontalAlignment="Stretch"
                                   SelectionChanged="OnDeepgramModelChanged" />
+                    </StackPanel>
+                    <StackPanel x:Name="GroqModelRow" Spacing="4" Visibility="Collapsed">
+                        <TextBlock Text="Groq model" Style="{StaticResource CaptionMutedStyle}" />
+                        <ComboBox x:Name="GroqModelCombo" HorizontalAlignment="Stretch"
+                                  SelectionChanged="OnGroqModelChanged" />
                     </StackPanel>
                     <StackPanel Spacing="4">
                         <TextBlock Text="API key" Style="{StaticResource CaptionMutedStyle}" />

@@ -52,6 +52,25 @@ class GoogleSTTV2RuntimeTests(unittest.TestCase):
             self.assertTrue(any(event.get("type") == "error" for event in events))
             self.assertIn("returned no recognition responses", events[0]["message"])
 
+    def test_v2_responses_with_no_useful_text_emit_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            events = []
+            stream = GoogleSTTV2Stream(config, on_event_callback=events.append)
+            stream.active = True
+
+            def stream_once():
+                stream._last_stream_had_useful_text = False
+                return 1
+
+            stream._stream_once = stream_once
+
+            stream._run_stream()
+
+            self.assertEqual(stream.active, False)
+            self.assertTrue(any(event.get("type") == "error" for event in events))
+            self.assertTrue(any("returned no transcript" in event.get("message", "") for event in events))
+
     def test_google_stream_is_speech_client_base_with_capabilities(self):
         from hebrew_live_dictation.stt.base import SpeechClientBase
 
@@ -178,6 +197,24 @@ class GoogleSTTV2StreamTests(unittest.TestCase):
             self.assertFalse(recognition_config.features.enable_word_confidence)
             self.assertTrue(recognition_config.adaptation.phrase_sets)
 
+    def test_latest_long_omits_automatic_punctuation_feature(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.update(
+                {
+                    "google.project_id": "demo-project",
+                    "google.model": "latest_long",
+                    "google.automatic_punctuation": True,
+                    "languages.primary": "iw-IL",
+                }
+            )
+
+            stream = GoogleSTTV2Stream(config)
+            recognition_config = stream._recognition_config()
+
+            self.assertEqual(recognition_config.model, "latest_long")
+            self.assertFalse(recognition_config.features.enable_automatic_punctuation)
+
     def test_v2_streaming_config_requests_interim_and_voice_activity(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)
@@ -231,7 +268,7 @@ class GoogleSTTV2StreamTests(unittest.TestCase):
     def test_audio_chunks_are_kept_below_google_streaming_limit(self):
         chunks = list(GoogleSTTV2Stream._bounded_audio_chunks(b"x" * 50000))
 
-        self.assertEqual([len(chunk) for chunk in chunks], [24000, 24000, 2000])
+        self.assertEqual([len(chunk) for chunk in chunks], [12000, 12000, 12000, 12000, 2000])
 
     def test_switch_to_fallback_updates_active_location_and_model(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -75,6 +75,13 @@ class GoogleSTTV2Stream(SpeechClientBase):
         self._final_count = 0
         self._interim_event_count = 0
         self._interim_segment_count = 0
+        self._empty_result_response_count = 0
+        self._empty_alternative_count = 0
+        self._empty_transcript_count = 0
+        self._useful_transcript_count = 0
+        self._last_stream_had_useful_text = False
+        self._last_stream_failed = False
+        self._active_recognizer_name = ""
         self._force_restart_flag = False
 
     def restart_stream(self):
@@ -119,12 +126,29 @@ class GoogleSTTV2Stream(SpeechClientBase):
         self._final_count = 0
         self._interim_event_count = 0
         self._interim_segment_count = 0
+        self._empty_result_response_count = 0
+        self._empty_alternative_count = 0
+        self._empty_transcript_count = 0
+        self._useful_transcript_count = 0
+        self._last_stream_had_useful_text = False
+        self._last_stream_failed = False
+        self._active_recognizer_name = ""
         self.client = self._create_client(location)
         self.audio_queue = audio_queue
         self.active = True
         self.thread = threading.Thread(target=self._run_stream, daemon=True)
         self.thread.start()
-        logger.info("Google STT V2 streaming thread started.")
+        logger.info(
+            "Google STT V2 streaming thread started: model=%s location=%s recognizer_id=%s "
+            "credential_mode=%s language=%s sample_rate=%s interim_results=%s.",
+            self._active_model,
+            self._active_location,
+            self.config.get("google.recognizer_id", "_") or "_",
+            self.config.get("google.credential_mode", "service_account_json"),
+            self.config.get("languages.primary", "iw-IL"),
+            self.config.get("audio.sample_rate", 16000),
+            self.config.get("google.interim_results", True),
+        )
 
     def stop(self):
         self.active = False
@@ -180,10 +204,16 @@ class GoogleSTTV2Stream(SpeechClientBase):
         active_model = self._active_model or self.config.get("google.model", "chirp_3")
         is_chirp = "chirp" in active_model.lower()
 
-        features_kwargs = {
-            "enable_automatic_punctuation": self.config.get("google.automatic_punctuation", True),
-            "profanity_filter": False,
-        }
+        features_kwargs = {}
+        automatic_punctuation = bool(self.config.get("google.automatic_punctuation", True))
+        if automatic_punctuation and is_chirp:
+            features_kwargs["enable_automatic_punctuation"] = True
+        elif automatic_punctuation:
+            logger.warning(
+                "Google model %s does not receive enable_automatic_punctuation; "
+                "the probe showed this feature can be rejected by latest_* models.",
+                active_model,
+            )
 
         if not is_chirp:
             features_kwargs["enable_spoken_punctuation"] = self.config.get("google.enable_spoken_punctuation", False)
@@ -287,6 +317,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
         from google.cloud.speech_v2.types import cloud_speech
 
         recognizer = self._recognizer_name()
+        self._active_recognizer_name = recognizer
+        logger.info("Google STT V2 recognizer: %s", recognizer)
         streaming_config = cloud_speech.StreamingRecognitionConfig(
             config=self._recognition_config(),
             streaming_features=self._streaming_features(),
@@ -324,6 +356,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
                 break
 
     def _stream_once(self):
+        self._last_stream_had_useful_text = False
+        self._last_stream_failed = False
         responses = self.client.streaming_recognize(requests=self._request_generator())
         response_count = 0
         for response in responses:
@@ -331,17 +365,60 @@ class GoogleSTTV2Stream(SpeechClientBase):
                 break
 
             response_count += 1
-            logger.info("Received V2 response #%s, results count: %s", response_count, len(response.results))
+            response_error = self._response_error_details(response)
+            if response_error:
+                logger.error("Received V2 response #%s with error: %s", response_count, response_error)
+                self._last_stream_failed = True
+                self._emit_event(
+                    {
+                        "type": "error",
+                        "message": (
+                            "Google Speech-to-Text V2 returned an error response: "
+                            + response_error
+                        ),
+                    }
+                )
+                break
+
+            results_count = len(response.results)
+            logger.info("Received V2 response #%s, results count: %s", response_count, results_count)
+            if results_count == 0:
+                self._empty_result_response_count += 1
+                logger.warning("V2 response #%s contained no recognition results.", response_count)
             self._emit_speech_activity_event(response)
 
             interim_texts = []
-            for result in response.results:
+            for index, result in enumerate(response.results, start=1):
                 if not result.alternatives:
+                    self._empty_alternative_count += 1
+                    logger.warning("V2 response #%s result #%s contained no alternatives.", response_count, index)
                     continue
 
                 alt = result.alternatives[0]
-                transcript = alt.transcript
+                transcript = alt.transcript or ""
                 confidence = getattr(alt, "confidence", 0.0)
+                stability = getattr(result, "stability", 0.0)
+                logger.info(
+                    "V2 response #%s result #%s: final=%s stability=%s alternatives=%s transcript_len=%s.",
+                    response_count,
+                    index,
+                    bool(result.is_final),
+                    stability,
+                    len(result.alternatives),
+                    len(transcript),
+                )
+                if not transcript.strip():
+                    self._empty_transcript_count += 1
+                    logger.warning(
+                        "V2 response #%s result #%s contained an empty transcript. final=%s.",
+                        response_count,
+                        index,
+                        bool(result.is_final),
+                    )
+                    continue
+
+                self._last_stream_had_useful_text = True
+                self._useful_transcript_count += 1
 
                 if result.is_final:
                     self._final_count += 1
@@ -367,12 +444,43 @@ class GoogleSTTV2Stream(SpeechClientBase):
         return response_count
 
     @staticmethod
-    def _bounded_audio_chunks(chunk: bytes, limit: int = 24000):
+    def _bounded_audio_chunks(chunk: bytes, limit: int = 12000):
         if len(chunk) <= limit:
             yield chunk
             return
         for start in range(0, len(chunk), limit):
             yield chunk[start : start + limit]
+
+    @staticmethod
+    def _response_error_details(response) -> str:
+        try:
+            error = None
+            pb = getattr(response, "_pb", None)
+            if pb is not None:
+                try:
+                    if pb.HasField("error"):
+                        error = response.error
+                except Exception:
+                    error = None
+            if error is None:
+                candidate = getattr(response, "error", None)
+                code = getattr(candidate, "code", 0) if candidate is not None else 0
+                message = getattr(candidate, "message", "") if candidate is not None else ""
+                if code or message:
+                    error = candidate
+            if error is None:
+                return ""
+            code = getattr(error, "code", 0)
+            message = getattr(error, "message", "") or ""
+            details = getattr(error, "details", None)
+            parts = [f"code={code}"]
+            if message:
+                parts.append(f"message={message}")
+            if details:
+                parts.append(f"details={details}")
+            return " ".join(parts)
+        except Exception:
+            return ""
 
     @staticmethod
     def _duration_from_seconds(value: float) -> Duration:
@@ -402,6 +510,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
                     self._force_restart_flag = False
                     stream_response_count = self._stream_once()
                     total_response_count += stream_response_count
+                    if self._last_stream_failed:
+                        break
                     if not self.active:
                         break
                     if stream_response_count == 0:
@@ -426,6 +536,31 @@ class GoogleSTTV2Stream(SpeechClientBase):
                             }
                         )
                         break
+                    if not self._last_stream_had_useful_text:
+                        logger.error(
+                            "Google STT V2 connected but stream ended with no usable transcript. "
+                            "responses=%s empty_result_responses=%s empty_alternatives=%s empty_transcripts=%s "
+                            "model=%s location=%s recognizer=%s language=%s.",
+                            stream_response_count,
+                            self._empty_result_response_count,
+                            self._empty_alternative_count,
+                            self._empty_transcript_count,
+                            self._active_model,
+                            self._active_location,
+                            self._active_recognizer_name,
+                            self.config.get("languages.primary", "iw-IL"),
+                        )
+                        self._emit_event(
+                            {
+                                "type": "error",
+                                "message": (
+                                    "Google Speech-to-Text V2 connected but returned no transcript. "
+                                    "Check model, region, language, recognizer, project permissions, and audio. "
+                                    "Run tools/google_stt_probe.py with a known Hebrew WAV."
+                                ),
+                            }
+                        )
+                        break
                     restart_count += 1
                     logger.warning(
                         "Google STT V2 stream ended while dictation is still active; restarting stream #%s.",
@@ -437,7 +572,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
                     if self._switch_to_fallback():
                         continue
                     logger.error(f"Google STT V2 API error: {e}")
-                    self._emit_event({"type": "error", "message": f"Google STT V2 API error: {e.message}"})
+                    message = getattr(e, "message", str(e))
+                    self._emit_event({"type": "error", "message": f"Google STT V2 API error: {message}"})
                     break
         except Exception as e:
             logger.error(f"Google STT V2 unexpected error: {e}")
@@ -445,13 +581,21 @@ class GoogleSTTV2Stream(SpeechClientBase):
         finally:
             self.active = False
             logger.info(
-                "Google STT V2 stream summary: responses=%s finals=%s interim_events=%s interim_segments=%s model=%s location=%s fallback=%s.",
+                "Google STT V2 stream summary: responses=%s finals=%s interim_events=%s interim_segments=%s "
+                "useful_transcripts=%s empty_result_responses=%s empty_alternatives=%s empty_transcripts=%s "
+                "model=%s location=%s recognizer=%s language=%s fallback=%s.",
                 self._response_count,
                 self._final_count,
                 self._interim_event_count,
                 self._interim_segment_count,
+                self._useful_transcript_count,
+                self._empty_result_response_count,
+                self._empty_alternative_count,
+                self._empty_transcript_count,
                 self._active_model,
                 self._active_location,
+                self._active_recognizer_name,
+                self.config.get("languages.primary", "iw-IL"),
                 self._using_fallback,
             )
             logger.info("Google STT V2 streaming thread exiting.")

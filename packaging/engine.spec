@@ -64,7 +64,29 @@ hiddenimports = [
 # 'docx' (python-docx) is imported lazily by export.py for DOCX history export and ships a default
 # template (docx/templates/default.docx) that PyInstaller must collect — without it, packaged DOCX
 # export raises at runtime (the packaged self-test now proves this works).
-for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "huggingface_hub", "sounddevice", "docx"):
+#
+# Google STT V2 is collected as package families, not only a few hidden imports.
+# The client loads grpc/protobuf/auth/api-core/proto-plus pieces dynamically; a
+# static import list can freeze an engine that launches but fails only when cloud
+# dictation starts.
+REQUIRED_COLLECT_ALL = (
+    "faster_whisper",
+    "ctranslate2",
+    "tokenizers",
+    "huggingface_hub",
+    "sounddevice",
+    "docx",
+    "google.cloud.speech_v2",
+    "google.api_core",
+    "google.auth",
+    "google.protobuf",
+    "grpc",
+    "proto",
+    "keyring",
+    "websockets",
+)
+
+for _pkg in REQUIRED_COLLECT_ALL:
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b
@@ -73,7 +95,9 @@ for _pkg in ("faster_whisper", "ctranslate2", "tokenizers", "huggingface_hub", "
 # OPTIONAL/transitive deps — best-effort. faster-whisper runs without these in our usage (we feed
 # numpy PCM and use our own segmenter, not faster-whisper's onnx VAD or PyAV decode), so a missing
 # one must not break the build.
-for _pkg in ("av", "onnxruntime"):
+OPTIONAL_COLLECT_ALL = ("av", "onnxruntime")
+
+for _pkg in OPTIONAL_COLLECT_ALL:
     try:
         _d, _b, _h = collect_all(_pkg)
         datas += _d

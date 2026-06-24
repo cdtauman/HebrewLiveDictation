@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+import importlib.util
 from pathlib import Path
 
 
@@ -23,17 +24,26 @@ BLOCKED_TREE_NAMES = {
 
 SKIP_DIRS = {
     ".git",
+    ".claude",
     ".venv",
     ".runenv",
     ".mypy_cache",
     ".ruff_cache",
     ".pytest_cache",
+    "bin",
     "build",
     "dist",
+    "obj",
     "__pycache__",
 }
 
-SKIP_ARTIFACT_PARENTS = {".git", ".venv", ".runenv", "build", "dist"}
+SKIP_ARTIFACT_PARENTS = {".git", ".claude", ".venv", ".runenv", "bin", "build", "dist", "obj"}
+
+SKIP_RUNTIME_FILES = {
+    "winui_runtime_report.txt",
+    "winui_runtime_report.positive.txt",
+    "winui_runtime_report.negative.txt",
+}
 
 TEXT_EXTENSIONS = {
     ".md",
@@ -56,6 +66,14 @@ SECRET_PATTERNS = (
 )
 
 
+def load_packaging_audit():
+    path = ROOT / "scripts" / "packaging_audit.py"
+    spec = importlib.util.spec_from_file_location("packaging_audit", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def iter_files() -> list[Path]:
     files: list[Path] = []
     for path in ROOT.rglob("*"):
@@ -63,13 +81,15 @@ def iter_files() -> list[Path]:
         if relative_parts & SKIP_DIRS:
             continue
         if path.is_file():
+            if path.name in SKIP_RUNTIME_FILES:
+                continue
             files.append(path)
     return files
 
 
 def is_under_skipped_artifact_parent(path: Path) -> bool:
     parts = path.relative_to(ROOT).parts
-    return any(part in SKIP_ARTIFACT_PARENTS for part in parts[:-1])
+    return any(part in SKIP_ARTIFACT_PARENTS or part in SKIP_DIRS for part in parts)
 
 
 def main() -> int:
@@ -102,6 +122,12 @@ def main() -> int:
             if pattern.search(text):
                 failures.append(f"{path.relative_to(ROOT)}: possible secret or developer-specific path")
                 break
+
+    try:
+        packaging_audit = load_packaging_audit()
+        failures.extend(f"packaging audit: {failure}" for failure in packaging_audit.check_all(ROOT))
+    except Exception as e:
+        failures.append(f"packaging audit could not run: {type(e).__name__}: {e}")
 
     if failures:
         print("Release audit failed:")

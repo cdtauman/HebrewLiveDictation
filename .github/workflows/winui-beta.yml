@@ -48,6 +48,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Packaging/security audit
+        env:
+          PYTHONPATH: src
+        run: python scripts/packaging_audit.py
+
       # Gate 1: the engine's own test suite (same as the legacy workflow's test job).
       - name: Python unit tests
         env:

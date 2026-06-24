@@ -171,6 +171,28 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertEqual(config.get("languages.primary"), "he-IL")
             self.assertEqual(config.get("languages.command_pack"), "he")
 
+    def test_language_change_sets_pack_but_manual_pack_override_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.set("languages.primary", "en-US"))
+            self.assertEqual(config.get("languages.command_pack"), "en")
+
+            self.assertTrue(config.set("languages.command_pack", "he"))
+            self.assertEqual(config.get("languages.command_pack"), "he")
+
+    def test_custom_phrases_and_phrase_boost_normalize(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.update({
+                "languages.custom_phrases": " Codex \n\nVoiceType\ncodex ",
+                "google.phrase_boost": 99,
+            }))
+
+            self.assertEqual(config.get("languages.custom_phrases"), ["Codex", "VoiceType"])
+            self.assertEqual(config.get("google.phrase_boost"), 20.0)
+
     def test_advanced_audio_vad_settings_normalize(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Config(tmp)

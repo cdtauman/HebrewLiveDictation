@@ -56,6 +56,50 @@
                 </StackPanel>
             </Border>
 
+            <!-- Command pack and phrase adaptation -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Custom words and commands" Style="{StaticResource SectionHeaderStyle}" />
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Command pack" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="Choose which spoken punctuation and editing commands are recognized."
+                                       Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ComboBox x:Name="CommandPackCombo" Grid.Column="1" MinWidth="200"
+                                  VerticalAlignment="Center" SelectionChanged="OnCommandPackChanged" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Spoken emoji" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="Allows supported cloud models to turn spoken emoji names into emoji."
+                                       Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="SpokenEmojiToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnSpokenEmojiToggled" />
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,220,52" ColumnSpacing="10">
+                        <TextBlock Grid.Column="0" Text="Google phrase boost" VerticalAlignment="Center" />
+                        <Slider x:Name="PhraseBoostSlider" Grid.Column="1" Minimum="0" Maximum="20"
+                                StepFrequency="1" ValueChanged="OnPhraseBoostChanged" />
+                        <TextBlock x:Name="PhraseBoostValue" Grid.Column="2" TextAlignment="Right"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Custom phrases" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="One word or phrase per line. Google uses these as speech adaptation hints."
+                                   Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        <TextBox x:Name="CustomPhrasesBox" AcceptsReturn="True" TextWrapping="Wrap"
+                                 MinHeight="96" PlaceholderText="one term per line"
+                                 LostFocus="OnCustomPhrasesLostFocus" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- Command reference (live from the active pack) -->
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="14">

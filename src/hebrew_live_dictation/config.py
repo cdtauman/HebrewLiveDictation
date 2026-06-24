@@ -237,6 +237,7 @@ class Config:
         resolved = self._resolve_key(key)
         self._set_path(resolved, value)
         self._enable_google_advanced_if_needed(resolved, value)
+        self._apply_config_side_effect(resolved, value)
         self._normalize_settings()
         if self.save():
             return True
@@ -249,6 +250,7 @@ class Config:
             resolved = self._resolve_key(key)
             self._set_path(resolved, value)
             self._enable_google_advanced_if_needed(resolved, value)
+            self._apply_config_side_effect(resolved, value)
         self._normalize_settings()
         if self.save():
             return True
@@ -311,6 +313,13 @@ class Config:
             if value in set(SUPPORTED_LOCATIONS) - {"eu", "us"}:
                 google["advanced_options"] = True
 
+    def _apply_config_side_effect(self, resolved_key: str, value: Any):
+        if resolved_key != "languages.primary":
+            return
+        preset = preset_for_language(str(value or ""))
+        if preset:
+            self.settings.setdefault("languages", {})["command_pack"] = preset.command_pack
+
     @staticmethod
     def _deep_merge(base: dict, incoming: dict) -> dict:
         for key, value in incoming.items():
@@ -364,6 +373,14 @@ class Config:
             google["model"] = DEFAULT_SETTINGS["google"]["model"]
         if google.get("fallback_model") not in allowed_models:
             google["fallback_model"] = DEFAULT_SETTINGS["google"]["fallback_model"]
+        google["automatic_punctuation"] = bool(google.get("automatic_punctuation", True))
+        google["interim_results"] = bool(google.get("interim_results", True))
+        google["enable_spoken_punctuation"] = bool(google.get("enable_spoken_punctuation", False))
+        google["enable_spoken_emoji"] = bool(google.get("enable_spoken_emoji", False))
+        try:
+            google["phrase_boost"] = max(0.0, min(20.0, float(google.get("phrase_boost", 15.0))))
+        except (TypeError, ValueError):
+            google["phrase_boost"] = DEFAULT_SETTINGS["google"]["phrase_boost"]
 
         dictation = self.settings.setdefault("dictation", {})
 
@@ -409,7 +426,6 @@ class Config:
             google["fallback_location"] = preset.fallback_location
             google["model"] = preset.primary_model
             google["fallback_model"] = DEFAULT_SETTINGS["google"]["fallback_model"]
-            languages["command_pack"] = preset.command_pack
 
         if primary in ("he-IL", "iw-IL"):
             alternatives = [code for code in alternatives if code != primary]
@@ -417,6 +433,23 @@ class Config:
             languages["command_pack"] = languages.get("command_pack") or "he"
 
         languages["alternatives"] = alternatives
+        custom_phrases = languages.get("custom_phrases", [])
+        if isinstance(custom_phrases, str):
+            custom_phrases = custom_phrases.splitlines()
+        if not isinstance(custom_phrases, (list, tuple)):
+            custom_phrases = []
+        normalized_phrases = []
+        seen_phrases = set()
+        for phrase in custom_phrases:
+            text = str(phrase or "").strip()
+            marker = text.casefold()
+            if text and marker not in seen_phrases:
+                normalized_phrases.append(text)
+                seen_phrases.add(marker)
+        languages["custom_phrases"] = normalized_phrases[:100]
+        allowed_packs = {"he", "en", "ar", "ru", "fr", "es"}
+        if languages.get("command_pack") not in allowed_packs:
+            languages["command_pack"] = preset.command_pack if preset else DEFAULT_SETTINGS["languages"]["command_pack"]
 
         audio = self.settings.setdefault("audio", {})
         audio["sample_rate"] = int(audio.get("sample_rate") or DEFAULT_SETTINGS["audio"]["sample_rate"])

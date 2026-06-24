@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
@@ -17,7 +18,8 @@ public sealed class CommandRow
 /// <summary>
 /// Dictation room: language, punctuation behavior, and a live voice-command reference
 /// (from the engine's active command pack). Config changes apply to the next dictation
-/// session; the engine stays the single config writer. Command pack follows the language.
+/// session; the engine stays the single config writer. Language changes choose a sane
+/// command pack, and users can override it.
 /// </summary>
 public sealed partial class DictationPage : Page
 {
@@ -35,6 +37,16 @@ public sealed partial class DictationPage : Page
         ("ru-RU", "Русский"),
         ("fr-FR", "Français"),
         ("es-ES", "Español"),
+    };
+
+    internal static readonly (string tag, string label)[] CommandPacks =
+    {
+        ("he", "Hebrew"),
+        ("en", "English"),
+        ("ar", "Arabic"),
+        ("ru", "Russian"),
+        ("fr", "French"),
+        ("es", "Spanish"),
     };
 
     // language code -> (command pack key, Hebrew pack name for the caption)
@@ -60,19 +72,27 @@ public sealed partial class DictationPage : Page
     private async Task LoadAsync()
     {
         string lang = await GetString("languages.primary", "iw-IL");
+        string commandPack = await GetString("languages.command_pack", PackForLanguage(lang));
         bool autoPunct = await GetBool("google.automatic_punctuation", true);
         bool spokenPunct = await GetBool("google.enable_spoken_punctuation", false);
+        bool spokenEmoji = await GetBool("google.enable_spoken_emoji", false);
+        double phraseBoost = await GetDouble("google.phrase_boost", 15.0);
+        var customPhrases = await GetStringList("languages.custom_phrases");
 
         DispatcherQueue.TryEnqueue(() =>
         {
             _loading = true;
-            if (LanguageCombo.Items.Count == 0)
-                foreach (var (tag, label) in Languages)
-                    LanguageCombo.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+            PopulateLanguages();
+            PopulateCommandPacks();
             SelectLanguage(lang);
+            SelectCommandPack(commandPack);
             AutoPunctToggle.IsOn = autoPunct;
             SpokenPunctToggle.IsOn = spokenPunct;
-            PackLabel.Text = "פקודות קוליות: " + PackName(lang);
+            SpokenEmojiToggle.IsOn = spokenEmoji;
+            PhraseBoostSlider.Value = CoercePhraseBoost(phraseBoost);
+            UpdatePhraseBoostLabel(PhraseBoostSlider.Value);
+            CustomPhrasesBox.Text = string.Join(Environment.NewLine, customPhrases);
+            PackLabel.Text = "Voice commands: " + PackNameForPack(commandPack);
             _loading = false;
         });
 
@@ -100,6 +120,36 @@ public sealed partial class DictationPage : Page
     {
         if (_loading) return;
         await Persist("google.enable_spoken_punctuation", SpokenPunctToggle.IsOn);
+    }
+
+    private async void OnSpokenEmojiToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        await Persist("google.enable_spoken_emoji", SpokenEmojiToggle.IsOn);
+    }
+
+    private async void OnCommandPackChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        string pack = SelectedCommandPack();
+        if (!await Persist("languages.command_pack", pack)) return;
+        PackLabel.Text = "Voice commands: " + PackNameForPack(pack);
+        await LoadCommandsAsync();
+    }
+
+    private async void OnPhraseBoostChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        UpdatePhraseBoostLabel(e.NewValue);
+        if (_loading) return;
+        await Persist("google.phrase_boost", CoercePhraseBoost(e.NewValue));
+    }
+
+    private async void OnCustomPhrasesLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        var phrases = ParseCustomPhrases(CustomPhrasesBox.Text);
+        if (await Persist("languages.custom_phrases", phrases))
+            CustomPhrasesBox.Text = string.Join(Environment.NewLine, phrases);
     }
 
     private async Task LoadCommandsAsync()
@@ -141,9 +191,71 @@ public sealed partial class DictationPage : Page
         LanguageCombo.SelectedIndex = 0;
     }
 
+    private void SelectCommandPack(string pack)
+    {
+        foreach (var obj in CommandPackCombo.Items)
+            if (obj is FrameworkElement fe && fe.Tag as string == pack) { CommandPackCombo.SelectedItem = obj; return; }
+        CommandPackCombo.SelectedIndex = 0;
+    }
+
     private string SelectedLanguage() => (LanguageCombo.SelectedItem as FrameworkElement)?.Tag as string ?? "iw-IL";
 
     private static string PackName(string lang) => LangPack.TryGetValue(lang, out var p) ? p.name : "עברית";
+
+    private string SelectedCommandPack() => (CommandPackCombo.SelectedItem as FrameworkElement)?.Tag as string ?? "he";
+
+    private static string PackForLanguage(string lang) => LangPack.TryGetValue(lang, out var p) ? p.pack : "he";
+
+    private static string PackNameForPack(string pack)
+        => CommandPacks.FirstOrDefault(p => p.tag == pack).label ?? PackName("iw-IL");
+
+    private void PopulateLanguages()
+    {
+        if (LanguageCombo.Items.Count > 0) return;
+        foreach (var (tag, label) in Languages)
+            LanguageCombo.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+    }
+
+    private void PopulateCommandPacks()
+    {
+        if (CommandPackCombo.Items.Count > 0) return;
+        foreach (var (tag, label) in CommandPacks)
+            CommandPackCombo.Items.Add(new ComboBoxItem { Content = label, Tag = tag });
+    }
+
+    private static double CoercePhraseBoost(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value)) return 15.0;
+        return Math.Clamp(Math.Round(value), 0.0, 20.0);
+    }
+
+    private void UpdatePhraseBoostLabel(double value) => PhraseBoostValue.Text = CoercePhraseBoost(value).ToString("0");
+
+    private static string[] ParseCustomPhrases(string text)
+        => (text ?? "")
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(100)
+            .ToArray();
+
+    internal void RenderLanguageAssistForTest(string pack, bool spokenEmoji, double phraseBoost, string[] phrases)
+    {
+        _loading = true;
+        PopulateCommandPacks();
+        SelectCommandPack(pack);
+        SpokenEmojiToggle.IsOn = spokenEmoji;
+        PhraseBoostSlider.Value = CoercePhraseBoost(phraseBoost);
+        UpdatePhraseBoostLabel(PhraseBoostSlider.Value);
+        CustomPhrasesBox.Text = string.Join(Environment.NewLine, phrases);
+        _loading = false;
+    }
+
+    internal string SelectedCommandPackForTest => SelectedCommandPack();
+    internal bool SpokenEmojiForTest => SpokenEmojiToggle.IsOn;
+    internal string PhraseBoostTextForTest => PhraseBoostValue.Text;
+    internal string CustomPhrasesTextForTest => CustomPhrasesBox.Text;
 
     private async Task<bool> Persist(string key, object value)
     {
@@ -191,6 +303,47 @@ public sealed partial class DictationPage : Page
         }
         catch { }
         return fallback;
+    }
+
+    private async Task<double> GetDouble(string key, double fallback)
+    {
+        if (_host?.Client == null) return fallback;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v))
+            {
+                if (v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d)) return d;
+                if (v.ValueKind == JsonValueKind.String && double.TryParse(v.GetString(), out var parsed)) return parsed;
+            }
+        }
+        catch { }
+        return fallback;
+    }
+
+    private async Task<List<string>> GetStringList(string key)
+    {
+        var values = new List<string>();
+        if (_host?.Client == null) return values;
+        try
+        {
+            var r = await _host.Client.RpcAsync("getConfig", new { key });
+            if (!r.TryGetProperty("value", out var v)) return values;
+            if (v.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in v.EnumerateArray())
+                {
+                    string text = item.GetString() ?? "";
+                    if (!string.IsNullOrWhiteSpace(text)) values.Add(text.Trim());
+                }
+            }
+            else if (v.ValueKind == JsonValueKind.String)
+            {
+                values.AddRange(ParseCustomPhrases(v.GetString() ?? ""));
+            }
+        }
+        catch { }
+        return values;
     }
 
     private async Task ShowMessageAsync(string title, string body)

@@ -183,6 +183,7 @@ class GoogleSTTV2StreamTests(unittest.TestCase):
                     "languages.alternatives": ["en-US"],
                     "languages.custom_code": "fr-FR",
                     "languages.custom_phrases": ["\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd", "Codex"],
+                    "google.phrase_boost": 7.0,
                 }
             )
 
@@ -196,6 +197,9 @@ class GoogleSTTV2StreamTests(unittest.TestCase):
             self.assertTrue(recognition_config.features.enable_automatic_punctuation)
             self.assertFalse(recognition_config.features.enable_word_confidence)
             self.assertTrue(recognition_config.adaptation.phrase_sets)
+            phrase_set = recognition_config.adaptation.phrase_sets[0].inline_phrase_set
+            self.assertEqual(phrase_set.boost, 7.0)
+            self.assertEqual(phrase_set.phrases[0].boost, 7.0)
 
     def test_latest_long_omits_automatic_punctuation_feature(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -479,6 +479,22 @@ internal static class RuntimeSelfTest
             }
             catch (Exception ex) { Check("controls.audio_feedback.surface", false, XamlDetail(ex)); }
 
+            // 6h.3) Dictation-room language assists: command-pack override, spoken emoji, phrase
+            //       boost, and custom phrase box render without touching real credentials/audio.
+            try
+            {
+                var dp = new Views.DictationPage();
+                dp.RenderLanguageAssistForTest("en", spokenEmoji: true, phraseBoost: 9, new[] { "Codex", "VoiceType" });
+                bool assistsOk = dp.SelectedCommandPackForTest == "en"
+                                 && dp.SpokenEmojiForTest
+                                 && dp.PhraseBoostTextForTest == "9"
+                                 && dp.CustomPhrasesTextForTest.Contains("Codex")
+                                 && dp.CustomPhrasesTextForTest.Contains("VoiceType");
+                Check("dictation.language_assists.surface", assistsOk,
+                      "command pack, spoken emoji, phrase boost, and custom phrase controls render");
+            }
+            catch (Exception ex) { Check("dictation.language_assists.surface", false, XamlDetail(ex)); }
+
             // 6i) Engine-room offline model management: download offered when absent, delete
             //     offered when present, ring while downloading (render only — no RPC/download).
             try

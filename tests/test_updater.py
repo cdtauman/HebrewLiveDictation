@@ -53,6 +53,11 @@ class ShouldUpdateTests(unittest.TestCase):
     def test_disabled_kill_switch(self):
         self.assertFalse(updater.should_update("1.0.0", {"version": "9.9.9", "disabled": True})[0])
 
+    def test_min_version_blocks_too_old_client(self):
+        ok, reason = updater.should_update("1.0.0", {"version": "2.0.0", "min_version": "1.5.0"})
+        self.assertFalse(ok)
+        self.assertIn("minimum", reason)
+
 
 class CheckForUpdateTests(unittest.TestCase):
     def _config(self, **overrides):
@@ -107,6 +112,17 @@ class CheckForUpdateTests(unittest.TestCase):
 
         self.assertEqual(updater.check_for_update(self._enabled_config(pub), "1.0.0", fetch=fetch)["status"], "up_to_date")
 
+    def test_signed_min_version_block_returns_blocked(self):
+        priv, pub = _keypair()
+        manifest = json.dumps({"version": "2.0.0", "min_version": "1.5.0"})
+        sig = priv.sign(manifest.encode())
+
+        def fetch(url, binary=False):
+            return sig if url.endswith(".sig") else manifest
+
+        result = updater.check_for_update(self._enabled_config(pub), "1.0.0", fetch=fetch)
+        self.assertEqual(result["status"], "blocked")
+
     def test_network_error_is_reported(self):
         priv, pub = _keypair()
 
@@ -151,6 +167,23 @@ class UpdaterConfigTests(unittest.TestCase):
             config = Config(tmp)
             self.assertFalse(config.get("updater.enabled"))
             self.assertEqual(config.get("updater.endpoint"), "")
+
+    def test_status_snapshot_exposes_no_key_material(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            config.update({
+                "updater.enabled": True,
+                "updater.endpoint": "https://updates.example/latest.json",
+                "updater.public_key": "public-key",
+                "release.channel": "beta",
+            })
+            status = updater.update_status(config, current_version="1.1.0")
+            self.assertTrue(status["enabled"])
+            self.assertTrue(status["endpointConfigured"])
+            self.assertTrue(status["signingKeyConfigured"])
+            self.assertEqual(status["currentVersion"], "1.1.0")
+            self.assertEqual(status["channel"], "beta")
+            self.assertNotIn("public-key", repr(status))
 
 
 if __name__ == "__main__":

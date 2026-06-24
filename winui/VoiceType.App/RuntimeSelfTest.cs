@@ -151,6 +151,21 @@ internal static class RuntimeSelfTest
                       credentialShape ? "provider credential status returned no-secret storage metadata"
                                       : credentialStatus.GetRawText());
 
+                var updateStatus = await client.RpcAsync("getUpdateStatus");
+                bool updateShape = updateStatus.TryGetProperty("enabled", out var usEnabled)
+                                   && (usEnabled.ValueKind == JsonValueKind.True || usEnabled.ValueKind == JsonValueKind.False)
+                                   && updateStatus.TryGetProperty("currentVersion", out var usVer)
+                                   && usVer.ValueKind == JsonValueKind.String
+                                   && updateStatus.TryGetProperty("endpointConfigured", out _)
+                                   && updateStatus.TryGetProperty("signingKeyConfigured", out _)
+                                   && !updateStatus.TryGetProperty("publicKey", out _);
+                string updateVersion = updateStatus.TryGetProperty("currentVersion", out var usVerMsg)
+                                       && usVerMsg.ValueKind == JsonValueKind.String
+                    ? usVerMsg.GetString() ?? ""
+                    : "";
+                Check("bridge.getUpdateStatus", updateShape,
+                      updateShape ? $"update status returned version {updateVersion}" : updateStatus.GetRawText());
+
                 var theme = (await client.RpcAsync("getConfig", new { key = "app.theme" }))
                             .GetProperty("value").GetString();
                 var wrote = await client.RpcAsync("setConfig", new { key = "app.theme", value = theme });
@@ -545,8 +560,15 @@ internal static class RuntimeSelfTest
                 bool settingsPrivacyOk = !sp.HistoryEnabledForTest
                                          && !sp.HistoryLimitEnabledForTest
                                          && sp.HistoryLimitForTest == 250;
+                sp.RenderUpdateStatusForTest(enabled: false, endpointConfigured: false,
+                                             signingKeyConfigured: false, version: "1.1.0", channel: "beta");
+                bool updatesOk = !sp.UpdateEnabledForTest
+                                 && sp.UpdateStatusForTest.Contains("1.1.0")
+                                 && sp.UpdateStatusForTest.Contains("חתום");
                 Check("history.privacy.surface", historyOk && settingsPrivacyOk,
                       "History search/status and Settings save-history toggle render safely");
+                Check("settings.update.surface", updatesOk,
+                      "Settings renders signed update checks as manual and installer-safe");
             }
             catch (Exception ex) { Check("history.privacy.surface", false, XamlDetail(ex)); }
 

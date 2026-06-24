@@ -32,7 +32,12 @@ def app_version():
 
         return version("hebrew-live-dictation")
     except Exception:
-        return "1.1.0"
+        try:
+            from . import __version__
+
+            return __version__
+        except Exception:
+            return "0.0.0"
 
 
 def public_key_b64(config):
@@ -81,11 +86,42 @@ def should_update(current_version, manifest):
     if not target:
         return False, "No version in manifest."
     try:
+        min_version = str(manifest.get("min_version", "") or "")
+        if min_version and Version(current_version) < Version(min_version):
+            return False, "This app version is below the signed minimum for automatic update."
         if Version(target) <= Version(current_version):
             return False, "Already up to date."
     except InvalidVersion:
         return False, "Invalid version in manifest."
     return True, "Update available."
+
+
+def update_status(config, current_version=None):
+    """Non-network status for product UI; never exposes key material."""
+    if current_version is None:
+        current_version = app_version()
+    embedded_key = bool(EMBEDDED_PUBLIC_KEY_B64)
+    config_key = bool(str(config.get("updater.public_key", "") or ""))
+    endpoint = str(config.get("updater.endpoint", "") or "")
+    return {
+        "enabled": bool(config.get("updater.enabled", False)),
+        "checkOnStart": bool(config.get("updater.check_on_start", False)),
+        "endpointConfigured": bool(endpoint),
+        "signingKeyConfigured": bool(public_key_b64(config)),
+        "embeddedSigningKey": embedded_key,
+        "usesConfigSigningKey": (not embedded_key) and config_key,
+        "currentVersion": str(current_version or ""),
+        "channel": str(config.get("release.channel", "") or ""),
+    }
+
+
+def _status_for_no_update(reason):
+    if reason in {
+        "Updates are disabled by the server.",
+        "This app version is below the signed minimum for automatic update.",
+    }:
+        return "blocked"
+    return "up_to_date"
 
 
 def _http_fetch(url, binary=False):
@@ -125,7 +161,7 @@ def check_for_update(config, current_version=None, fetch=None):
     except Exception as e:
         return {"status": "error", "message": f"Malformed update manifest: {e}"}
     ok, reason = should_update(current_version, manifest)
-    return {"status": "update_available" if ok else "up_to_date", "message": reason, "manifest": manifest}
+    return {"status": "update_available" if ok else _status_for_no_update(reason), "message": reason, "manifest": manifest}
 
 
 def verify_installer_sha256(path, expected_hex):

@@ -28,6 +28,11 @@ See `src/hebrew_live_dictation/updater.py` and ADR-006.
    Leave `public_key` empty in production — the embedded constant is authoritative;
    the config field is for staging/testing only.
 
+The WinUI Settings room shows the current app version and whether signed update
+checks are configured. The **Check** button performs a manual signed-manifest
+check only. If a signed update is available, the app offers to open the verified
+release URL; it does **not** download or launch installers automatically.
+
 ## Per release
 
 1. Build the installer (`build_app.ps1`) and compute its SHA-256.
@@ -57,6 +62,6 @@ rollout — the app refuses to offer such a manifest.
   GitHub Actions secret) and publish `SHA256SUMS`.
 - **Authenticode** signing of the installer (needs an OV/EV code-signing
   certificate) — reduces SmartScreen friction; independent of manifest signing.
-- The current UI ("Check for updates" on the Logs/About page) verifies and opens
-  the release URL; auto-download+launch (`updater.download_and_launch`) exists and
-  is tested but is intentionally not wired to run installers unattended yet.
+- Auto-download+launch (`updater.download_and_launch`) exists and is tested, but
+  is intentionally not wired to the WinUI product flow. Installer launch remains
+  manual.

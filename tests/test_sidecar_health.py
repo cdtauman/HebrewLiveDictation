@@ -23,6 +23,7 @@ from hebrew_live_dictation.bridge.sidecar import (
     provider_credential_status,
     provider_control_status,
     recent_history,
+    update_status,
 )
 
 
@@ -970,6 +971,21 @@ class ModelDownloadTests(unittest.TestCase):
             self.assertFalse(status["enabled"])
             self.assertEqual(status["maxEntries"], 100)
             self.assertEqual(status["count"], 2)
+
+    def test_update_status_reports_safe_configuration_shape(self):
+        status = update_status(_FakeConfig({
+            "updater.enabled": True,
+            "updater.check_on_start": True,
+            "updater.endpoint": "https://updates.example/latest.json",
+            "updater.public_key": "public-key",
+            "release.channel": "beta",
+        }))
+        self.assertTrue(status["enabled"])
+        self.assertTrue(status["checkOnStart"])
+        self.assertTrue(status["endpointConfigured"])
+        self.assertTrue(status["signingKeyConfigured"])
+        self.assertEqual(status["channel"], "beta")
+        self.assertNotIn("public-key", repr(status))
 
 
     def test_command_reference_he_deduped_and_friendly(self):

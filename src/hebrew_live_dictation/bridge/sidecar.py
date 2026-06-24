@@ -1225,6 +1225,33 @@ def _delete_history_entry(config, entry_id) -> bool:
         return False
 
 
+def update_status(config) -> dict:
+    try:
+        from .. import updater
+        return updater.update_status(config)
+    except Exception as e:
+        return {
+            "enabled": False,
+            "checkOnStart": False,
+            "endpointConfigured": False,
+            "signingKeyConfigured": False,
+            "embeddedSigningKey": False,
+            "usesConfigSigningKey": False,
+            "currentVersion": "",
+            "channel": "",
+            "error": str(e),
+        }
+
+
+def check_for_updates(config) -> dict:
+    try:
+        from .. import updater
+        return updater.check_for_update(config)
+    except Exception as e:
+        logger.error("checkForUpdates failed:\n%s", traceback.format_exc())
+        return {"status": "error", "message": str(e)}
+
+
 _SYMBOL_LABELS = {"\n": "↵ שורה חדשה", "\n\n": "¶ פסקה"}
 _ACTION_LABELS = {
     "stop": "עצירת הכתבה",
@@ -1876,6 +1903,12 @@ def run(pipe_name: str | None = None) -> int:
             if not params.get("confirm"):
                 return {"cleared": False, "error": "confirmation required"}
             return {"cleared": _clear_history(config)}
+        if method == "getUpdateStatus":
+            return update_status(config)
+        if method == "checkForUpdates":
+            # Manual signed-manifest check only. The engine never downloads or launches
+            # installers from this RPC; the UI may offer to open the signed release URL.
+            return check_for_updates(config)
         if method == "setConfig":
             # Reject unknown model names at the boundary when selecting the offline model (Should-Fix).
             if params.get("key") == "providers.whisper.model" and not _is_known_model(params.get("value")):

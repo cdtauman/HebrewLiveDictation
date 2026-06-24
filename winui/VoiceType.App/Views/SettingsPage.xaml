@@ -106,6 +106,35 @@
                 </StackPanel>
             </Expander>
 
+            <!-- Updates -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="עדכונים" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock x:Name="UpdateStatusText" Text="בודק מצב עדכונים..."
+                                       Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button x:Name="CheckUpdatesButton" Grid.Column="1" Click="OnCheckUpdates"
+                                VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE895;" FontSize="14" />
+                                <TextBlock Text="בדוק" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="בדיקת עדכונים חתומה" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="מופעל רק מול מניפסט חתום. התקנה נשארת פעולה ידנית."
+                                       Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="UpdateEnabledToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnUpdateEnabledToggled" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- Diagnostics -->
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="12">

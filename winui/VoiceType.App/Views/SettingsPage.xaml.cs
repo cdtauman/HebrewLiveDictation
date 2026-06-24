@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.System;
 
 namespace VoiceType.Shell.Views;
 
@@ -52,6 +53,7 @@ public sealed partial class SettingsPage : Page
 
         await LoadLabsAsync();
         await LoadDiagnosticsAsync();
+        await LoadUpdateStatusAsync();
     }
 
     private async void OnThemeChanged(object sender, SelectionChangedEventArgs e)
@@ -113,6 +115,127 @@ public sealed partial class SettingsPage : Page
         HistoryLimitBox.IsEnabled = enabled;
     }
 
+    private async Task LoadUpdateStatusAsync()
+    {
+        bool enabled = false;
+        bool endpoint = false;
+        bool signingKey = false;
+        string version = AppVersion();
+        string channel = "";
+        if (_host?.Client != null)
+        {
+            try
+            {
+                var status = await _host.Client.RpcAsync("getUpdateStatus");
+                enabled = Bool(status, "enabled");
+                endpoint = Bool(status, "endpointConfigured");
+                signingKey = Bool(status, "signingKeyConfigured");
+                version = Str(status, "currentVersion");
+                channel = Str(status, "channel");
+            }
+            catch { }
+        }
+        DispatcherQueue.TryEnqueue(() => RenderUpdateStatus(enabled, endpoint, signingKey, version, channel, ""));
+    }
+
+    private async void OnUpdateEnabledToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        bool enabled = UpdateEnabledToggle.IsOn;
+        if (await Persist("updater.enabled", enabled))
+            await LoadUpdateStatusAsync();
+    }
+
+    private async void OnCheckUpdates(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Client == null) return;
+        CheckUpdatesButton.IsEnabled = false;
+        UpdateStatusText.Text = "בודק מניפסט עדכונים חתום...";
+        try
+        {
+            var result = await _host.Client.RpcAsync("checkForUpdates", timeoutMs: 30000);
+            await RenderUpdateResultAsync(result);
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = "בדיקת העדכונים נכשלה: " + ex.Message;
+        }
+        finally
+        {
+            CheckUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private async Task RenderUpdateResultAsync(JsonElement result)
+    {
+        string status = Str(result, "status");
+        string message = Str(result, "message");
+        string version = "";
+        string notes = "";
+        string url = "";
+        if (result.TryGetProperty("manifest", out var manifest) && manifest.ValueKind == JsonValueKind.Object)
+        {
+            version = Str(manifest, "version");
+            notes = Str(manifest, "notes");
+            url = Str(manifest, "url");
+        }
+
+        if (status == "update_available")
+        {
+            UpdateStatusText.Text = string.IsNullOrWhiteSpace(version)
+                ? "זמין עדכון חתום."
+                : $"זמין עדכון חתום: {version}. ההורדה וההתקנה הן ידניות.";
+            await ShowUpdateDialogAsync(version, notes, url);
+            return;
+        }
+        if (status == "up_to_date")
+            UpdateStatusText.Text = "הגרסה הנוכחית עדכנית. " + message;
+        else if (status == "blocked")
+            UpdateStatusText.Text = "עדכון לא יוצע: " + message;
+        else if (status == "disabled")
+            UpdateStatusText.Text = "בדיקת עדכונים כבויה.";
+        else if (status == "not_configured")
+            UpdateStatusText.Text = "בדיקת עדכונים אינה מוגדרת: " + message;
+        else if (status == "untrusted")
+            UpdateStatusText.Text = "מניפסט העדכון לא אומת ונחסם.";
+        else
+            UpdateStatusText.Text = string.IsNullOrWhiteSpace(message) ? "בדיקת העדכונים נכשלה." : message;
+    }
+
+    private async Task ShowUpdateDialogAsync(string version, string notes, string url)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = string.IsNullOrWhiteSpace(version) ? "זמין עדכון" : $"זמין עדכון {version}",
+            Content = string.IsNullOrWhiteSpace(notes)
+                ? "המניפסט אומת בחתימה. VoiceType לא מריץ מתקינים אוטומטית."
+                : notes + "\n\nהמניפסט אומת בחתימה. VoiceType לא מריץ מתקינים אוטומטית.",
+            PrimaryButtonText = "פתח הורדה",
+            IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(url),
+            CloseButtonText = "סגור",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot,
+            FlowDirection = FlowDirection.RightToLeft,
+        };
+        var choice = await dialog.ShowAsync();
+        if (choice == ContentDialogResult.Primary && Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            await Launcher.LaunchUriAsync(uri);
+    }
+
+    private void RenderUpdateStatus(bool enabled, bool endpointConfigured, bool signingKeyConfigured,
+                                    string version, string channel, string message)
+    {
+        _loading = true;
+        UpdateEnabledToggle.IsOn = enabled;
+        _loading = false;
+        string configured = endpointConfigured && signingKeyConfigured ? "מוגדר" : "לא מוגדר";
+        string prefix = enabled ? "בדיקת עדכונים פעילה" : "בדיקת עדכונים כבויה";
+        string channelText = string.IsNullOrWhiteSpace(channel) ? "" : $" · ערוץ: {channel}";
+        UpdateStatusText.Text = string.IsNullOrWhiteSpace(message)
+            ? $"{prefix}. גרסה {version}{channelText}. מניפסט חתום: {configured}."
+            : message;
+    }
+
     private async Task LoadLabsAsync()
     {
         bool enabled = false;
@@ -154,9 +277,15 @@ public sealed partial class SettingsPage : Page
     internal void RenderHistoryPrivacyForTest(bool enabled, int historyLimit)
         => RenderHistoryPrivacy(enabled, historyLimit);
 
+    internal void RenderUpdateStatusForTest(bool enabled, bool endpointConfigured, bool signingKeyConfigured,
+                                            string version, string channel, string message = "")
+        => RenderUpdateStatus(enabled, endpointConfigured, signingKeyConfigured, version, channel, message);
+
     internal bool HistoryEnabledForTest => HistoryEnabledToggle.IsOn;
     internal bool HistoryLimitEnabledForTest => HistoryLimitBox.IsEnabled;
     internal int HistoryLimitForTest => (int)HistoryLimitBox.Value;
+    internal bool UpdateEnabledForTest => UpdateEnabledToggle.IsOn;
+    internal string UpdateStatusForTest => UpdateStatusText.Text;
 
     internal bool LabsLiveTypingEnabledForTest => LabsLiveTypingToggle.IsOn;
     internal string LabsStatusForTest => LabsStatusText.Text;

@@ -11,6 +11,7 @@ from hebrew_live_dictation.bridge.sidecar import (
     _delete_history_entry,
     command_reference,
     compute_health,
+    diagnostics_snapshot,
     engine_label,
     friendly_app_name,
     full_history,
@@ -23,6 +24,7 @@ from hebrew_live_dictation.bridge.sidecar import (
     provider_credential_status,
     provider_control_status,
     recent_history,
+    target_diagnostics,
     update_status,
 )
 
@@ -476,6 +478,32 @@ class HealthTests(unittest.TestCase):
             ins = sidecar.engine_capabilities()["insertion"]
         self.assertFalse(ins["comtypes_client"])   # the Word COM submodule -> reported False
         self.assertTrue(ins["comtypes"])            # base package still importable, independently
+
+    def test_diagnostics_snapshot_composes_support_shape_without_secret_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _FakeConfig({
+                "stt.mode": "api",
+                "stt.provider": "google_v2",
+                "updater.enabled": True,
+                "updater.endpoint": "https://updates.example/latest.json",
+                "updater.public_key": "public-key",
+                "release.channel": "beta",
+            }, config_dir=tmp)
+            with mock.patch.object(sidecar, "model_status",
+                                   return_value={"name": "small", "downloaded": False, "state": "missing", "path": tmp}):
+                with mock.patch.object(sidecar, "target_diagnostics",
+                                       return_value={"supported": True, "usable": False, "label": "", "reason": "test"}):
+                    snap = diagnostics_snapshot(cfg, state="idle", hotkeys_active=True,
+                                                config_dir=tmp, pipe_name=r"\\.\pipe\vt")
+        self.assertEqual(snap["schema"], 1)
+        self.assertEqual(snap["state"]["engine"], "idle")
+        self.assertTrue(snap["state"]["hotkeysActive"])
+        self.assertTrue(snap["paths"]["engineLog"].endswith("hebrew_live_dictation.log"))
+        self.assertIn("routing", snap["provider"])
+        self.assertEqual(snap["model"]["name"], "small")
+        self.assertIn("insertion", snap["capabilities"])
+        self.assertEqual(snap["update"]["channel"], "beta")
+        self.assertNotIn("public-key", repr(snap))
 
     def test_model_downloaded_reflects_real_presence(self):
         with mock.patch("hebrew_live_dictation.models.model_status", return_value={"downloaded": True}):
@@ -1163,6 +1191,29 @@ class HudTargetTests(unittest.TestCase):
         with mock.patch("hebrew_live_dictation.editing_backend.WindowTarget.capture_best_target",
                         side_effect=RuntimeError("boom")):
             self.assertEqual(injection_target_label(), "")
+
+    @unittest.skipUnless(sys.platform == "win32", "Win32 target selection")
+    def test_target_diagnostics_uses_same_safety_gate(self):
+        class _T:
+            hwnd = 123
+            process_name = "winword.exe"
+            title = "Document 1"
+
+            def is_usable_external(self):
+                return True
+
+            def is_blocked_system_target(self):
+                return False
+
+            def is_current_process(self):
+                return False
+
+        with mock.patch("hebrew_live_dictation.editing_backend.WindowTarget.capture_best_target", return_value=_T()):
+            diag = target_diagnostics()
+        self.assertTrue(diag["supported"])
+        self.assertTrue(diag["usable"])
+        self.assertEqual(diag["label"], "Word")
+        self.assertEqual(diag["process"], "winword.exe")
 
 
 class CloudSilentFailureTests(unittest.TestCase):

@@ -166,6 +166,19 @@ internal static class RuntimeSelfTest
                 Check("bridge.getUpdateStatus", updateShape,
                       updateShape ? $"update status returned version {updateVersion}" : updateStatus.GetRawText());
 
+                var diag = await client.RpcAsync("getDiagnosticsSnapshot");
+                bool diagShape = diag.TryGetProperty("provider", out var diagProvider)
+                                 && diagProvider.TryGetProperty("routing", out _)
+                                 && diag.TryGetProperty("model", out _)
+                                 && diag.TryGetProperty("target", out _)
+                                 && diag.TryGetProperty("runtime", out _)
+                                 && diag.TryGetProperty("capabilities", out _)
+                                 && !diag.GetRawText().Contains("apiKey", StringComparison.OrdinalIgnoreCase)
+                                 && !diag.GetRawText().Contains("publicKey", StringComparison.OrdinalIgnoreCase);
+                Check("bridge.diagnostics.snapshot", diagShape,
+                      diagShape ? "provider/model/target/package diagnostics returned without secrets"
+                                : diag.GetRawText());
+
                 var theme = (await client.RpcAsync("getConfig", new { key = "app.theme" }))
                             .GetProperty("value").GetString();
                 var wrote = await client.RpcAsync("setConfig", new { key = "app.theme", value = theme });
@@ -571,6 +584,38 @@ internal static class RuntimeSelfTest
                       "Settings renders signed update checks as manual and installer-safe");
             }
             catch (Exception ex) { Check("history.privacy.surface", false, XamlDetail(ex)); }
+
+            // 6h.6) Settings diagnostics copy: provider/target/package data is rendered
+            //     from the bridge snapshot without exposing key material.
+            try
+            {
+                using var diagDoc = JsonDocument.Parse("""
+                {
+                  "schema": 1,
+                  "state": { "engine": "idle", "hotkeysActive": true, "pipe": "vt-test" },
+                  "paths": { "configDir": "C:\\Users\\Example\\VoiceType", "engineLog": "C:\\Users\\Example\\VoiceType\\hebrew_live_dictation.log" },
+                  "runtime": { "python": "3.12", "executable": "C:\\Users\\Example\\VoiceType\\engine.exe", "frozen": true, "platform": "win32", "cwd": "C:\\Users\\Example\\VoiceType" },
+                  "provider": { "mode": "api", "effectiveProvider": "google_v2", "stream": "google_v2", "routing": { "startGate": "ready", "backupReady": true, "effectiveLabel": "Google STT V2" } },
+                  "model": { "name": "small", "downloaded": true, "state": "ready", "path": "C:\\Users\\Example\\VoiceType\\models" },
+                  "target": { "usable": true, "label": "Word", "process": "winword.exe" },
+                  "labs": { "gate": "locked", "liveTypingMode": "final_only", "inputBackend": "v1" },
+                  "update": { "currentVersion": "1.1.0", "enabled": false, "endpointConfigured": false, "signingKeyConfigured": false },
+                  "capabilities": { "insertion": { "comtypes": true, "comtypes_client": true, "uiautomation": true } }
+                }
+                """);
+                string renderedDiag = Views.SettingsPage.FormatDiagnosticsForTest(diagDoc.RootElement);
+                bool diagSurfaceOk = renderedDiag.Contains("VoiceType diagnostics")
+                                     && renderedDiag.Contains("provider:")
+                                     && renderedDiag.Contains("Google STT V2")
+                                     && renderedDiag.Contains("target:")
+                                     && renderedDiag.Contains("winword.exe")
+                                     && renderedDiag.Contains("insertion deps")
+                                     && !renderedDiag.Contains("publicKey", StringComparison.OrdinalIgnoreCase)
+                                     && !renderedDiag.Contains("apiKey", StringComparison.OrdinalIgnoreCase);
+                Check("settings.diagnostics.surface", diagSurfaceOk,
+                      "Settings formats provider/target/package diagnostics for support copy");
+            }
+            catch (Exception ex) { Check("settings.diagnostics.surface", false, XamlDetail(ex)); }
 
             // 6i) Engine-room offline model management: download offered when absent, delete
             //     offered when present, ring while downloading (render only — no RPC/download).

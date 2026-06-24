@@ -298,19 +298,8 @@ public sealed partial class SettingsPage : Page
         {
             try
             {
-                var st = await _host.Client.RpcAsync("getStatus");
-                var sb = new StringBuilder();
-                string configDir = Str(st, "configDir");
-                sb.AppendLine("state: " + Str(st, "state"));
-                sb.AppendLine("hotkeys: " + (Bool(st, "hotkeysActive") ? "active" : "inactive"));
-                sb.AppendLine("config: " + Redact(configDir));
-                sb.AppendLine("pipe: " + Str(st, "pipe"));
-                sb.AppendLine("shell: VoiceType " + AppVersion());
-                sb.AppendLine("");
-                sb.AppendLine("קבצים לתמיכה / files for support:");
-                sb.AppendLine("• engine log: " + Redact(System.IO.Path.Combine(configDir, "hebrew_live_dictation.log")));
-                sb.Append("• shell log: " + Redact(AppLog.FilePath ?? "(unavailable)"));
-                text = sb.ToString();
+                var diag = await _host.Client.RpcAsync("getDiagnosticsSnapshot");
+                text = FormatDiagnostics(diag);
             }
             catch { text = "לא ניתן לקרוא את מצב המנוע."; }
         }
@@ -328,8 +317,81 @@ public sealed partial class SettingsPage : Page
         catch { }
     }
 
+    private static string FormatDiagnostics(JsonElement diag)
+    {
+        var state = Obj(diag, "state");
+        var paths = Obj(diag, "paths");
+        var runtime = Obj(diag, "runtime");
+        var provider = Obj(diag, "provider");
+        var routing = Obj(provider, "routing");
+        var model = Obj(diag, "model");
+        var target = Obj(diag, "target");
+        var labs = Obj(diag, "labs");
+        var update = Obj(diag, "update");
+        var caps = Obj(diag, "capabilities");
+        var insertion = Obj(caps, "insertion");
+
+        var sb = new StringBuilder();
+        sb.AppendLine("VoiceType diagnostics");
+        sb.AppendLine("shell: VoiceType " + AppVersion());
+        sb.AppendLine("shell launch: " + RepoPaths.EngineLaunchMode());
+        sb.AppendLine("packaged engine: " + Redact(RepoPaths.PackagedEnginePath() ?? "(none)"));
+        sb.AppendLine("engine state: " + Str(state, "engine"));
+        sb.AppendLine("hotkeys: " + (Bool(state, "hotkeysActive") ? "active" : "inactive"));
+        sb.AppendLine("pipe: " + Str(state, "pipe"));
+        sb.AppendLine("");
+        sb.AppendLine("provider:");
+        sb.AppendLine("  effective: " + Str(provider, "effectiveProvider") + " / " + Str(routing, "effectiveLabel"));
+        sb.AppendLine("  mode: " + Str(provider, "mode") + " stream: " + Str(provider, "stream"));
+        sb.AppendLine("  start gate: " + Str(routing, "startGate"));
+        sb.AppendLine("  backup: " + (Bool(routing, "backupReady") ? "ready" : "not ready"));
+        sb.AppendLine("");
+        sb.AppendLine("model:");
+        sb.AppendLine("  " + Str(model, "name") + " state=" + Str(model, "state")
+                      + " downloaded=" + (Bool(model, "downloaded") ? "true" : "false"));
+        string modelPath = Redact(Str(model, "path"));
+        if (!string.IsNullOrWhiteSpace(modelPath)) sb.AppendLine("  path: " + modelPath);
+        sb.AppendLine("");
+        sb.AppendLine("target:");
+        sb.AppendLine("  usable=" + (Bool(target, "usable") ? "true" : "false")
+                      + " label=" + Str(target, "label") + " process=" + Str(target, "process"));
+        string reason = Str(target, "reason");
+        if (!string.IsNullOrWhiteSpace(reason)) sb.AppendLine("  reason: " + reason);
+        sb.AppendLine("");
+        sb.AppendLine("package/runtime:");
+        sb.AppendLine("  engine frozen=" + (Bool(runtime, "frozen") ? "true" : "false")
+                      + " python=" + Str(runtime, "python") + " platform=" + Str(runtime, "platform"));
+        sb.AppendLine("  executable: " + Redact(Str(runtime, "executable")));
+        sb.AppendLine("  cwd: " + Redact(Str(runtime, "cwd")));
+        sb.AppendLine("  insertion deps: comtypes=" + BoolText(insertion, "comtypes")
+                      + " comtypes.client=" + BoolText(insertion, "comtypes_client")
+                      + " uiautomation=" + BoolText(insertion, "uiautomation"));
+        sb.AppendLine("");
+        sb.AppendLine("updates/labs:");
+        sb.AppendLine("  version=" + Str(update, "currentVersion")
+                      + " updates=" + (Bool(update, "enabled") ? "enabled" : "disabled")
+                      + " configured=" + (Bool(update, "endpointConfigured") && Bool(update, "signingKeyConfigured") ? "true" : "false"));
+        sb.AppendLine("  labs=" + Str(labs, "gate")
+                      + " insertion=" + Str(labs, "liveTypingMode") + "/" + Str(labs, "inputBackend"));
+        sb.AppendLine("");
+        sb.AppendLine("support files:");
+        sb.AppendLine("  config: " + Redact(Str(paths, "configDir")));
+        sb.AppendLine("  engine log: " + Redact(Str(paths, "engineLog")));
+        sb.Append("  shell log: " + Redact(AppLog.FilePath ?? "(unavailable)"));
+        return sb.ToString();
+    }
+
+    private static string BoolText(JsonElement o, string key) => Bool(o, key) ? "true" : "false";
+
+    private static JsonElement Obj(JsonElement o, string key)
+        => o.ValueKind == JsonValueKind.Object && o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Object
+            ? v : default;
+
+    internal static string FormatDiagnosticsForTest(JsonElement diag) => FormatDiagnostics(diag);
+
     private static string Str(JsonElement o, string key)
-        => o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        => o.ValueKind == JsonValueKind.Object && o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() ?? "" : "";
 
     /// <summary>Replace the user's home directory with "~" so a copied diagnostic block
     /// doesn't leak the account name.</summary>
@@ -342,7 +404,7 @@ public sealed partial class SettingsPage : Page
     }
 
     private static bool Bool(JsonElement o, string key)
-        => o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
+        => o.ValueKind == JsonValueKind.Object && o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
 
     private static string AppVersion()
         => Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";

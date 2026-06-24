@@ -249,6 +249,36 @@ def injection_target_label() -> str:
         return ""
 
 
+def target_diagnostics() -> dict:
+    """Best-effort target snapshot for support diagnostics.
+
+    Uses the same target selection and safety gate as final insertion/HUD target
+    reassurance. It reports only window metadata, never dictated text.
+    """
+    if sys.platform != "win32":
+        return {"supported": False, "usable": False, "label": "", "reason": "not_windows"}
+    try:
+        from ..editing_backend import WindowTarget
+        target = WindowTarget.capture_best_target()
+        if target is None:
+            return {"supported": True, "usable": False, "label": "", "reason": "no_target"}
+        usable = bool(target.is_usable_external())
+        blocked = bool(target.is_blocked_system_target())
+        own_process = bool(target.is_current_process())
+        label = friendly_app_name(target.process_name) if usable else ""
+        return {
+            "supported": True,
+            "usable": usable,
+            "label": label,
+            "process": str(getattr(target, "process_name", "") or ""),
+            "blocked": blocked,
+            "currentProcess": own_process,
+            "hwnd": int(getattr(target, "hwnd", 0) or 0),
+        }
+    except Exception as e:
+        return {"supported": True, "usable": False, "label": "", "reason": type(e).__name__}
+
+
 _MODEL_PRETTY = {
     "chirp_3": "Chirp 3", "chirp_2": "Chirp 2", "chirp": "Chirp",
     "latest_long": "Latest Long", "latest_short": "Latest Short",
@@ -1268,6 +1298,69 @@ _ACTION_LABELS = {
 }
 
 
+def diagnostics_snapshot(config, state="", hotkeys_active=False, config_dir="", pipe_name="", active_download=None) -> dict:
+    """Structured support snapshot with no secrets or transcript text."""
+    provider_status = provider_control_status(config)
+    routing = provider_status.get("routing", {}) if isinstance(provider_status, dict) else {}
+    model = model_status(config, active_download=active_download)
+    engine_log = os.path.join(config_dir or "", "hebrew_live_dictation.log") if config_dir else ""
+    return {
+        "schema": 1,
+        "state": {
+            "engine": state or "",
+            "hotkeysActive": bool(hotkeys_active),
+            "pipe": pipe_name or "",
+            "pid": os.getpid(),
+        },
+        "paths": {
+            "configDir": config_dir or "",
+            "engineLog": engine_log,
+        },
+        "runtime": {
+            "python": sys.version.split()[0],
+            "executable": sys.executable,
+            "frozen": bool(getattr(sys, "frozen", False)),
+            "platform": sys.platform,
+            "cwd": os.getcwd(),
+        },
+        "provider": {
+            "mode": provider_status.get("mode", ""),
+            "configuredProvider": provider_status.get("configuredProvider", ""),
+            "effectiveProvider": provider_status.get("effectiveProvider", ""),
+            "stream": provider_status.get("stream", ""),
+            "fallbackEnabled": bool(provider_status.get("fallbackEnabled", False)),
+            "routing": {
+                "startGate": routing.get("startGate", ""),
+                "backupReady": bool(routing.get("backupReady", False)),
+                "message": routing.get("message", ""),
+                "backupMessage": routing.get("backupMessage", ""),
+                "effectiveLabel": routing.get("effectiveLabel", ""),
+            },
+            "providers": [
+                {
+                    "id": row.get("id", ""),
+                    "ready": bool(row.get("ready", False)),
+                    "status": row.get("status", ""),
+                    "detail": row.get("detail", ""),
+                }
+                for row in provider_status.get("providers", [])
+                if isinstance(row, dict)
+            ],
+        },
+        "model": {
+            "name": model.get("name", ""),
+            "downloaded": bool(model.get("downloaded", False)),
+            "state": model.get("state", ""),
+            "path": model.get("path", "") or model.get("modelPath", ""),
+            "activeDownload": model.get("activeDownload", "") or active_download or "",
+        },
+        "target": target_diagnostics(),
+        "labs": labs_status(config),
+        "update": update_status(config),
+        "capabilities": engine_capabilities(),
+    }
+
+
 def _visible_symbol(symbol) -> str:
     if symbol in _SYMBOL_LABELS:
         return _SYMBOL_LABELS[symbol]
@@ -1813,6 +1906,15 @@ def run(pipe_name: str | None = None) -> int:
             return labs_status(config)
         if method == "getProviderStatus":
             return provider_control_status(config)
+        if method == "getDiagnosticsSnapshot":
+            return diagnostics_snapshot(
+                config,
+                state=controller.state,
+                hotkeys_active=hotkeys_ok,
+                config_dir=config_dir,
+                pipe_name=pipe_name,
+                active_download=model_downloads.active,
+            )
         if method == "getProviderCredentialStatus":
             return provider_credential_status(config, params.get("provider", ""))
         if method == "setProviderApiKey":

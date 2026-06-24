@@ -50,6 +50,8 @@ public sealed class AppHost
     private HudWindow? _hud;
     private RemoteWindow? _remote;
     private DispatcherQueue _ui = null!;
+    private readonly AudioFeedbackPlayer _audioFeedback = new();
+    private bool _feedbackSessionActive;
 
     public async Task RunAsync(bool showOverlays)
     {
@@ -84,6 +86,7 @@ public sealed class AppHost
         ApplyEngineState("connecting", "");
 
         await ConnectAndSyncAsync(client);
+        await RefreshAudioFeedbackAsync();
         await ApplyAppPreferencesAsync();
         await MaybeRunOnboardingAsync();
         await ApplyOverlayVisibilityAsync(showOverlays);
@@ -134,6 +137,31 @@ public sealed class AppHost
         catch { }
         return null;
     }
+
+    private async Task<int?> TryGetIntConfig(string key)
+    {
+        try
+        {
+            var r = await Client.RpcAsync("getConfig", new { key });
+            if (r.TryGetProperty("value", out var v))
+            {
+                if (v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n)) return n;
+                if (v.ValueKind == JsonValueKind.String && int.TryParse(v.GetString(), out var s)) return s;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    public async Task RefreshAudioFeedbackAsync()
+    {
+        bool enabled = await TryGetBoolConfig("audio.feedback_enabled") == true;
+        int volume = await TryGetIntConfig("audio.feedback_volume") ?? 50;
+        SetAudioFeedback(enabled, volume);
+    }
+
+    public void SetAudioFeedback(bool enabled, int volume)
+        => _audioFeedback.Configure(enabled, volume);
 
     /// <summary>Live show/hide of the Voice HUD (Controls room toggle), no focus steal.</summary>
     public void SetHudVisible(bool visible) => _ui.TryEnqueue(() =>
@@ -219,10 +247,29 @@ public sealed class AppHost
     /// footer, Voice HUD, Remote, and tray orb — so all four stay in lockstep. UI thread only.</summary>
     private void ApplyEngineState(string state, string message)
     {
+        ApplyAudioFeedbackState(state);
         _main?.SetEngineStatus(state, message);
         _hud?.SetState(state, message);
         _remote?.SetState(state);
         _tray?.SetHealth(state);
+    }
+
+    private void ApplyAudioFeedbackState(string state)
+    {
+        state = string.IsNullOrWhiteSpace(state) ? "idle" : state;
+        if (state == "listening")
+        {
+            if (!_feedbackSessionActive)
+                _audioFeedback.Play("start");
+            _feedbackSessionActive = true;
+            return;
+        }
+        if (state is "paused" or "stopping")
+            return;
+
+        if (_feedbackSessionActive && state == "idle")
+            _audioFeedback.Play("stop");
+        _feedbackSessionActive = false;
     }
 
     private void OnBridgeDisconnected(BridgeClient source)
@@ -255,6 +302,7 @@ public sealed class AppHost
         ApplyEngineState("connecting", "");
         StatusChanged?.Invoke("connecting", "");
         await ConnectAndSyncAsync(client);
+        await RefreshAudioFeedbackAsync();
     }
 
     private void OnEvent(BridgeClient source, JsonElement e)

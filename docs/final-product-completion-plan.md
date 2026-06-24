@@ -177,6 +177,8 @@ Already present in the current WinUI branch:
   active-download state, and readiness checks.
 - Controls-room audio/VAD advanced settings for frame length, endpointing,
   auto-stop timing, local VAD, and final-only segment silence.
+- Optional start/stop audio feedback tones with Controls-room enable/volume,
+  cached generated WAV tones, and WinUI runtime playback.
 - Session-preserving pause/resume with a dedicated optional hotkey, paused UI
   state, generation-guarded provider events, and stop-from-paused final flush.
 - STT registry with Google, Whisper, Deepgram, Groq, and fallback modules.
@@ -197,7 +199,6 @@ Partially present or hidden:
 - Groq backend and final-only setup UX exist; real service PASS still requires a user key.
 - Keyring-backed provider credential UX/migration exists for keyed cloud providers.
 - Updater backend exists, but WinUI update check/install UX is incomplete.
-- Audio feedback generator exists, but WinUI runtime playback/control is incomplete.
 - Toolbar/idle config exists, but WinUI idle quick-start parity is incomplete.
 - Advanced VAD/custom phrase settings exist, but product UI is incomplete.
 - Live target typing exists in engine tests/config but is forced off in the WinUI

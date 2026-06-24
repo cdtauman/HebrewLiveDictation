@@ -83,6 +83,8 @@ Important current defaults:
 - `dictation.live_typing_mode`: normalized to `final_only` in the WinUI beta
   path.
 - `audio.sample_rate`: `16000`.
+- `audio.feedback_enabled`: `false`.
+- `audio.feedback_volume`: `50`.
 - `speech.frame_ms`: `100`.
 - `speech.auto_stop_on_silence`: `false`; manual stop is the default.
 - `speech.endpointing`: `true`; cloud speech activity events may be sent when
@@ -108,6 +110,12 @@ audio layer may open a Windows device at its native default rate and resample
 back to the target rate, but the UI must not invite arbitrary sample-rate
 changes until all providers prove that path. Manual stop remains the safe
 default; automatic cloud stop is opt-in.
+
+Optional start/stop feedback tones are a WinUI shell feature. The Controls room
+writes `audio.feedback_enabled` and `audio.feedback_volume`; `AppHost` plays
+short generated WAV tones on real session start and final idle return. Tone
+playback is best-effort and must never block audio capture, STT streaming, or
+final text insertion. Pause/resume does not play start/stop tones.
 
 ## Pause / Resume Rules
 

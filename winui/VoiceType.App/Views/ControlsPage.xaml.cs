@@ -35,6 +35,8 @@ public sealed partial class ControlsPage : Page
         string mode = await GetString("hotkeys.mode", "toggle");
         bool hud = await GetBool("app.show_overlay", true);
         bool remote = await GetBool("toolbar.enabled", false);
+        bool sound = await GetBool("audio.feedback_enabled", false);
+        int soundVolume = await GetInt("audio.feedback_volume", 50);
         int frameMs = await GetInt("speech.frame_ms", 100);
         bool endpointing = await GetBool("speech.endpointing", true);
         bool autoStop = await GetBool("speech.auto_stop_on_silence", false);
@@ -55,6 +57,10 @@ public sealed partial class ControlsPage : Page
             ApplyHotkeyHint(mode);
             HudToggle.IsOn = hud;
             RemoteToggle.IsOn = remote;
+            SoundToggle.IsOn = sound;
+            SoundVolumeSlider.Value = soundVolume;
+            UpdateSoundVolumeLabel(soundVolume);
+            ApplySoundAvailability();
             PopulateFrames(frameMs);
             EndpointToggle.IsOn = endpointing;
             AutoStopToggle.IsOn = autoStop;
@@ -247,6 +253,20 @@ public sealed partial class ControlsPage : Page
     internal bool AutoStopControlsEnabledForTest =>
         SpeechStartTimeoutBox.IsEnabled && SpeechEndTimeoutBox.IsEnabled;
     internal bool AutoStopToggleEnabledForTest => AutoStopToggle.IsEnabled;
+    internal void RenderSoundForTest(bool enabled, int volume)
+    {
+        _loading = true;
+        try
+        {
+            SoundToggle.IsOn = enabled;
+            SoundVolumeSlider.Value = Math.Clamp(volume, 0, 100);
+            UpdateSoundVolumeLabel(SoundVolumeSlider.Value);
+            ApplySoundAvailability();
+        }
+        finally { _loading = false; }
+    }
+    internal bool SoundVolumeEnabledForTest => SoundVolumeSlider.IsEnabled;
+    internal string SoundVolumeTextForTest => SoundVolumeValue.Text;
 
     private async void OnModeChoice(object sender, RoutedEventArgs e)
     {
@@ -399,8 +419,31 @@ public sealed partial class ControlsPage : Page
         if (await Persist("toolbar.enabled", RemoteToggle.IsOn)) _host?.SetRemoteVisible(RemoteToggle.IsOn);
     }
 
-    // Note: start/stop sounds are deferred — the WinUI engine path does not play them yet,
-    // so the control is disabled in XAML rather than writing a setting that has no effect.
+    private async void OnSoundToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        ApplySoundAvailability();
+        if (await Persist("audio.feedback_enabled", SoundToggle.IsOn))
+            _host?.SetAudioFeedback(SoundToggle.IsOn, CurrentSoundVolume());
+    }
+
+    private async void OnSoundVolumeChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        int value = (int)Math.Round(e.NewValue);
+        UpdateSoundVolumeLabel(value);
+        if (_loading) return;
+        if (await Persist("audio.feedback_volume", value))
+            _host?.SetAudioFeedback(SoundToggle.IsOn, value);
+    }
+
+    private int CurrentSoundVolume()
+        => (int)Math.Round(Math.Clamp(SoundVolumeSlider.Value, SoundVolumeSlider.Minimum, SoundVolumeSlider.Maximum));
+
+    private void UpdateSoundVolumeLabel(double value)
+        => SoundVolumeValue.Text = ((int)Math.Round(Math.Clamp(value, 0, 100))).ToString();
+
+    private void ApplySoundAvailability()
+        => SoundVolumeSlider.IsEnabled = SoundToggle.IsOn;
 
     /// <summary>Write a setting; on failure tell the user and resync the UI from the
     /// actually-persisted config so a control never *looks* set when it isn't.</summary>

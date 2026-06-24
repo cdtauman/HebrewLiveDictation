@@ -103,6 +103,7 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] Toggle cloud speech events / auto-stop -> Google sessions still require manual proof; no silent stop is counted as pass unless intended.
 - [ ] Enable local VAD -> adjust threshold/padding/silence -> Offline dictation still starts, no crash, no hidden sample-rate change.
 - [ ] Disable local VAD -> dependent VAD controls become inactive and dictation returns to full-audio streaming.
+- [ ] Enable start/stop sounds -> set volume -> start/stop dictation -> hear one start tone and one stop tone; pause/resume does not add extra tones.
 
 ---
 

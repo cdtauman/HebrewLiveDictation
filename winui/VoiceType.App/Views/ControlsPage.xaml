@@ -185,16 +185,26 @@
                 </StackPanel>
             </Border>
 
-            <!-- Sound — deferred: the WinUI engine path does not play start/stop sounds yet -->
+            <!-- Sound -->
             <Border Style="{StaticResource CardStyle}">
-                <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-                        <TextBlock Text="צלילי התחלה ועצירה" Style="{StaticResource SectionHeaderStyle}" />
-                        <TextBlock Text="צליל קצר כשמתחילים וכשעוצרים — יתווסף בקרוב."
-                                   Style="{StaticResource CaptionMutedStyle}" />
-                    </StackPanel>
-                    <ToggleSwitch x:Name="SoundToggle" Grid.Column="1" VerticalAlignment="Center" IsEnabled="False" />
-                </Grid>
+                <StackPanel Spacing="16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="צלילי התחלה ועצירה" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="צליל קצר כשמתחילים וכשעוצרים."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="SoundToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnSoundToggled" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,220,52" ColumnSpacing="10">
+                        <TextBlock Grid.Column="0" Text="עוצמה" VerticalAlignment="Center" />
+                        <Slider x:Name="SoundVolumeSlider" Grid.Column="1" Minimum="0" Maximum="100"
+                                StepFrequency="5" ValueChanged="OnSoundVolumeChanged" />
+                        <TextBlock x:Name="SoundVolumeValue" Grid.Column="2" TextAlignment="Right"
+                                   VerticalAlignment="Center" />
+                    </Grid>
+                </StackPanel>
             </Border>
         </StackPanel>
     </ScrollViewer>

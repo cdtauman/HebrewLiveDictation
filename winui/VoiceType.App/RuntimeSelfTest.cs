@@ -445,6 +445,29 @@ internal static class RuntimeSelfTest
             }
             catch (Exception ex) { Check("controls.audio_vad.surface", false, XamlDetail(ex)); }
 
+            // 6h.2) Optional audio feedback: render the Controls switch/volume and prove the
+            //       generated WAV tones are valid without playing real speaker audio.
+            try
+            {
+                var cp = new Views.ControlsPage();
+                cp.RenderSoundForTest(enabled: false, volume: 35);
+                bool offOk = !cp.SoundVolumeEnabledForTest && cp.SoundVolumeTextForTest == "35";
+                cp.RenderSoundForTest(enabled: true, volume: 70);
+                bool onOk = cp.SoundVolumeEnabledForTest && cp.SoundVolumeTextForTest == "70";
+
+                string toneDir = Path.Combine(Path.GetTempPath(), "voicetype-selftest-tones-" + Guid.NewGuid().ToString("N"));
+                string? startTone = AudioFeedbackPlayer.TonePath(toneDir, "start", 70);
+                string? stopTone = AudioFeedbackPlayer.TonePath(toneDir, "stop", 70);
+                bool tonesOk = startTone != null && stopTone != null
+                               && startTone != stopTone
+                               && AudioFeedbackPlayer.IsToneFileForTest(startTone)
+                               && AudioFeedbackPlayer.IsToneFileForTest(stopTone);
+                try { Directory.Delete(toneDir, recursive: true); } catch { }
+                Check("controls.audio_feedback.surface", offOk && onOk && tonesOk,
+                      "feedback switch/volume render and cached start/stop WAV tones generate");
+            }
+            catch (Exception ex) { Check("controls.audio_feedback.surface", false, XamlDetail(ex)); }
+
             // 6i) Engine-room offline model management: download offered when absent, delete
             //     offered when present, ring while downloading (render only — no RPC/download).
             try

@@ -377,7 +377,8 @@ Manual or external proof required later:
 After Phase 19:
 
 1. Produce a review packet with branch tip, commits, files changed, tests run,
-   proof logs, known limitations, and artifact link.
+   proof logs, known limitations, and artifact link. The packet lives at
+   `docs/final-independent-review-package.md`.
 2. Send the packet to a fresh Codex thread for code-level review:
    - safety
    - packaging

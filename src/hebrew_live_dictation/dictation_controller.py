@@ -37,6 +37,11 @@ class DictationController(QObject):
         self.output_mode = "external"
         self.latest_interim_text = ""
         self.has_pasted_final = False
+        # Terminal-commit guard: set once the session's final/interim text has been
+        # committed on (or after) stop. Once set, late finals from the dying provider
+        # stream are dropped entirely so they neither re-insert into the target nor
+        # double-count into history. Reset at the start of every session.
+        self.session_committed = False
         self.accumulated_final_text = ""
         self.accumulated_timer = None
         self.ignore_next_final = False
@@ -59,6 +64,7 @@ class DictationController(QObject):
         self.state = "listening"
         self.latest_interim_text = ""
         self.has_pasted_final = False
+        self.session_committed = False
         self.accumulated_final_text = ""
         self._stop_accumulation_timer()
         if self.output_mode == "external":
@@ -128,15 +134,27 @@ class DictationController(QObject):
                 self._handle_injector_result(result)
                 if result.get("status") in ("inserted", "duplicate", "command"):
                     self.has_pasted_final = True
+                    self.session_committed = True
                 self.accumulated_final_text = ""
 
-            if not self.has_pasted_final and self.latest_interim_text:
+            if not self.has_pasted_final and not self.session_committed and self.latest_interim_text:
                 logger.info(
                     "Forcing final insert from latest interim on stop: text_len=%s.",
                     len(self.latest_interim_text),
                 )
-                result = self.injector.inject_final(self.latest_interim_text)
+                interim_text = self.latest_interim_text
+                result = self.injector.inject_final(interim_text)
                 self._handle_injector_result(result)
+                if result.get("status") in ("inserted", "duplicate"):
+                    # This interim text was never a real STT final, so it never reached
+                    # history via handle_stt_event. Record it once here as the session's
+                    # single final; the dying stream's late final (same words) is dropped
+                    # by the commit guard in handle_stt_event, so history stays one entry.
+                    self._emit_text(interim_text, final=True)
+                if result.get("status") in ("inserted", "duplicate", "command"):
+                    self.has_pasted_final = True
+                    self.session_committed = True
+                self.latest_interim_text = ""
 
         self._emit_status("stopping", tr(self.config, "processing"))
 
@@ -234,6 +252,16 @@ class DictationController(QObject):
             )
             return
 
+        # Idempotent stop / callback-race guard: once the session's terminal text has
+        # been committed (stop-flush or the single post-stop final), any later final
+        # from the dying provider stream is a stale leftover. Drop it completely so it
+        # is neither re-inserted into the target nor double-counted into history.
+        if (event.get("type") == "final"
+                and self.session_committed
+                and self.state not in ("listening", "paused")):
+            logger.info("Ignoring leftover final after session commit (idempotent stop).")
+            return
+
         self._stop_accumulation_timer()
         event_type = event.get("type")
         if event_type in ("interim", "final"):
@@ -286,12 +314,14 @@ class DictationController(QObject):
                             and not self._live_target_typing_enabled()
                             and self.state not in ("listening", "paused")
                             and not self.has_pasted_final
+                            and not self.session_committed
                             and text.strip()):
                         logger.info("Injecting post-stop final immediately (no later flush will run): text_len=%s.", len(text))
                         result = self.injector.inject_final(text)
                         self._handle_injector_result(result)
                         if result.get("status") in ("inserted", "duplicate", "command"):
                             self.has_pasted_final = True
+                            self.session_committed = True
                         return
                     if command or self._live_target_typing_enabled():
                         if self.accumulated_final_text:

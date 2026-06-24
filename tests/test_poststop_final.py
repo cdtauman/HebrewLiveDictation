@@ -111,5 +111,68 @@ class PostStopFinalInjectionTests(unittest.TestCase):
         self.assertIn("שלום", c.accumulated_final_text)
 
 
+class StopCommitIdempotencyTests(unittest.TestCase):
+    """MF1: Stop must commit the latest interim/final exactly once and be idempotent
+    against a late final racing in from the dying provider stream during teardown."""
+
+    def _controller_with_text(self):
+        finals = []
+        cfg = _Cfg({
+            "dictation.live_typing_mode": "final_only",
+            "language_code": "he-IL",
+            "languages.command_pack": "he",
+            "debug_log_transcripts": False,
+        })
+        with mock.patch.object(dc, "TextInjector"):
+            c = dc.DictationController(cfg, on_text=lambda t, f, m: finals.append((t, f)))
+        c.injector.inject_final.return_value = {"status": "inserted"}
+        c.injector.inject_interim.return_value = {"status": "interim"}
+        c.injector._language_code.return_value = "he-IL"
+        c.injector._command_pack.return_value = "he"
+        c.session_id = "S"
+        c.generation = 1
+        c.output_mode = "external"
+        return c, finals
+
+    def test_stop_commits_latest_interim_exactly_once(self):
+        c, _ = self._controller_with_text()
+        c.state = "listening"
+        c.latest_interim_text = "שלום מה שלומך"
+        c.stop_listening()
+        c.injector.inject_final.assert_called_once_with("שלום מה שלומך")
+        self.assertTrue(c.session_committed)
+
+    def test_late_final_after_stop_does_not_insert_again(self):
+        c, _ = self._controller_with_text()
+        c.state = "listening"
+        c.latest_interim_text = "שלום מה שלומך"
+        c.stop_listening()                          # commits the interim once -> idle
+        # The dying provider stream now emits its final for the same words.
+        c.handle_stt_event(_final("שלום מה שלומך"))
+        c.injector.inject_final.assert_called_once_with("שלום מה שלומך")
+
+    def test_history_appends_once_for_stop_flushed_interim(self):
+        # The stop-flushed interim is emitted as exactly one final (so it reaches the
+        # sidecar's history accumulator), and the duplicate late final is dropped ->
+        # the session yields a single history final.
+        c, finals = self._controller_with_text()
+        c.state = "listening"
+        c.latest_interim_text = "שלום מה שלומך"
+        c.stop_listening()
+        c.handle_stt_event(_final("שלום מה שלומך"))   # dropped by the commit guard
+        emitted_finals = [t for (t, f) in finals if f]
+        self.assertEqual(emitted_finals, ["שלום מה שלומך"])
+
+    def test_stopping_callback_race_does_not_duplicate_target_text(self):
+        # A late final racing in while teardown is still in "stopping" must not re-insert.
+        c, _ = self._controller_with_text()
+        c.state = "listening"
+        c.latest_interim_text = "טקסט"
+        c.stop_listening()
+        c.state = "stopping"                          # simulate teardown still in flight
+        c.handle_stt_event(_final("טקסט"))
+        c.injector.inject_final.assert_called_once_with("טקסט")
+
+
 if __name__ == "__main__":
     unittest.main()

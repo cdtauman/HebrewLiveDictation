@@ -79,6 +79,8 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] **No double insert:** the final appears exactly once.
 - [ ] **No focus steal:** starting/stopping never pulls focus away from the target app.
 - [ ] **RTL + punctuation:** Hebrew punctuation, "נקודה"/"פסיק", new line / new paragraph behave correctly.
+- [ ] **Idle Remote:** enable the minimized quick-start button -> hide VoiceType to tray -> start from the Remote.
+      Focus remains in the target app and the Remote hides/shows according to its settings.
 
 ## 4. Model manager — **I**
 - [ ] Select medium → download → ready → dictate → delete → status returns to "not installed".

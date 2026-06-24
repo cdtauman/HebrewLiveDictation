@@ -52,6 +52,10 @@ public sealed class AppHost
     private DispatcherQueue _ui = null!;
     private readonly AudioFeedbackPlayer _audioFeedback = new();
     private bool _feedbackSessionActive;
+    private bool _remoteEnabled;
+    private bool _idleQuickStartEnabled;
+    private bool _consoleHidden;
+    private bool _forceRemoteVisible;
 
     public async Task RunAsync(bool showOverlays)
     {
@@ -169,22 +173,64 @@ public sealed class AppHost
         try { if (_hud != null) { if (visible) _hud.Window.AppWindow.Show(false); else _hud.Window.AppWindow.Hide(); } } catch { }
     });
 
-    /// <summary>Live show/hide of the Remote (Controls room toggle), no focus steal.</summary>
+    /// <summary>Live show/hide of the always-available Remote (Controls room toggle), no focus steal.</summary>
     public void SetRemoteVisible(bool visible) => _ui.TryEnqueue(() =>
     {
-        try { if (_remote != null) { if (visible) _remote.Window.AppWindow.Show(false); else _remote.Window.AppWindow.Hide(); } } catch { }
+        _remoteEnabled = visible;
+        ApplyRemoteVisibility();
+    });
+
+    /// <summary>Live show/hide of the idle quick-start Remote shown only while the console is hidden.</summary>
+    public void SetIdleQuickStartVisible(bool visible) => _ui.TryEnqueue(() =>
+    {
+        _idleQuickStartEnabled = visible;
+        ApplyRemoteVisibility();
+    });
+
+    public void SetConsoleHidden(bool hidden) => _ui.TryEnqueue(() =>
+    {
+        _consoleHidden = hidden;
+        ApplyRemoteVisibility();
     });
 
     private async Task ApplyOverlayVisibilityAsync(bool forceShow)
     {
-        if (forceShow) { SetHudVisible(true); SetRemoteVisible(true); return; }
+        _forceRemoteVisible = forceShow;
+        if (forceShow) { SetHudVisible(true); ApplyRemoteVisibility(); return; }
 
         // Only surface an overlay when we have actually read the user's choice from the
         // engine and it says "visible". If the bridge is unreachable or the config read
         // fails, the value is unknown → keep both hidden. Never default-show something the
         // user may have turned off just because we couldn't reach the engine.
         SetHudVisible(await TryGetBoolConfig("app.show_overlay") == true);
-        SetRemoteVisible(await TryGetBoolConfig("toolbar.enabled") == true);
+        _remoteEnabled = await TryGetBoolConfig("toolbar.enabled") == true;
+        _idleQuickStartEnabled = await TryGetBoolConfig("toolbar.idle_button") == true;
+        ApplyRemoteVisibility();
+    }
+
+    private void ApplyRemoteVisibility()
+    {
+        try
+        {
+            if (_remote == null) return;
+            bool visible = ShouldShowRemote(_remoteEnabled, _idleQuickStartEnabled, _consoleHidden, CurrentState, _forceRemoteVisible);
+            if (visible) _remote.Window.AppWindow.Show(false);
+            else _remote.Window.AppWindow.Hide();
+        }
+        catch { }
+    }
+
+    internal static bool ShouldShowRemote(
+        bool remoteEnabled,
+        bool idleQuickStartEnabled,
+        bool consoleHidden,
+        string state,
+        bool forceVisible = false)
+    {
+        if (forceVisible) return true;
+        if (remoteEnabled) return true;
+        string s = string.IsNullOrWhiteSpace(state) ? "idle" : state;
+        return idleQuickStartEnabled && consoleHidden && (s == "idle" || s == "error");
     }
 
     /// <summary>Read a boolean config value, or null when the value can't be established
@@ -252,6 +298,7 @@ public sealed class AppHost
         _hud?.SetState(state, message);
         _remote?.SetState(state);
         _tray?.SetHealth(state);
+        ApplyRemoteVisibility();
     }
 
     private void ApplyAudioFeedbackState(string state)
@@ -370,6 +417,8 @@ public sealed class AppHost
     public void ShowConsole() => _ui.TryEnqueue(() =>
     {
         _main?.AppWindow.Show();
+        _consoleHidden = false;
+        ApplyRemoteVisibility();
         if (_main != null)
             Native.SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(_main));
     });

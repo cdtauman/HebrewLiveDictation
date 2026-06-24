@@ -260,6 +260,15 @@ internal static class RuntimeSelfTest
             Check("remote.style.noactivate", (remoteEx & Native.WS_EX_NOACTIVATE) != 0, $"exStyle=0x{remoteEx:X}");
             Check("remote.not.clickthrough", (remoteEx & Native.WS_EX_TRANSPARENT) == 0,
                   "Remote stays interactive (has buttons)");
+            bool idlePolicy =
+                !AppHost.ShouldShowRemote(remoteEnabled: false, idleQuickStartEnabled: true, consoleHidden: false, state: "idle")
+                && AppHost.ShouldShowRemote(remoteEnabled: false, idleQuickStartEnabled: true, consoleHidden: true, state: "idle")
+                && AppHost.ShouldShowRemote(remoteEnabled: false, idleQuickStartEnabled: true, consoleHidden: true, state: "error")
+                && !AppHost.ShouldShowRemote(remoteEnabled: false, idleQuickStartEnabled: true, consoleHidden: true, state: "listening")
+                && AppHost.ShouldShowRemote(remoteEnabled: true, idleQuickStartEnabled: false, consoleHidden: false, state: "listening")
+                && AppHost.ShouldShowRemote(remoteEnabled: false, idleQuickStartEnabled: false, consoleHidden: false, state: "idle", forceVisible: true);
+            Check("remote.idle.policy", idlePolicy,
+                  "idle quick-start shows only while console is hidden and idle/error; Remote toggle and --show override");
 
             // 4) DPI awareness (PerMonitorV2 expected from app.manifest).
             IntPtr ctx = Native.GetThreadDpiAwarenessContext();
@@ -428,6 +437,8 @@ internal static class RuntimeSelfTest
             try
             {
                 var cp = new Views.ControlsPage();
+                cp.RenderRemoteForTest(remote: false, idleQuickStart: true);
+                bool remoteIdleOk = !cp.RemoteToggleForTest && cp.IdleRemoteToggleForTest;
                 cp.RenderAudioAdvancedForTest(vad: false, endpointing: true, autoStop: false);
                 bool quietDefaults = !cp.VadControlsEnabledForTest
                                      && cp.AutoStopToggleEnabledForTest
@@ -440,8 +451,8 @@ internal static class RuntimeSelfTest
                 bool endpointOff = cp.VadControlsEnabledForTest
                                    && !cp.AutoStopToggleEnabledForTest
                                    && !cp.AutoStopControlsEnabledForTest;
-                Check("controls.audio_vad.surface", quietDefaults && allEnabled && endpointOff,
-                      "advanced audio/VAD controls gate dependent settings honestly");
+                Check("controls.audio_vad.surface", remoteIdleOk && quietDefaults && allEnabled && endpointOff,
+                      "advanced audio/VAD controls and idle Remote toggle render honestly");
             }
             catch (Exception ex) { Check("controls.audio_vad.surface", false, XamlDetail(ex)); }
 

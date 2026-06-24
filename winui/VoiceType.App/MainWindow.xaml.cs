@@ -50,7 +50,11 @@ public sealed partial class MainWindow : Window
         if (_host.IsExiting) return;                  // a real teardown is in progress
         args.Cancel = true;
         // Honor the user's choice (Settings room): hide to tray, or fully exit on close.
-        if (_host.MinimizeOnClose) this.AppWindow.Hide();
+        if (_host.MinimizeOnClose)
+        {
+            this.AppWindow.Hide();
+            _host.SetConsoleHidden(true);
+        }
         else _host.Exit();
     }
 

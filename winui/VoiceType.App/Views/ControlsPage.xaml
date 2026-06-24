@@ -182,6 +182,15 @@
                         </StackPanel>
                         <ToggleSwitch x:Name="RemoteToggle" Grid.Column="1" VerticalAlignment="Center" Toggled="OnRemoteToggled" />
                     </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="כפתור התחלה כשממוזער" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="מציג שלט התחלה קטן רק כשהחלון מוסתר במגש."
+                                       Style="{StaticResource CaptionMutedStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="IdleRemoteToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnIdleRemoteToggled" />
+                    </Grid>
                 </StackPanel>
             </Border>
 

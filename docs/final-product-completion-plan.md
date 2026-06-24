@@ -185,6 +185,8 @@ Already present in the current WinUI branch:
 - AutoFallback and Smart Auto backend behavior plus Engine-room routing status.
 - WinUI Home, Dictation, Engine, Controls, History, and Settings rooms.
 - HUD and Remote overlay surfaces.
+- Floating Remote visibility policy for always-on mode and hidden-console idle
+  quick-start mode.
 - final-only target insertion default.
 - Word COM, UI Automation, clipboard, and Unicode insertion backends.
 - Target tracking, shell self-target blocking, and target-changed handling.
@@ -199,7 +201,6 @@ Partially present or hidden:
 - Groq backend and final-only setup UX exist; real service PASS still requires a user key.
 - Keyring-backed provider credential UX/migration exists for keyed cloud providers.
 - Updater backend exists, but WinUI update check/install UX is incomplete.
-- Toolbar/idle config exists, but WinUI idle quick-start parity is incomplete.
 - Advanced VAD/custom phrase settings exist, but product UI is incomplete.
 - Live target typing exists in engine tests/config but is forced off in the WinUI
   beta path for safety.

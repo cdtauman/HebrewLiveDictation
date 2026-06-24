@@ -35,6 +35,7 @@ public sealed partial class ControlsPage : Page
         string mode = await GetString("hotkeys.mode", "toggle");
         bool hud = await GetBool("app.show_overlay", true);
         bool remote = await GetBool("toolbar.enabled", false);
+        bool idleRemote = await GetBool("toolbar.idle_button", false);
         bool sound = await GetBool("audio.feedback_enabled", false);
         int soundVolume = await GetInt("audio.feedback_volume", 50);
         int frameMs = await GetInt("speech.frame_ms", 100);
@@ -57,6 +58,7 @@ public sealed partial class ControlsPage : Page
             ApplyHotkeyHint(mode);
             HudToggle.IsOn = hud;
             RemoteToggle.IsOn = remote;
+            IdleRemoteToggle.IsOn = idleRemote;
             SoundToggle.IsOn = sound;
             SoundVolumeSlider.Value = soundVolume;
             UpdateSoundVolumeLabel(soundVolume);
@@ -267,6 +269,18 @@ public sealed partial class ControlsPage : Page
     }
     internal bool SoundVolumeEnabledForTest => SoundVolumeSlider.IsEnabled;
     internal string SoundVolumeTextForTest => SoundVolumeValue.Text;
+    internal void RenderRemoteForTest(bool remote, bool idleQuickStart)
+    {
+        _loading = true;
+        try
+        {
+            RemoteToggle.IsOn = remote;
+            IdleRemoteToggle.IsOn = idleQuickStart;
+        }
+        finally { _loading = false; }
+    }
+    internal bool RemoteToggleForTest => RemoteToggle.IsOn;
+    internal bool IdleRemoteToggleForTest => IdleRemoteToggle.IsOn;
 
     private async void OnModeChoice(object sender, RoutedEventArgs e)
     {
@@ -417,6 +431,13 @@ public sealed partial class ControlsPage : Page
     {
         if (_loading) return;
         if (await Persist("toolbar.enabled", RemoteToggle.IsOn)) _host?.SetRemoteVisible(RemoteToggle.IsOn);
+    }
+
+    private async void OnIdleRemoteToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        if (await Persist("toolbar.idle_button", IdleRemoteToggle.IsOn))
+            _host?.SetIdleQuickStartVisible(IdleRemoteToggle.IsOn);
     }
 
     private async void OnSoundToggled(object sender, RoutedEventArgs e)

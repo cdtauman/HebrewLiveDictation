@@ -94,6 +94,9 @@ Important current defaults:
   `speech.vad_min_silence_ms`: local energy gate controls.
 - `providers.whisper.segment_silence_ms`: final segment boundary for local
   Whisper and Groq-style final-only segmentation.
+- `toolbar.enabled`: `false`; when true, the floating Remote is always visible.
+- `toolbar.idle_button`: `false`; when true, the Remote appears as an idle
+  quick-start only while the console is hidden.
 - `tsf.experimental_transport_enabled`: `false`.
 
 The Engine room's active-config line is the UI truth for what the runtime will
@@ -204,6 +207,12 @@ Home copy should describe final insertion honestly. Engine copy should show the
 exact runtime provider/model/location/language/recognizer/auth tuple. Docs and
 UI must not claim public-beta readiness merely because CI can build an unsigned
 artifact.
+
+The floating Remote has two visibility modes. `toolbar.enabled` keeps it
+available as an always-on start/stop control. `toolbar.idle_button` is narrower:
+it shows the same no-activate Remote only while the main console is hidden and
+the engine is idle or in a recoverable error state. Starting from the idle Remote
+must not focus VoiceType or change the target window.
 
 ## Packaging Boundary
 

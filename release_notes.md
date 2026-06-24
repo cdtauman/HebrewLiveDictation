@@ -1,39 +1,85 @@
 <div dir="rtl">
 
-# 🚀 Hebrew Live Dictation v1.1.0
+# VoiceType — בטא WinUI (לא חתום, לבדיקה ידנית)
 
-שדרוג גדול שהופך את המנוע ל**אגנוסטי לספק** ומבוסס‑בנצ'מארק, עם שמירה מלאה על השילוב העמוק עם Windows. ברירת המחדל נשארת Google STT V2 / Chirp 3, וכל היכולות החדשות כבויות כברירת מחדל ונשלטות מההגדרות.
+> **סטטוס:** ארטיפקט בדיקה **לא חתום**. זו **אינה** בטא ציבורית ואינה גרסה מאושרת.
+> הבדיקה רצה מול ארטיפקט ה‑CI בשם `VoiceType-winui-beta-unsigned` בלבד.
 
-### ✨ מה חדש
-* **חמישה מצבי מנוע:** Smart Auto (בחירה אוטומטית), עברית מיטבית בזמן אמת (Deepgram), מצב לא‑מקוון/פרטי (Whisper מקומי), ענן הזול ביותר (Groq), ו‑AutoFallback מענן למקומי.
-* **תמלול לא‑מקוון:** Whisper מקומי (faster‑whisper) עם הורדת מודל לפי דרישה, בדיקת זיכרון, ואינדיקציית מצב/נתיב בעמוד "מנוע".
-* **אחסון מאובטח של מפתחות:** מפתחות Deepgram/Groq נשמרים ב‑Windows Credential Manager (לא בקובץ הגדרות), עם כפתור "בדיקה".
-* **היסטוריה וייצוא:** שמירת תמלולים וייצוא ל‑TXT ול‑Word (DOCX) עם כיווניות RTL נכונה.
-* **חוויית משתמש:** צלילי התחלה/סיום, סרגל צף וכפתור הפעלה מהירה (ללא גניבת פוקוס), ומקש השהיה/חידוש.
-* **עדכון אוטומטי חתום:** בדיקת מניפסט חתום (Ed25519) מ‑GitHub עם אימות חתימה לפני כל עדכון.
-* **בנצ'מארק WER** להשוואת ספקים, ובדיקות אוטומטיות מורחבות (206 בדיקות).
+גרסה זו מחליפה את אפליקציית ה‑PySide/Qt הישנה בקליפה חדשה ב‑**WinUI 3** עם מנוע
+**Python** נפרד (sidecar) המחוברים דרך named‑pipe. העבודה בוצעה בתוכנית מבוקרת בת 20
+שלבים שמטרתה לאחד את הטוב משלוש הגרסאות (PySide המקורית, מנוע ה‑v1.1 העשיר, וקליפת
+ה‑WinUI) — בלי לאשר שחרור.
 
-נשמר ללא פגיעה: הזרקת טקסט (Word COM, UI Automation, SendInput, לוח גזירה), מעקב יעד, חבילות פקודות, עריכת הכתבה, פרטיות בלוגים, ו‑CI. רכיב ה‑TSF/IME נשאר ניסיוני וכבוי.
+### מה יש בגרסה
 
----
+- **הכתבה בעברית, הכנסה סופית בלבד** לחלון היעד (F8 / שלט צף). מילים חיות מוצגות ב‑HUD
+  ובשלט בלבד — לא נכתבות ליעד.
+- **שישה חדרים** (בית, הכתבה, מנוע, שליטה, היסטוריה, הגדרות) + אונבורדינג.
+- **מנוע לא‑מקוון (Whisper)** — מומלץ לבטא; פרטי, אך "מוכן" רק לאחר הורדת מודל בחדר "מנוע".
+- **Google STT V2** — הנתיב המוגן הוא `latest_long / eu / iw-IL / _`. **"בדיקת חיבור"
+  מאמתת את נתיב ה‑Recognizer בלבד — היא אינה הוכחת הכתבה.**
+- **Deepgram / Groq** — דורשים **מפתח של המשתמש** (נשמר ב‑Windows Credential Manager)
+  ובדיקת חיבור. אין הוכחת תמלול אמיתי ללא מפתח.
+- **Smart Auto / גיבוי לא‑מקוון** — ניסיוני; אינו ברירת המחדל. גיבוי לא‑מקוון זמין רק
+  כשמותקן מודל מקומי.
+- **השהיה/חידוש** ששומרים על מושב ההכתבה, **צלילי התחלה/עצירה**, **היסטוריה + ייצוא
+  TXT/DOCX**, **מאגר מפתחות (keyring)**, **בודק עדכונים חתום (Ed25519)** — התקנה נשארת ידנית.
+- **פרטיות:** מפתחות ב‑keyring בלבד; נתיבי הרשאות וטוקנים של ספקים מצונזרים בלוגים,
+  בהודעות שגיאה ובאבחון.
+
+### מה עדיין דורש הוכחה ידנית/חיצונית
+
+- הכתבת Google מלאה מול הארטיפקט הארוז (R3).
+- מטריצת ההכנסה המלאה ל‑Windows (Word, דפדפן, צ'אט, VS Code).
+- תמלול אמיתי ב‑Deepgram וב‑Groq עם מפתח משתמש.
+- חתימת Authenticode (דורשת תעודה) — הארטיפקט אינו חתום.
 
 </div>
 
 <div dir="ltr">
 
-# 🚀 Hebrew Live Dictation v1.1.0
+# VoiceType — WinUI beta (unsigned, manual-test)
 
-A major upgrade that makes the engine **provider-agnostic** and benchmark-driven while fully preserving the deep Windows integration. Google STT V2 / Chirp 3 stays the default; everything new is off by default and controlled from Settings.
+> **Status: unsigned manual-test artifact. NOT a public beta and NOT an approved
+> release.** Testing runs only against the CI artifact `VoiceType-winui-beta-unsigned`.
 
-### ✨ What's new
-* **Five engine modes:** Smart Auto (automatic provider selection), Best Hebrew realtime (Deepgram), Offline/private (local Whisper), Cheapest cloud (Groq), and AutoFallback (cloud → local on failure).
-* **Offline transcription:** local Whisper (faster-whisper) with on-demand model download, RAM preflight, and status/path indicators on the new **Engine** page.
-* **Secure credentials:** Deepgram/Groq API keys are stored in the Windows Credential Manager (never in settings), with a "Test" button.
-* **History & export:** transcript history with TXT and RTL-correct **DOCX** export.
-* **UX:** start/stop audio tones, a draggable floating toolbar + idle quick-start button (no focus stealing), and a pause/resume hotkey.
-* **Signed auto-updater:** verifies an Ed25519 signature over the GitHub release manifest before trusting any update.
-* **WER benchmark** harness for provider comparison and an expanded test suite (206 tests).
+This replaces the legacy PySide/Qt app with a new **WinUI 3** shell and a separate
+**Python** engine sidecar connected over a named pipe. The work was done in a
+controlled 20-phase completion program that consolidates the best of the original
+PySide app, the richer v1.1 engine, and the WinUI shell — without approving a release.
 
-Preserved intact: text injection (Word COM, UI Automation, Unicode SendInput, clipboard), target tracking, command packs, session editing, privacy logging, and CI. TSF/IME remains experimental and disabled by default.
+### What's in this build
+
+- **Hebrew dictation, final-only insertion** into the target (F8 / floating Remote).
+  Live words appear only in the HUD/Remote — never typed into the target.
+- **Six rooms** (Home, Dictation, Engine, Controls, History, Settings) + onboarding.
+- **Offline (Whisper)** — recommended for the beta; private, but only "ready" once a
+  model is downloaded in the Engine room.
+- **Google STT V2** — the regression-protected combo is `latest_long / eu / iw-IL / _`.
+  **"Test Connection" verifies the recognizer path only — it is not dictation proof.**
+- **Deepgram / Groq** — require **your** API key (stored in Windows Credential Manager)
+  and Test Connection. No real-transcription proof without a user key.
+- **Smart Auto / offline backup** — experimental; not the default. Offline backup is
+  only available when a local model is installed.
+- **Session-preserving pause/resume**, **start/stop tones**, **history + TXT/DOCX
+  export**, **OS keyring** for cloud keys, **signed update check (Ed25519)** —
+  installation stays manual.
+- **Privacy:** keys in the OS keyring only; credential paths and provider/API tokens
+  are redacted from logs, error messages, and diagnostics.
+
+### Automated proof (at this writing)
+
+- Python unit/integration suite passes.
+- WinUI runtime self-test passes.
+- Packaging and release audits pass.
+
+Automated tests are **not** beta approval.
+
+### Still requires manual/external proof
+
+- Full packaged Google R3 dictation against the artifact.
+- Full Windows insertion matrix (Word, browser, chat apps, VS Code).
+- Real Deepgram and Groq transcription with a user key.
+- Authenticode signing (needs a code-signing certificate) — this artifact is unsigned.
 
 </div>

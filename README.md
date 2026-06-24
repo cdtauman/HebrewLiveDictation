@@ -1,146 +1,119 @@
-# Hebrew Live Dictation v1 Beta
+# VoiceType — Hebrew Live Dictation (WinUI)
 
-Hebrew Live Dictation is a Hebrew-first Windows dictation app that brings the closest practical Google Gboard-style dictation workflow to Windows without pretending to be Android Gboard.
+VoiceType (repository: `HebrewLiveDictation`) is a Hebrew-first Windows dictation
+app. You focus any text field, press a hotkey (default **F8**), speak Hebrew, press
+the hotkey again, and the **final** transcript is written once into the active
+window.
 
-v1 Beta is intentionally conservative: it uses Google Speech-to-Text V2 with Chirp 3, keeps live interim text in the app/overlay, and commits only final text into the active Windows application. True Gboard-level live composition requires a Windows TSF/IME layer and is planned separately for v2.
+This branch (`feature/winui-redesign-migration`) is the current product: a **WinUI 3
+shell** plus a **Python engine sidecar**. The two communicate over a per-launch
+named-pipe JSON-RPC bridge. The engine owns audio, speech-to-text, insertion,
+config, and history; the shell owns the rooms, overlays, tray, and diagnostics.
 
-## What Is Supported
+> **Status: unsigned manual-test build. Not a public beta, not a release.**
+> The only intended test artifact is the GitHub Actions artifact
+> **`VoiceType-winui-beta-unsigned`** (workflow `.github/workflows/winui-beta.yml`).
+> It is unsigned — Windows SmartScreen will warn on first launch
+> (*More info → Run anyway*). Public-beta and release approval are separate gates
+> that have **not** been granted. See `docs/final-independent-review-package.md`.
 
-- Modern PySide6 Windows UI with onboarding, settings, overlay, and tray controls.
-- Google Speech-to-Text V2 only.
-- Stable default model id: `chirp_3`.
-- Stable default region: `eu`; fallback region: `us`.
-- Advanced speech mode for additional Google V2 model and region presets, with compatibility warnings.
-- Primary Hebrew locale: `iw-IL`.
-- `LINEAR16`, mono, `16 kHz`, `100 ms` audio frames.
-- Microphones that do not support 16 kHz directly are opened at their Windows default sample rate and resampled to 16 kHz for Google.
-- Google voice activity events when available; automatic stop after silence is optional and off by default.
-- Optional local VAD with pre-roll and speech padding.
-- Final-only external text insertion by default.
-- Experimental live interim typing for users who prefer text while speaking and accept weaker RTL stability.
-- Hebrew spoken punctuation and emoji phrases through local command packs.
-- Session commands: delete last word, delete last sentence, clear, undo, send, next field, replace phrase, delete phrase, stop.
-- Runtime settings and logs under `%APPDATA%\VoiceType`.
-- Redacted logs by default; transcript content is logged only when debug transcript logging is explicitly enabled.
-- Dictation stays active until the user presses stop by default. Users can enable automatic stop after silence in Audio settings.
+## What the product does today
 
-## What Is Not Supported in v1
+- **Final-only insertion by default.** Live/interim words are shown in VoiceType's
+  own HUD and floating Remote; the target app receives the committed final once,
+  after you stop. True IME-style live composition in the target is **not** part of
+  the stable path (see *Labs*, below).
+- **Six rooms:** Home, Dictation, Engine, Controls, History, Settings, plus a
+  first-run onboarding flow.
+- **Hebrew-first UI**, RTL throughout, with spoken-punctuation and editing command
+  packs.
 
-- Full Android Gboard or Pixel advanced voice typing parity.
-- Stable TSF/IME composition-string behavior.
-- Reliable arbitrary phrase selection across all Windows apps.
-- Google Speech-to-Text V1.
-- Untested model/language/region combinations outside Advanced mode.
+## Engines (honest status)
 
-## Models and Languages
+| Engine | What it is | Status |
+| --- | --- | --- |
+| **Offline (Whisper)** | Local `faster-whisper`. Private, works without internet **after** you download a model. | Recommended for this beta. Offline is **not "ready"** until a model is downloaded in the Engine room. |
+| **Google STT V2** | Cloud. The regression-protected combo is `latest_long / eu / iw-IL / recognizer _`. | Requires your Google Cloud project + credentials. **Test Connection verifies the recognizer path — it is not proof of dictation.** A model/region/language/recognizer combo is only "proven" once a real streaming session (or `tools/google_stt_probe.py`) returns non-empty Hebrew text. |
+| **Deepgram** | Cloud, live streaming. | Requires **your** Deepgram API key (stored in Windows Credential Manager) and Test Connection. Real transcription is unproven without a user key. |
+| **Groq** | Cloud, final-only Whisper batch. | Requires **your** Groq API key and Test Connection. Final-only (no live words). Real transcription is unproven without a user key. |
+| **Smart Auto / AutoFallback** | Picks a configured provider; can fall back to Offline. | Experimental; **not** the public-beta default. Offline backup is only available when a local model is installed. |
 
-The stable default remains Google Speech-to-Text V2 `chirp_3`, Hebrew `iw-IL`, and `eu/us` regions. Advanced mode exposes additional V2 model and region presets for local validation, but each language/model/region combination must be tested before release use.
+Cloud keys are stored in the OS keyring (Windows Credential Manager), never in
+plaintext settings. Changing a provider's model/language/key returns its status to
+"not verified" and routes dictation to Offline until you re-test.
 
-The language dropdown contains tested presets. For any Google-supported BCP-47 language code that is not in the dropdown, use the custom language code field. Before a language becomes a first-class preset, it should get command-pack and QA coverage.
+## Labs / not in the stable path
 
-## Install for Development
+- **Live target typing into other apps** — locked in the WinUI build (the Settings
+  toggle is disabled; the engine force-normalizes to final-only). It requires a
+  TSF/IME composition layer to be safe in RTL fields.
+- **TSF/IME composition transport** — gated off.
+- **Unattended auto-update install** — the updater only checks a signed manifest and
+  offers a verified release URL; installation stays manual. See `docs/updater.md`.
 
-Python 3.11+ is recommended.
+## Requirements
+
+- Windows 10 19041+ / Windows 11, x64.
+- For building the shell: .NET 9 SDK + the Windows App SDK / WinUI 3 workload.
+- For the engine: Python 3.11+ (a packaged engine is produced by the build; you do
+  not need Python to run the CI artifact).
+
+## Run it (testers)
+
+1. Download and unzip the **`VoiceType-winui-beta-unsigned`** artifact from the
+   GitHub Actions run into a clean folder.
+2. Run `VoiceType.exe` (accept the SmartScreen warning — the build is unsigned).
+3. Complete or skip onboarding. If you skip, install an Offline model in the Engine
+   room before dictating — a fresh machine has no model yet.
+4. Follow `docs/winui-beta-test-checklist.md` and record **PASS / FAIL / SKIP**
+   honestly.
+
+## Build from source (developers)
 
 ```powershell
+# Python engine deps
 python -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
 .\.venv\Scripts\python -m pip install -r requirements.txt
+
+# Build the WinUI shell (Release)
+dotnet build winui\VoiceType.App\VoiceType.App.csproj -c Release
+
+# Runtime self-test of the shell
+& 'winui\VoiceType.App\bin\Release\net9.0-windows10.0.19041.0\win-x64\VoiceType.exe' --selftest
 ```
 
-## Run
+The packaged engine + shell artifact is produced by the `winui-beta` GitHub Actions
+workflow (PyInstaller for the engine, `dotnet publish` for the shell).
+
+> **Legacy note.** A previous PySide/Qt app still exists in the tree (`main.py`,
+> `src/hebrew_live_dictation/qt_app.py`) as historical source evidence. It is **not**
+> the current product and `python main.py` does **not** launch VoiceType. Use the
+> WinUI shell described above.
+
+## Tests and audits
 
 ```powershell
-python main.py
+$env:PYTHONPATH='src'
+.venv\Scripts\python.exe -m unittest discover -s tests
+.venv\Scripts\python.exe scripts\packaging_audit.py
+.venv\Scripts\python.exe scripts\release_audit.py
 ```
-
-The app creates local settings at:
-
-```text
-%APPDATA%\VoiceType\settings.json
-```
-
-The repository includes `settings.example.json` only. Do not commit personal settings or credentials.
-
-## Google Cloud Setup
-
-1. Create or choose a Google Cloud project.
-2. Enable Speech-to-Text API.
-3. Create a service account with Speech-to-Text permissions, or configure Application Default Credentials.
-4. In the app, set:
-   - Project ID: your Google Cloud project id.
-   - Location: `eu`.
-   - Recognizer ID: `_`.
-   - Model: `chirp_3`.
-   - Credentials mode: `service_account_json` or `adc`.
-5. If using service account JSON, choose the JSON file in the UI. The path is stored only in `%APPDATA%\VoiceType\settings.json`.
-
-The app does not use simple API keys.
-
-## Voice Commands
-
-Supported command groups:
-
-- Punctuation: period, comma, question mark, exclamation mark, colon, semicolon, new line, new paragraph.
-- Emoji phrases: smile, heart, laugh, fire, check.
-- Editing/navigation: delete last word, delete last sentence, clear all, undo, send, next field.
-- Session phrase edits: replace phrase and delete phrase inside the current dictation session.
-- v2 TSF path: select last word/sentence is available only when a verified TSF composition scope is active.
-- Stop dictation.
-
-Unsupported commands such as arbitrary phrase selection are intentionally not exposed in v1.
-
-## Build
-
-```powershell
-.\build_app.ps1
-```
-
-Output:
-
-```text
-dist\HebrewLiveDictation
-```
-
-If the build is not code-signed, publish it as an unsigned beta.
-If Visual Studio CMake tools are installed, the build also compiles and packages the v2 Native TSF peer and DLL under `native\tsf`.
-
-## Test and Release Gate
-
-```powershell
-python -m unittest discover -s tests
-python scripts\release_audit.py
-```
-
-Before publishing, verify a fresh build in Notepad, Word, Chrome/Gmail textarea, WhatsApp Web or Telegram Web, VS Code/Electron, and short search/input fields. Include mixed Hebrew-English-number text and 100%/150% DPI checks.
-
-More detail:
-
-- [Architecture](docs/architecture.md)
-- [QA Matrix](docs/qa.md)
-- [v2 TSF Risk Plan](docs/v2_tsf_risk_plan.md)
 
 ## Privacy
 
-- Credentials paths are redacted in logs.
-- Transcript text is redacted unless debug transcript logging is enabled.
-- Logs rotate under `%APPDATA%\VoiceType`.
-- The release audit blocks local settings, logs, bytecode caches, legacy files, and common secret patterns.
+- Cloud API keys live in the OS keyring, never in `settings.json`.
+- Credential paths and provider/API tokens are redacted from logs, error messages,
+  and diagnostics.
+- Transcript text is redacted in logs unless debug transcript logging is explicitly
+  enabled.
+- History is local-only and can be disabled or cleared in the app.
 
-## Troubleshooting
+## More documentation
 
-- Missing credentials: choose a Service Account JSON file or configure ADC with `gcloud auth application-default login`.
-- No recognition responses: check project id, Speech-to-Text API status, region, model, recognizer id, microphone, and network access.
-- Text appears in the wrong app: click the target input field before starting dictation.
-- Duplicated text: switch back to final-only mode and verify tests pass.
-- Poor recognition: use a better microphone, reduce background noise, and add custom phrases.
-
-## Sources Checked
-
-- [Gboard advanced voice typing](https://support.google.com/gboard/answer/11197787)
-- [Google Cloud Chirp 3](https://docs.cloud.google.com/speech-to-text/docs/models/chirp-3)
-- [Google STT best practices](https://docs.cloud.google.com/speech-to-text/docs/best-practices)
-- [Google STT quotas and streaming limits](https://docs.cloud.google.com/speech-to-text/docs/quotas)
-- [Google STT voice activity events](https://docs.cloud.google.com/speech-to-text/docs/voice-activity-events)
-- [Microsoft Text Services Framework](https://learn.microsoft.com/en-us/windows/win32/tsf/text-services-framework)
-- [Microsoft extended window styles](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles)
+- [Architecture](docs/architecture.md)
+- [Final product completion ledger](docs/final-product-completion-plan.md)
+- [Independent review package](docs/final-independent-review-package.md)
+- [Manual beta test checklist](docs/winui-beta-test-checklist.md)
+- [Updater guide](docs/updater.md)
+- [Pause/resume note](docs/future_pause_resume.md)

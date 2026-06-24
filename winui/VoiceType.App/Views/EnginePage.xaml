@@ -31,7 +31,7 @@
                         <RadioButton x:Name="OptSmart" GroupName="engine" Tag="smart_auto" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="Smart Auto" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="Chooses the best configured provider and keeps Offline as backup when the local model is installed. Experimental: exact routing is shown below."
+                                <TextBlock Text="בוחר אוטומטית את ספק הענן המוגדר הטוב ביותר, ושומר על מנוע לא־מקוון כגיבוי כשהמודל המקומי מותקן. ניסיוני — הניתוב המדויק מוצג למטה."
                                            TextWrapping="Wrap" Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
@@ -45,7 +45,7 @@
                         <RadioButton x:Name="OptChoose" GroupName="engine" Tag="choose" Checked="OnEngineChoice">
                             <StackPanel Spacing="2" Margin="6,0,0,0">
                                 <TextBlock Text="ספק ענן אחר" Style="{StaticResource SectionHeaderStyle}" />
-                                <TextBlock Text="Deepgram is live streaming; Groq is final-only. Both require a saved API key and Test connection."
+                                <TextBlock Text="Deepgram עובד בזרימה חיה; Groq מחזיר טקסט סופי בלבד. שניהם דורשים מפתח API שמור ובדיקת חיבור."
                                            Style="{StaticResource CaptionMutedStyle}" />
                             </StackPanel>
                         </RadioButton>
@@ -62,10 +62,10 @@
             <!-- Smart Auto routing — shown only when Smart Auto is selected -->
             <Border x:Name="SmartAutoCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Smart Auto routing" Style="{StaticResource SectionHeaderStyle}" />
+                    <TextBlock Text="ניתוב Smart Auto" Style="{StaticResource SectionHeaderStyle}" />
                     <TextBlock x:Name="SmartAutoStatusText" Style="{StaticResource CaptionMutedStyle}"
                                TextWrapping="Wrap" />
-                    <TextBlock Text="Smart Auto is not the public-beta default. Verify cloud providers with Test connection, and install the Offline model before relying on backup."
+                    <TextBlock Text="Smart Auto אינו ברירת המחדל לבטא. אמתו ספקי ענן באמצעות ‘בדיקת חיבור’, והתקינו את המודל הלא־מקוון לפני הסתמכות על גיבוי."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
@@ -131,25 +131,25 @@
             <Border x:Name="ChooseCard" Style="{StaticResource CardStyle}" Visibility="Collapsed">
                 <StackPanel Spacing="8">
                     <TextBlock Text="ספק זיהוי" Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="Deepgram supports live streaming. Groq uses final-only Whisper transcription. Both store API keys in Windows Credential Manager and require Test connection before use."
+                    <TextBlock Text="Deepgram תומך בזרימה חיה. Groq משתמש בתמלול Whisper סופי בלבד. שניהם שומרים מפתחות API ב‑Windows Credential Manager ודורשים בדיקת חיבור לפני השימוש."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                     <ComboBox x:Name="ProviderCombo" MinWidth="240" SelectionChanged="OnProviderChanged">
                         <ComboBoxItem Tag="deepgram" Content="Deepgram" />
                         <ComboBoxItem Tag="groq" Content="Groq" />
                     </ComboBox>
                     <StackPanel x:Name="DeepgramModelRow" Spacing="4">
-                        <TextBlock Text="Deepgram model" Style="{StaticResource CaptionMutedStyle}" />
+                        <TextBlock Text="מודל Deepgram" Style="{StaticResource CaptionMutedStyle}" />
                         <ComboBox x:Name="DeepgramModelCombo" HorizontalAlignment="Stretch"
                                   SelectionChanged="OnDeepgramModelChanged" />
                     </StackPanel>
                     <StackPanel x:Name="GroqModelRow" Spacing="4" Visibility="Collapsed">
-                        <TextBlock Text="Groq model" Style="{StaticResource CaptionMutedStyle}" />
+                        <TextBlock Text="מודל Groq" Style="{StaticResource CaptionMutedStyle}" />
                         <ComboBox x:Name="GroqModelCombo" HorizontalAlignment="Stretch"
                                   SelectionChanged="OnGroqModelChanged" />
                     </StackPanel>
                     <StackPanel Spacing="4">
-                        <TextBlock Text="API key" Style="{StaticResource CaptionMutedStyle}" />
-                        <PasswordBox x:Name="ProviderKeyBox" PlaceholderText="Paste API key to save in OS keyring" />
+                        <TextBlock Text="מפתח API" Style="{StaticResource CaptionMutedStyle}" />
+                        <PasswordBox x:Name="ProviderKeyBox" PlaceholderText="הדביקו מפתח API לשמירה במאגר המפתחות של המערכת" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <Button x:Name="SaveProviderKeyBtn" Content="שמור מפתח" Click="OnSaveProviderKey" />

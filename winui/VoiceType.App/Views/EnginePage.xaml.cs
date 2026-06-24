@@ -339,14 +339,14 @@ public sealed partial class EnginePage : Page
 
     internal static readonly (string tag, string label)[] DeepgramModels =
     {
-        ("nova-3", "Nova-3 · Hebrew live streaming"),
-        ("nova-2", "Nova-2 · legacy fallback"),
+        ("nova-3", "Nova-3 · זרימה חיה בעברית"),
+        ("nova-2", "Nova-2 · גיבוי ישן"),
     };
 
     internal static readonly (string tag, string label)[] GroqModels =
     {
-        ("whisper-large-v3", "Whisper Large v3 · final-only Hebrew transcription"),
-        ("whisper-large-v3-turbo", "Whisper Large v3 Turbo · final-only, lower latency"),
+        ("whisper-large-v3", "Whisper Large v3 · תמלול עברית סופי בלבד"),
+        ("whisper-large-v3-turbo", "Whisper Large v3 Turbo · סופי בלבד, זמן תגובה נמוך"),
     };
 
     /// <summary>Longer, honest per-model guidance shown under the picker (R3 item 2).</summary>
@@ -673,7 +673,7 @@ public sealed partial class EnginePage : Page
             return;
         }
         DispatcherQueue.TryEnqueue(() =>
-            ProviderTestStatusText.Text = "Deepgram model changed; run Test connection again before using it.");
+            ProviderTestStatusText.Text = "מודל Deepgram שונה; הריצו ‘בדיקת חיבור’ שוב לפני השימוש.");
         await LoadProviderKeyStatusAsync();
         if (OptChoose.IsChecked == true)
             await Finish(await ApplySelectedCloudProviderIfReadyAsync());
@@ -689,7 +689,7 @@ public sealed partial class EnginePage : Page
             return;
         }
         DispatcherQueue.TryEnqueue(() =>
-            ProviderTestStatusText.Text = "Groq model changed; run Test connection again before using it. Groq is final-only.");
+            ProviderTestStatusText.Text = "מודל Groq שונה; הריצו ‘בדיקת חיבור’ שוב לפני השימוש. Groq מחזיר טקסט סופי בלבד.");
         await LoadProviderKeyStatusAsync();
         if (OptChoose.IsChecked == true)
             await Finish(await ApplySelectedCloudProviderIfReadyAsync());
@@ -702,7 +702,7 @@ public sealed partial class EnginePage : Page
         if (provider != "deepgram" && provider != "groq")
         {
             DispatcherQueue.TryEnqueue(() =>
-                ProviderTestStatusText.Text = $"{provider} is not available for API-key testing.");
+                ProviderTestStatusText.Text = $"{provider} אינו זמין לבדיקת מפתח API.");
             return;
         }
         DispatcherQueue.TryEnqueue(() =>
@@ -710,7 +710,7 @@ public sealed partial class EnginePage : Page
             ProviderTestRing.IsActive = true;
             ProviderTestRing.Visibility = Visibility.Visible;
             TestProviderBtn.IsEnabled = false;
-            ProviderTestStatusText.Text = $"Testing {provider} connection...";
+            ProviderTestStatusText.Text = $"בודק חיבור ל‑{provider}...";
         });
         bool ok = false;
         string msg = "";
@@ -792,8 +792,8 @@ public sealed partial class EnginePage : Page
                 DeepgramModelRow.Visibility = deepgram ? Visibility.Visible : Visibility.Collapsed;
                 GroqModelRow.Visibility = groq ? Visibility.Visible : Visibility.Collapsed;
                 ProviderKeyBox.PlaceholderText = configured
-                    ? "API key saved; the value is not shown"
-                    : "Paste API key to save in OS keyring";
+                    ? "מפתח API נשמר; הערך אינו מוצג"
+                    : "הדביקו מפתח API לשמירה במאגר המפתחות של המערכת";
                 SaveProviderKeyBtn.IsEnabled = supported && keyring;
                 ClearProviderKeyBtn.IsEnabled = supported && configured;
                 TestProviderBtn.IsEnabled = (deepgram || groq) && configured;

@@ -507,6 +507,22 @@ class HealthTests(unittest.TestCase):
 
 
 class ProviderControlPlaneTests(unittest.TestCase):
+    def test_labs_status_reports_live_target_typing_locked_by_default(self):
+        status = sidecar.labs_status(_FakeConfig({
+            "dictation.live_typing_mode": "final_only",
+            "dictation.input_backend": "v1",
+            "tsf.experimental_transport_enabled": False,
+            "labs.live_target_typing_enabled": False,
+        }))
+
+        self.assertEqual(status["gate"], "locked")
+        self.assertFalse(status["liveTargetTypingEnabled"])
+        self.assertEqual(status["liveTypingMode"], "final_only")
+        self.assertEqual(status["inputBackend"], "v1")
+        self.assertFalse(status["tsfExperimentalTransport"])
+        self.assertTrue(status["stableInsertion"])
+        self.assertIn("dictation.live_typing_mode", status["lockedSettings"])
+
     def test_provider_status_lists_registered_providers_and_capabilities(self):
         with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
             status = provider_control_status(_FakeConfig({"stt.provider": "google_v2", "stt.mode": "api"}))

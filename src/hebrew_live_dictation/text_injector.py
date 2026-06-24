@@ -210,6 +210,12 @@ class TextInjector:
                 self.target.describe() if self.target else "none",
             )
 
+    def _live_target_typing_enabled(self) -> bool:
+        return (
+            self.config.get("dictation.live_typing_mode") == "live"
+            and bool(self.config.get("labs.live_target_typing_enabled", False))
+        )
+
     def _check_target_change(self) -> bool:
         current_target = WindowTarget.capture_foreground()
         if current_target:
@@ -249,19 +255,20 @@ class TextInjector:
         }
 
     def inject_interim(self, text: str):
+        live_target_typing = self._live_target_typing_enabled()
         if not text:
-            if self.config.get("dictation.live_typing_mode") == "live" and self.session_interim_text:
+            if live_target_typing and self.session_interim_text:
                 self._replace_text(self.session_interim_text, "")
                 self.session_interim_text = ""
             return {"status": "empty"}
         if parse_voice_command(text, self._language_code(), self._command_pack()):
-            if self.config.get("dictation.live_typing_mode") == "live" and self.session_interim_text:
+            if live_target_typing and self.session_interim_text:
                 self._replace_text(self.session_interim_text, "")
                 self.session_interim_text = ""
             return {"status": "command_preview"}
 
         raw_input = text
-        if self.config.get("dictation.live_typing_mode") == "live":
+        if live_target_typing:
             if not self._check_target_change():
                 return self._detached_result(raw_input, "target_changed")
             self.last_raw_text = raw_input
@@ -274,7 +281,7 @@ class TextInjector:
         )
         self.pending_preview_text = target_text
         
-        if self.config.get("dictation.live_typing_mode") == "live":
+        if live_target_typing:
             success = self._replace_text(self.session_interim_text, target_text)
             if success:
                 self.session_interim_text = target_text
@@ -304,8 +311,9 @@ class TextInjector:
             return {"status": "preview_only", "text": target_text, "backend": "preview_only"}
 
     def inject_final(self, text: str):
+        live_target_typing = self._live_target_typing_enabled()
         if not text:
-            if self.config.get("dictation.live_typing_mode") == "live" and self.session_interim_text:
+            if live_target_typing and self.session_interim_text:
                 self._replace_text(self.session_interim_text, "")
                 self.session_interim_text = ""
             self.pending_preview_text = ""
@@ -317,7 +325,7 @@ class TextInjector:
         if command:
             if command.action != "stop" and not self._check_target_change():
                 return self._detached_result(text, "target_changed")
-            if self.config.get("dictation.live_typing_mode") == "live" and self.session_interim_text:
+            if live_target_typing and self.session_interim_text:
                 self._replace_text(self.session_interim_text, "")
                 self.session_interim_text = ""
             self.pending_preview_text = ""
@@ -328,7 +336,7 @@ class TextInjector:
         raw_input = text
         if not self._check_target_change():
             return self._detached_result(raw_input, "target_changed")
-        if self.config.get("dictation.live_typing_mode") == "live":
+        if live_target_typing:
             if self.window_switch_ignore_word_count > 0:
                 words = text.split()
                 if len(words) >= self.window_switch_ignore_word_count:
@@ -344,7 +352,7 @@ class TextInjector:
         )
         self.pending_preview_text = ""
         if not target_text:
-            if self.config.get("dictation.live_typing_mode") == "live":
+            if live_target_typing:
                 self.last_raw_text = ""
                 self.window_switch_ignore_word_count = 0
             return {"status": "duplicate"}
@@ -366,7 +374,7 @@ class TextInjector:
             )
             return {"status": "inserted", "text": target_text, "backend": "tsf"}
         
-        if self.config.get("dictation.live_typing_mode") == "live":
+        if live_target_typing:
             success = self._replace_text(self.session_interim_text, target_text)
             if success:
                 self.session_pasted_text += target_text

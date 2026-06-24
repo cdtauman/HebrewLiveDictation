@@ -12,6 +12,7 @@ class DummyConfig:
     def __init__(self, values=None):
         self.values = {
             "dictation.input_backend": "tsf",
+            "labs.live_target_typing_enabled": True,
             "tsf.handshake_timeout_ms": 150,
             "tsf.experimental_transport_enabled": True,
             "tsf.allow_low_integrity_label": False,

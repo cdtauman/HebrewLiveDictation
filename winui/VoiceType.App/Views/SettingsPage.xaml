@@ -81,6 +81,17 @@
                                    Minimum="50" Maximum="5000" SmallChange="50" LargeChange="500"
                                    SpinButtonPlacementMode="Inline" ValueChanged="OnHistoryLimitChanged" />
                     </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="Live target typing Labs" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock x:Name="LabsStatusText" Text="Locked" Style="{StaticResource CaptionMutedStyle}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="LabsModeText" Text="target insertion: final only"
+                                       Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="LabsLiveTypingToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      IsEnabled="False" />
+                    </Grid>
                     <TextBlock Text="אפשרויות מומחה למנוע (פרמטרים מתקדמים, מצב מעבדה) יתווספו בהמשך."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                 </StackPanel>

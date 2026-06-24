@@ -131,6 +131,16 @@ internal static class RuntimeSelfTest
                       providerShape && routingShape ? "provider control plane returned registry rows + routing"
                                     : providerStatus.GetRawText());
 
+                var labsStatus = await client.RpcAsync("getLabsStatus");
+                bool labsLocked = labsStatus.TryGetProperty("gate", out var lg) && lg.GetString() == "locked"
+                                  && labsStatus.TryGetProperty("liveTypingMode", out var lm) && lm.GetString() == "final_only"
+                                  && labsStatus.TryGetProperty("inputBackend", out var lb) && lb.GetString() == "v1"
+                                  && labsStatus.TryGetProperty("tsfExperimentalTransport", out var ltsf)
+                                  && ltsf.ValueKind == JsonValueKind.False;
+                Check("bridge.getLabsStatus", labsLocked,
+                      labsLocked ? "live target typing Labs gate is locked; insertion stays final-only"
+                                 : labsStatus.GetRawText());
+
                 var credentialStatus = await client.RpcAsync("getProviderCredentialStatus", new { provider = "deepgram" });
                 bool credentialShape = credentialStatus.TryGetProperty("provider", out var cpv)
                                        && cpv.GetString() == "deepgram"
@@ -494,6 +504,21 @@ internal static class RuntimeSelfTest
                       "command pack, spoken emoji, phrase boost, and custom phrase controls render");
             }
             catch (Exception ex) { Check("dictation.language_assists.surface", false, XamlDetail(ex)); }
+
+            // 6h.4) Settings Labs gate: target live typing is visible as an experimental locked
+            //       path, not a production-ready toggle.
+            try
+            {
+                var sp = new Views.SettingsPage();
+                sp.RenderLabsForTest(enabled: false, mode: "final_only", backend: "v1", tsf: false);
+                bool labsOk = !sp.LabsLiveTypingEnabledForTest
+                              && sp.LabsStatusForTest.Contains("Final-only")
+                              && sp.LabsModeForTest.Contains("final_only")
+                              && sp.LabsModeForTest.Contains("TSF: disabled");
+                Check("settings.labs_gate.surface", labsOk,
+                      "Settings renders live target typing as locked/final-only by default");
+            }
+            catch (Exception ex) { Check("settings.labs_gate.surface", false, XamlDetail(ex)); }
 
             // 6i) Engine-room offline model management: download offered when absent, delete
             //     offered when present, ring while downloading (render only — no RPC/download).

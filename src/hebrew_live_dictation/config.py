@@ -118,6 +118,9 @@ DEFAULT_SETTINGS = {
         "idle_button": False,
         "position": None,
     },
+    "labs": {
+        "live_target_typing_enabled": False,
+    },
     "tsf": {
         "handshake_timeout_ms": 100,
         "experimental_transport_enabled": False,
@@ -382,6 +385,9 @@ class Config:
         except (TypeError, ValueError):
             google["phrase_boost"] = DEFAULT_SETTINGS["google"]["phrase_boost"]
 
+        labs = self.settings.setdefault("labs", {})
+        labs["live_target_typing_enabled"] = bool(labs.get("live_target_typing_enabled", False))
+
         dictation = self.settings.setdefault("dictation", {})
 
         if (
@@ -399,6 +405,10 @@ class Config:
             dictation["live_typing_mode"] = "final_only"
 
         if dictation.get("input_backend") not in {"v1", "tsf"}:
+            dictation["input_backend"] = "v1"
+
+        if not labs["live_target_typing_enabled"]:
+            dictation["live_typing_mode"] = "final_only"
             dictation["input_backend"] = "v1"
 
         if dictation.get("paste_method") not in {"unicode", "clipboard"}:
@@ -537,6 +547,9 @@ class Config:
         tsf["handshake_timeout_ms"] = max(50, min(150, int(tsf.get("handshake_timeout_ms", 100))))
         tsf["experimental_transport_enabled"] = bool(tsf.get("experimental_transport_enabled", False))
         tsf["allow_low_integrity_label"] = bool(tsf.get("allow_low_integrity_label", False))
+        if not labs["live_target_typing_enabled"]:
+            tsf["experimental_transport_enabled"] = False
+            tsf["allow_low_integrity_label"] = False
 
         release = self.settings.setdefault("release", {})
         release["channel"] = release.get("channel") or DEFAULT_SETTINGS["release"]["channel"]

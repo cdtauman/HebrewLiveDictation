@@ -489,6 +489,32 @@ def compute_health(config) -> dict:
     }
 
 
+def labs_status(config) -> dict:
+    enabled = bool(config.get("labs.live_target_typing_enabled", False))
+    live_mode = config.get("dictation.live_typing_mode", "final_only")
+    input_backend = config.get("dictation.input_backend", "v1")
+    tsf_enabled = bool(config.get("tsf.experimental_transport_enabled", False))
+    gated = not enabled
+    return {
+        "liveTargetTypingEnabled": enabled,
+        "liveTypingMode": live_mode,
+        "inputBackend": input_backend,
+        "tsfExperimentalTransport": tsf_enabled,
+        "stableInsertion": live_mode == "final_only" and input_backend == "v1" and not tsf_enabled,
+        "gate": "open" if enabled else "locked",
+        "message": (
+            "Live target typing Labs is enabled; this is experimental and not beta-ready."
+            if enabled
+            else "Final-only target insertion is protected. Live words remain display-only in HUD/Remote."
+        ),
+        "lockedSettings": [
+            "dictation.live_typing_mode",
+            "dictation.input_backend",
+            "tsf.experimental_transport_enabled",
+        ] if gated else [],
+    }
+
+
 def _capabilities_dict(caps) -> dict:
     """JSON-safe provider capability shape for the shell/diagnostics."""
     return {
@@ -1599,13 +1625,16 @@ def run(pipe_name: str | None = None) -> int:
     except Exception:
         logger.error("cloud->offline recovery failed:\n%s", traceback.format_exc())
 
-    # Codex MF4: the WinUI beta exposes no live-typing toggle, and live mode would type interims into
-    # the target app. Normalize any migrated 'live' config to final-only so target insertion is final-only
-    # (live/interim words remain display-only in HUD/Remote).
+    # Codex MF4 / Labs gate: the WinUI beta exposes no live-typing toggle, and live mode would type
+    # interims into the target app. Normalize any migrated 'live' config to final-only unless the
+    # explicit Labs gate is open (live/interim words remain display-only in HUD/Remote).
     try:
-        if config.get("dictation.live_typing_mode", "final_only") == "live":
+        if (
+            config.get("dictation.live_typing_mode", "final_only") == "live"
+            and not config.get("labs.live_target_typing_enabled", False)
+        ):
             config.set("dictation.live_typing_mode", "final_only")
-            logger.info("Normalized dictation.live_typing_mode 'live' -> 'final_only' (no live-typing in beta).")
+            logger.info("Normalized dictation.live_typing_mode 'live' -> 'final_only' (Labs gate locked).")
     except Exception:
         logger.error("live_typing_mode normalization failed:\n%s", traceback.format_exc())
 
@@ -1733,6 +1762,8 @@ def run(pipe_name: str | None = None) -> int:
             return config.as_dict()
         if method == "getHealth":
             return compute_health(config)
+        if method == "getLabsStatus":
+            return labs_status(config)
         if method == "getProviderStatus":
             return provider_control_status(config)
         if method == "getProviderCredentialStatus":

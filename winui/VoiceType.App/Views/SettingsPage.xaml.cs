@@ -49,6 +49,7 @@ public sealed partial class SettingsPage : Page
             _loading = false;
         });
 
+        await LoadLabsAsync();
         await LoadDiagnosticsAsync();
     }
 
@@ -94,6 +95,48 @@ public sealed partial class SettingsPage : Page
         if (double.IsNaN(args.NewValue)) return;
         await Persist("history.max_entries", (int)args.NewValue);
     }
+
+    private async Task LoadLabsAsync()
+    {
+        bool enabled = false;
+        string mode = "final_only";
+        string backend = "v1";
+        bool tsf = false;
+        string message = "Final-only target insertion is protected. Live words remain display-only in HUD/Remote.";
+
+        if (_host?.Client != null)
+        {
+            try
+            {
+                var status = await _host.Client.RpcAsync("getLabsStatus");
+                enabled = Bool(status, "liveTargetTypingEnabled");
+                tsf = Bool(status, "tsfExperimentalTransport");
+                mode = Str(status, "liveTypingMode");
+                backend = Str(status, "inputBackend");
+                message = Str(status, "message");
+            }
+            catch { }
+        }
+
+        DispatcherQueue.TryEnqueue(() => RenderLabs(enabled, mode, backend, tsf, message));
+    }
+
+    private void RenderLabs(bool enabled, string mode, string backend, bool tsf, string message)
+    {
+        LabsLiveTypingToggle.IsOn = enabled;
+        LabsStatusText.Text = enabled
+            ? "Experimental Labs gate is open. Not approved for public beta."
+            : message;
+        LabsModeText.Text = $"target insertion: {mode}; backend: {backend}; TSF: {(tsf ? "enabled" : "disabled")}";
+    }
+
+    internal void RenderLabsForTest(bool enabled, string mode, string backend, bool tsf)
+        => RenderLabs(enabled, mode, backend, tsf,
+            "Final-only target insertion is protected. Live words remain display-only in HUD/Remote.");
+
+    internal bool LabsLiveTypingEnabledForTest => LabsLiveTypingToggle.IsOn;
+    internal string LabsStatusForTest => LabsStatusText.Text;
+    internal string LabsModeForTest => LabsModeText.Text;
 
     private async Task LoadDiagnosticsAsync()
     {

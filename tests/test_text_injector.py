@@ -150,7 +150,10 @@ class TextInjectorTests(unittest.TestCase):
             WindowTarget.capture_best_target = orig_capture
 
     def test_live_typing_interim_and_final(self):
-        injector = self._injector({"dictation.live_typing_mode": "live"})
+        injector = self._injector({
+            "dictation.live_typing_mode": "live",
+            "labs.live_target_typing_enabled": True,
+        })
         
         res = injector.inject_interim("hello")
         self.assertEqual(res["status"], "inserted")
@@ -172,7 +175,10 @@ class TextInjectorTests(unittest.TestCase):
         self.assertEqual(injector.session_pasted_text, "hello world!")
 
     def test_live_typing_user_interrupt_abort(self):
-        injector = self._injector({"dictation.live_typing_mode": "live"})
+        injector = self._injector({
+            "dictation.live_typing_mode": "live",
+            "labs.live_target_typing_enabled": True,
+        })
         
         # Simulating user keyboard interrupt mid-typing by making _insert_text set abort_requested
         def mock_insert(text, prefer_clipboard=False):
@@ -218,7 +224,10 @@ class TextInjectorTests(unittest.TestCase):
         self.assertEqual(injector.session_pasted_text, "hello")
 
     def test_dynamic_window_switching_detaches_live_text_without_new_target_write(self):
-        injector = self._injector({"dictation.live_typing_mode": "live"})
+        injector = self._injector({
+            "dictation.live_typing_mode": "live",
+            "labs.live_target_typing_enabled": True,
+        })
         
         # Initial typing
         res = injector.inject_interim("hello")
@@ -288,7 +297,16 @@ class TextInjectorTests(unittest.TestCase):
 
         self.assertEqual(injector.input_backend, "v1")
         self.assertEqual(injector.tsf_status.status, "fallback")
-        self.assertEqual(injector.tsf_status.reason, "experimental_transport_disabled")
+        self.assertEqual(injector.tsf_status.reason, "labs_gate_disabled")
+
+    def test_live_mode_without_labs_gate_is_preview_only(self):
+        injector = self._injector({"dictation.live_typing_mode": "live"})
+
+        result = injector.inject_interim("hello world")
+
+        self.assertEqual(result["status"], "preview_only")
+        self.assertEqual(self.ops, [])
+        self.assertEqual(injector.session_interim_text, "")
 
 
 if __name__ == "__main__":

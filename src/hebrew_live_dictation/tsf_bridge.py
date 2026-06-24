@@ -42,6 +42,10 @@ class TSFBridge:
         if self.config.get("dictation.input_backend", "v1") != "tsf":
             return TSFHandshakeResult(False, "disabled", "input_backend_not_tsf", session_id=session_id)
 
+        if not self.config.get("labs.live_target_typing_enabled", False):
+            logger.info("TSF requested but live target typing Labs gate is disabled; falling back.")
+            return TSFHandshakeResult(False, "fallback", "labs_gate_disabled", session_id=session_id)
+
         if not target or not target.is_usable_external():
             return TSFHandshakeResult(False, "target_unavailable", "no_usable_external_target", session_id=session_id)
 

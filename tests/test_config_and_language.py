@@ -81,6 +81,7 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertFalse(config.get("speech.auto_stop_on_silence"))
             self.assertEqual(config.get("tsf.handshake_timeout_ms"), 100)
             self.assertFalse(config.get("tsf.experimental_transport_enabled"))
+            self.assertFalse(config.get("labs.live_target_typing_enabled"))
             self.assertEqual(config.get("google.credentials_path"), "C:/creds.json")
             self.assertEqual(config.get("app.theme"), "light")
 
@@ -105,6 +106,39 @@ class ConfigAndLanguageTests(unittest.TestCase):
             self.assertEqual(config.get("schema_version"), 4)
             self.assertEqual(config.get("dictation.live_typing_mode"), "final_only")
             self.assertIsNone(config.get("dictation.aggressive_live_typing"))
+
+    def test_live_target_typing_and_tsf_are_locked_without_labs_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.update({
+                "dictation.live_typing_mode": "live",
+                "dictation.input_backend": "tsf",
+                "tsf.experimental_transport_enabled": True,
+                "tsf.allow_low_integrity_label": True,
+            }))
+
+            self.assertFalse(config.get("labs.live_target_typing_enabled"))
+            self.assertEqual(config.get("dictation.live_typing_mode"), "final_only")
+            self.assertEqual(config.get("dictation.input_backend"), "v1")
+            self.assertFalse(config.get("tsf.experimental_transport_enabled"))
+            self.assertFalse(config.get("tsf.allow_low_integrity_label"))
+
+    def test_live_target_typing_and_tsf_require_explicit_labs_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+
+            self.assertTrue(config.update({
+                "labs.live_target_typing_enabled": True,
+                "dictation.live_typing_mode": "live",
+                "dictation.input_backend": "tsf",
+                "tsf.experimental_transport_enabled": True,
+            }))
+
+            self.assertTrue(config.get("labs.live_target_typing_enabled"))
+            self.assertEqual(config.get("dictation.live_typing_mode"), "live")
+            self.assertEqual(config.get("dictation.input_backend"), "tsf")
+            self.assertTrue(config.get("tsf.experimental_transport_enabled"))
 
     def test_v1_beta_normalizes_google_surface(self):
         with tempfile.TemporaryDirectory() as tmp:

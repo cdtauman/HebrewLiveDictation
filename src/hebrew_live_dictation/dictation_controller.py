@@ -118,7 +118,7 @@ class DictationController(QObject):
         self._stop_accumulation_timer()
 
         if self.output_mode == "external":
-            is_live = self.config.get("dictation.live_typing_mode") == "live"
+            is_live = self._live_target_typing_enabled()
             if not is_live and self.accumulated_final_text:
                 logger.info(
                     "Flushing accumulated final text on stop: text_len=%s.",
@@ -251,7 +251,7 @@ class DictationController(QObject):
                 self.latest_interim_text = text
                 self.has_pasted_final = False
                 if self.output_mode == "external":
-                    if self.config.get("dictation.live_typing_mode") == "live":
+                    if self._live_target_typing_enabled():
                         result = self.injector.inject_interim(text)
                         logger.debug("Interim live injection result: %s", result)
                         self._start_accumulation_timer()
@@ -283,7 +283,7 @@ class DictationController(QObject):
                     # streaming provider's finals-while-listening (state == "listening") or after it already
                     # injected, so cloud/streaming behavior is unchanged.
                     if (not command
-                            and self.config.get("dictation.live_typing_mode") != "live"
+                            and not self._live_target_typing_enabled()
                             and self.state not in ("listening", "paused")
                             and not self.has_pasted_final
                             and text.strip()):
@@ -293,7 +293,7 @@ class DictationController(QObject):
                         if result.get("status") in ("inserted", "duplicate", "command"):
                             self.has_pasted_final = True
                         return
-                    if command or self.config.get("dictation.live_typing_mode") == "live":
+                    if command or self._live_target_typing_enabled():
                         if self.accumulated_final_text:
                             flush_result = self.injector.inject_final(self.accumulated_final_text)
                             logger.debug("Flushing accumulated final text before command/live final: %s", flush_result)
@@ -410,6 +410,12 @@ class DictationController(QObject):
         if self.on_text:
             self.on_text(text, final, self.output_mode)
 
+    def _live_target_typing_enabled(self) -> bool:
+        return (
+            self.config.get("dictation.live_typing_mode") == "live"
+            and bool(self.config.get("labs.live_target_typing_enabled", False))
+        )
+
     def _is_stale_event(self, event) -> bool:
         event_session_id = event.get("session_id")
         if event_session_id and event_session_id != self.session_id:
@@ -450,7 +456,7 @@ class DictationController(QObject):
                     self.has_pasted_final = True
                 self.accumulated_final_text = ""
                 flushed_manually = True
-            if self.config.get("dictation.live_typing_mode") != "live" and self.latest_interim_text:
+            if not self._live_target_typing_enabled() and self.latest_interim_text:
                 logger.info(
                     "Flushing latest interim text due to speech pause timeout: text_len=%s.",
                     len(self.latest_interim_text),

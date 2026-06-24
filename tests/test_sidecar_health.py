@@ -661,6 +661,42 @@ class ProviderControlPlaneTests(unittest.TestCase):
         self.assertFalse(status["routing"]["backupReady"])
         self.assertIn("not installed", status["routing"]["backupMessage"])
 
+    def test_skip_onboarding_offline_baseline_without_model_is_not_ready(self):
+        # MF6: the onboarding Skip/X path applies the offline baseline
+        # (stt.provider=whisper_local, stt.mode=local). On a clean machine with no model,
+        # the engine must NOT report the offline path as ready — the start gate says
+        # needs_model so the UI guides the user to a one-time download instead of
+        # claiming a "working Offline product".
+        tmp = tempfile.mkdtemp()
+        cfg = _FakeConfig({
+            "stt.provider": "whisper_local",
+            "stt.mode": "local",
+            "providers.whisper.enabled": True,
+            "providers.whisper.model": "small",
+        }, config_dir=tmp)
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": False, "path": ""}):
+            status = provider_control_status(cfg)
+        self.assertEqual(status["effectiveProvider"], "whisper_local")
+        self.assertEqual(status["routing"]["startGate"], "needs_model")
+        self.assertIn("not installed", status["routing"]["message"])
+        rows = {row["id"]: row for row in status["providers"]}
+        self.assertFalse(rows["whisper_local"]["ready"])
+
+    def test_skip_onboarding_offline_baseline_with_model_is_ready(self):
+        # Counterpart: once the model is installed, the same offline baseline is ready.
+        tmp = tempfile.mkdtemp()
+        cfg = _FakeConfig({
+            "stt.provider": "whisper_local",
+            "stt.mode": "local",
+            "providers.whisper.enabled": True,
+            "providers.whisper.model": "small",
+        }, config_dir=tmp)
+        with mock.patch.object(sidecar, "model_status", return_value={"name": "small", "downloaded": True, "path": "/models"}):
+            status = provider_control_status(cfg)
+        self.assertEqual(status["routing"]["startGate"], "ready")
+        rows = {row["id"]: row for row in status["providers"]}
+        self.assertTrue(rows["whisper_local"]["ready"])
+
     def test_keyed_provider_status_includes_storage_without_secret(self):
         tmp = tempfile.mkdtemp()
         cfg = _FakeConfig({

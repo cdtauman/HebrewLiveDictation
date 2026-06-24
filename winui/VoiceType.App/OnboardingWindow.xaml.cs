@@ -18,8 +18,11 @@ namespace VoiceType.Shell;
 /// Honesty: the plan's step-2 "magic moment" (live mic-level meter + an in-wizard first
 /// word) is intentionally NOT faked here — it needs an audio-level signal the engine does
 /// not yet expose and a bundled-model decision. Step 2 does the real, useful part (mic
-/// selection) and says the live test is coming. Skipping always leaves a WORKING offline
-/// product: if the user never picks an engine we apply the offline baseline at completion.
+/// selection) and says the live test is coming. Skipping always leaves the OFFLINE engine
+/// SELECTED (never an unconfigured cloud engine): if the user never picks an engine we apply
+/// the offline baseline at completion. Offline dictation still requires a one-time model
+/// download — the engine reports startGate=needs_model until the model is on disk, so the UI
+/// guides the user to download instead of claiming offline already works.
 /// </summary>
 public sealed partial class OnboardingWindow : Window
 {

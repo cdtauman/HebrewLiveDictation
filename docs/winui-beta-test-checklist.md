@@ -18,7 +18,10 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 
 ## 0. Setup
 - [ ] Download + unzip the CI artifact to a clean folder; run `VoiceType.exe`.
-- [ ] First run: complete (or Skip) onboarding. Confirm Skip leaves a **working Offline** product.
+- [ ] First run: complete (or Skip) onboarding. Confirm Skip leaves the **Offline (Whisper)** engine
+      **selected** (not an unconfigured cloud engine). On a clean machine the offline model is **not**
+      installed yet, so the app must say **"download a model"** and report **not ready** — it must
+      **not** claim offline is already working. Install the model (Engine room) to make offline ready.
 - [ ] Engine room shows the engine choice; Offline model status is honest (installed ✓ / needs download).
 
 ## 1. Core offline — **G**
@@ -53,6 +56,24 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
       **"לא נבדק"** / not-verified (R1), and dictation routes to **Offline** until re-tested.
 - [ ] **ADC path** (if you use gcloud ADC): select ADC → Test connection → dictate.
 - [ ] **Runtime failure:** (e.g. revoke network) dictation routes to Offline with a clear status, no crash.
+
+## 2a. Deepgram live streaming cloud — **I unless user key + transcript proof are supplied**
+- [ ] Engine room → **ספק ענן אחר** → **Deepgram** → select a model (e.g. `nova-3`).
+- [ ] **Key saved:** paste a Deepgram API key → Save. The UI never displays the saved value; it
+      confirms the key is stored (Windows Credential Manager), not the secret itself.
+- [ ] **Connection verified:** Test connection passes → status says **connection verified** for the
+      selected model/language. This is **not** transcript proof.
+- [ ] **Invalid key fails clearly:** save a bogus key → Test connection **fails with a clear message**
+      (no raw key/token shown anywhere).
+- [ ] **Real transcript proof (only with a real user key):** focus Notepad → start → speak Hebrew →
+      final text lands once. Do **not** mark Deepgram PASS without this real-key transcript.
+- [ ] **Live/interim words:** during a Deepgram session interim words appear in the **HUD** and the
+      **Remote** as you speak (Deepgram is streaming). Interim words are **never typed into the target** —
+      only the final is inserted, once.
+- [ ] **No live target typing:** interim/live words are display-only; nothing is typed into the target
+      unless the (locked) Labs live-typing mode is explicitly enabled.
+- [ ] **Change after verify:** change the Deepgram model/language/key → verification returns to
+      needs-test and dictation routes to Offline until re-tested.
 
 ## 2b. Groq final-only cloud — **I unless user key + transcript proof are supplied**
 - [ ] Engine room → choose **Provider / Groq** → select `whisper-large-v3` or `whisper-large-v3-turbo`.

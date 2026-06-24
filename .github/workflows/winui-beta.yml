@@ -208,6 +208,7 @@ jobs:
         run: |
           gh release create "${{ github.ref_name }}" `
             "VoiceType-winui-beta-${{ github.ref_name }}.zip" `
+            --repo "${{ github.repository }}" `
             --title "VoiceType WinUI beta ${{ github.ref_name }} (UNSIGNED)" `
             --prerelease `
             --notes "UNSIGNED local-shape WinUI beta produced by CI. Windows SmartScreen will show an 'unknown publisher' warning (More info -> Run anyway). Not code-signed, not a final release. Offline Whisper model is NOT bundled; install it from the app (Engine room)."

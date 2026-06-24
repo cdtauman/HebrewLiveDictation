@@ -32,6 +32,7 @@ class AudioStream:
         self.queue = queue.Queue()
         self.stream = None
         self._ratecv_state = None
+        self._logged_input_chunks = 0
         self._resolved_device = self._resolve_device(device_id)
         frame_ms = int(round((self.block_size / self.sample_rate) * 1000)) if self.sample_rate else 100
         self.vad_gate = (
@@ -47,7 +48,10 @@ class AudioStream:
 
     def _resolve_device(self, device_id):
         if device_id is None:
-            return None
+            preferred = self._preferred_input_device()
+            if preferred is not None:
+                logger.info("Resolved Windows default microphone to preferred input index %s.", preferred)
+            return preferred
         
         try:
             sd = _sounddevice()
@@ -119,6 +123,7 @@ class AudioStream:
             return False
 
     def _after_stream_started(self):
+        self._logged_input_chunks = 0
         if self.vad_gate:
             self.vad_gate.reset()
         logger.info(
@@ -147,6 +152,7 @@ class AudioStream:
         chunk = self._convert_to_target_rate(bytes(indata))
         if not chunk:
             return
+        self._log_input_level(chunk)
         if self.vad_gate:
             for gated_chunk in self.vad_gate.process(chunk):
                 self.queue.put(gated_chunk)
@@ -194,11 +200,7 @@ class AudioStream:
             sd = _sounddevice()
             devices = sd.query_devices()
             hostapis = sd.query_hostapis()
-            default_input = None
-            try:
-                default_input = sd.default.device[0]
-            except Exception:
-                default_input = None
+            default_input = AudioStream._preferred_input_device()
 
             raw_devices = []
             for i, dev in enumerate(devices):
@@ -238,6 +240,99 @@ class AudioStream:
         except Exception as e:
             logger.error(f"Error querying audio devices: {e}")
             return []
+
+    @staticmethod
+    def _preferred_input_device() -> int | None:
+        """Pick the concrete input device for the UI's "Windows default" option.
+
+        PortAudio's bare default can be the legacy MME mapper even when the device list
+        exposes a better WASAPI default. Prefer the host API default that matches the
+        devices we show to users, then fall back to PortAudio's process default.
+        """
+        try:
+            sd = _sounddevice()
+            devices = sd.query_devices()
+        except Exception as e:
+            logger.warning("Could not resolve preferred input device: %s", e)
+            return None
+        try:
+            hostapis = sd.query_hostapis()
+        except Exception:
+            hostapis = []
+
+        def system_default() -> int | None:
+            try:
+                value = sd.default.device[0]
+                return int(value) if value is not None and int(value) >= 0 else None
+            except Exception:
+                return None
+
+        def valid_input(index) -> bool:
+            try:
+                i = int(index)
+                if i < 0 or i >= len(devices):
+                    return False
+                dev = devices[i]
+                return (
+                    dev.get("max_input_channels", 0) > 0
+                    and not AudioStream._is_virtual_or_mapper(str(dev.get("name", "")))
+                )
+            except Exception:
+                return False
+
+        default_input = system_default()
+        candidates = []
+        try:
+            for hostapi_index, hostapi in enumerate(hostapis or []):
+                index = hostapi.get("default_input_device", -1)
+                if not valid_input(index):
+                    continue
+                name = str(hostapi.get("name", "") or "")
+                score = 0
+                lowered = name.lower()
+                if "wasapi" in lowered:
+                    score += 1000
+                elif "wdm" in lowered:
+                    score += 400
+                elif "directsound" in lowered:
+                    score += 300
+                elif "mme" in lowered:
+                    score += 100
+                if int(index) == default_input:
+                    score += 50
+                candidates.append((score, int(index), hostapi_index))
+        except Exception:
+            candidates = []
+
+        if candidates:
+            candidates.sort(key=lambda item: (-item[0], item[1]))
+            return candidates[0][1]
+        if valid_input(default_input):
+            return default_input
+        try:
+            for i, dev in enumerate(devices):
+                if valid_input(i):
+                    return i
+        except Exception:
+            pass
+        return None
+
+    def _log_input_level(self, chunk: bytes) -> None:
+        if self._logged_input_chunks >= 5:
+            return
+        self._logged_input_chunks += 1
+        try:
+            rms = audioop.rms(chunk, 2)
+            peak = audioop.max(chunk, 2)
+        except audioop.error:
+            rms = peak = 0
+        logger.info(
+            "Audio input chunk #%s: %s bytes rms=%s peak=%s",
+            self._logged_input_chunks,
+            len(chunk),
+            rms,
+            peak,
+        )
 
     @staticmethod
     def _is_virtual_or_mapper(name: str) -> bool:

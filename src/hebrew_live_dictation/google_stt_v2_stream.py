@@ -83,6 +83,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
         self._last_stream_failed = False
         self._active_recognizer_name = ""
         self._force_restart_flag = False
+        self._audio_chunk_count = 0
+        self._audio_byte_count = 0
 
     def restart_stream(self):
         """Forces the current streaming connection to close and immediately open a new one."""
@@ -133,6 +135,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
         self._last_stream_had_useful_text = False
         self._last_stream_failed = False
         self._active_recognizer_name = ""
+        self._audio_chunk_count = 0
+        self._audio_byte_count = 0
         self.client = self._create_client(location)
         self.audio_queue = audio_queue
         self.active = True
@@ -344,6 +348,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
                     continue # wakeup signal
 
                 chunk_count += 1
+                self._audio_chunk_count += 1
+                self._audio_byte_count += len(chunk)
                 if chunk_count <= 5:
                     logger.info("V2 audio chunk #%s: %s bytes", chunk_count, len(chunk))
 
@@ -570,6 +576,7 @@ class GoogleSTTV2Stream(SpeechClientBase):
                     time.sleep(0.2)
                 except GoogleAPICallError as e:
                     if self._switch_to_fallback():
+                        logger.warning("Google STT V2 API error before fallback: %s", getattr(e, "message", str(e)))
                         continue
                     logger.error(f"Google STT V2 API error: {e}")
                     message = getattr(e, "message", str(e))
@@ -583,6 +590,7 @@ class GoogleSTTV2Stream(SpeechClientBase):
             logger.info(
                 "Google STT V2 stream summary: responses=%s finals=%s interim_events=%s interim_segments=%s "
                 "useful_transcripts=%s empty_result_responses=%s empty_alternatives=%s empty_transcripts=%s "
+                "audio_chunks=%s audio_bytes=%s "
                 "model=%s location=%s recognizer=%s language=%s fallback=%s.",
                 self._response_count,
                 self._final_count,
@@ -592,6 +600,8 @@ class GoogleSTTV2Stream(SpeechClientBase):
                 self._empty_result_response_count,
                 self._empty_alternative_count,
                 self._empty_transcript_count,
+                self._audio_chunk_count,
+                self._audio_byte_count,
                 self._active_model,
                 self._active_location,
                 self._active_recognizer_name,

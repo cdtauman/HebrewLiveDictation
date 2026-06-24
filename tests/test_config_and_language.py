@@ -285,6 +285,53 @@ class ConfigAndLanguageTests(unittest.TestCase):
         self.assertTrue(AudioStream._is_virtual_or_mapper("Input (@System32\\drivers\\bthhfenum.sys)"))
         self.assertFalse(AudioStream._is_virtual_or_mapper("Headset (Baseus Bass EH10 NC)"))
 
+    def test_windows_default_microphone_prefers_wasapi_host_default(self):
+        devices = [
+            {"name": "Microsoft Sound Mapper - Input", "hostapi": 0, "max_input_channels": 2, "default_samplerate": 44100},
+            {"name": "Microphone Array (Intel Smart Sound)", "hostapi": 0, "max_input_channels": 2, "default_samplerate": 44100},
+            {"name": "Speakers", "hostapi": 0, "max_input_channels": 0, "default_samplerate": 44100},
+            {"name": "Speakers", "hostapi": 0, "max_input_channels": 0, "default_samplerate": 44100},
+            {"name": "Primary Sound Capture Driver", "hostapi": 1, "max_input_channels": 2, "default_samplerate": 44100},
+            {"name": "Microphone Array (Intel Smart Sound)", "hostapi": 1, "max_input_channels": 2, "default_samplerate": 44100},
+            {"name": "Speakers", "hostapi": 1, "max_input_channels": 0, "default_samplerate": 44100},
+            {"name": "Speakers", "hostapi": 1, "max_input_channels": 0, "default_samplerate": 44100},
+            {"name": "Speakers", "hostapi": 2, "max_input_channels": 0, "default_samplerate": 48000},
+            {"name": "Microphone Array (Intel Smart Sound)", "hostapi": 2, "max_input_channels": 2, "default_samplerate": 48000},
+        ]
+
+        class FakeDefault:
+            device = [1, 3]
+
+        class FakeSoundDevice:
+            default = FakeDefault()
+
+            @staticmethod
+            def query_hostapis():
+                return [
+                    {"name": "MME", "default_input_device": 1},
+                    {"name": "Windows DirectSound", "default_input_device": 5},
+                    {"name": "Windows WASAPI", "default_input_device": 9},
+                ]
+
+            @staticmethod
+            def query_devices(device=None, kind=None):
+                if isinstance(device, int):
+                    return devices[device]
+                return devices
+
+        original_sounddevice = audio_stream_module._sounddevice
+        audio_stream_module._sounddevice = lambda: FakeSoundDevice
+        try:
+            self.assertEqual(AudioStream._preferred_input_device(), 9)
+            stream = AudioStream(sample_rate=16000, block_size=1600)
+            self.assertEqual(stream._resolved_device, 9)
+
+            listed = AudioStream.list_devices()
+            self.assertEqual(listed[0]["index"], 9)
+            self.assertIn("Windows default", listed[0]["display_name"])
+        finally:
+            audio_stream_module._sounddevice = original_sounddevice
+
     def test_audio_retries_device_default_rate_and_resamples_to_16khz(self):
         created_streams = []
 

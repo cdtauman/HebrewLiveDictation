@@ -120,6 +120,25 @@ short generated WAV tones on real session start and final idle return. Tone
 playback is best-effort and must never block audio capture, STT streaming, or
 final text insertion. Pause/resume does not play start/stop tones.
 
+## Insertion Modes
+
+The stable default is **final-only**: provider finals are accumulated and committed on
+sentence punctuation, a short pause, or Stop. Two non-default modes exist:
+
+- **Labs live insert (append)** — `labs.live_segment_insert_enabled` (default false). When on,
+  each completed provider final is committed to the target **as it arrives during dictation**,
+  append-only through the same safe final-commit path (clipboard/Word COM/Unicode) — no interim
+  backspacing. Interims stay display-only (HUD/Remote). This is an opt-in Labs toggle the user
+  can enable with a warning; it is **not** true word-by-word typing. Offline Whisper has no
+  interims, so it inserts **per segment** (after each pause), not per word. It composes with the
+  final-only safety: Stop finds an empty accumulator so it cannot re-insert, and the same
+  session-commit guard that protects final-only (see below) drops any late provider final.
+- **Live target typing (interim rewrite)** — `dictation.live_typing_mode="live"` +
+  `labs.live_target_typing_enabled`. The experimental backspace-and-retype path. It stays locked
+  in the WinUI build (toggle disabled, sidecar force-normalizes to final-only) and is not part of
+  the stable or the safe-append path. TSF/IME composition is its eventual safe form and remains a
+  gated spike.
+
 ## Pause / Resume Rules
 
 Pause/resume is session-preserving. The controller state moves

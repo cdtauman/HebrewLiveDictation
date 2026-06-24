@@ -557,6 +557,11 @@ internal static class RuntimeSelfTest
                               && sp.LabsModeForTest.Contains("TSF: disabled");
                 Check("settings.labs_gate.surface", labsOk,
                       "Settings renders live target typing as locked/final-only by default");
+                // Labs live insert (safe append) is a distinct, opt-in toggle: OFF by default but
+                // enable-able (unlike the locked interim-rewrite toggle), so final-only stays default.
+                bool liveInsertOk = !sp.LiveInsertEnabledForTest && sp.LiveInsertToggleEnabledForTest;
+                Check("settings.labs.live_insert", liveInsertOk,
+                      "Labs live insert toggle is off by default and opt-in (enabled)");
             }
             catch (Exception ex) { Check("settings.labs_gate.surface", false, XamlDetail(ex)); }
 

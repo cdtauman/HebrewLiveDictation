@@ -242,6 +242,7 @@ public sealed partial class SettingsPage : Page
         string mode = "final_only";
         string backend = "v1";
         bool tsf = false;
+        bool liveInsert = false;
         string message = "Final-only target insertion is protected. Live words remain display-only in HUD/Remote.";
 
         if (_host?.Client != null)
@@ -253,12 +254,27 @@ public sealed partial class SettingsPage : Page
                 tsf = Bool(status, "tsfExperimentalTransport");
                 mode = Str(status, "liveTypingMode");
                 backend = Str(status, "inputBackend");
+                liveInsert = Bool(status, "liveSegmentInsert");
                 message = Str(status, "message");
             }
             catch { }
         }
 
-        DispatcherQueue.TryEnqueue(() => RenderLabs(enabled, mode, backend, tsf, message));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            RenderLabs(enabled, mode, backend, tsf, message);
+            _loading = true;
+            LiveInsertToggle.IsOn = liveInsert;
+            _loading = false;
+        });
+    }
+
+    private async void OnLiveInsertToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        // Labs append mode (safe, opt-in): commit each completed segment during dictation.
+        // Independent of the locked interim-rewrite live-typing gate; final-only stays default.
+        await Persist("labs.live_segment_insert_enabled", LiveInsertToggle.IsOn);
     }
 
     private void RenderLabs(bool enabled, string mode, string backend, bool tsf, string message)
@@ -290,6 +306,8 @@ public sealed partial class SettingsPage : Page
     internal bool LabsLiveTypingEnabledForTest => LabsLiveTypingToggle.IsOn;
     internal string LabsStatusForTest => LabsStatusText.Text;
     internal string LabsModeForTest => LabsModeText.Text;
+    internal bool LiveInsertEnabledForTest => LiveInsertToggle.IsOn;
+    internal bool LiveInsertToggleEnabledForTest => LiveInsertToggle.IsEnabled;
 
     private async Task LoadDiagnosticsAsync()
     {

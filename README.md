@@ -44,9 +44,16 @@ plaintext settings. Changing a provider's model/language/key returns its status 
 
 ## Labs / not in the stable path
 
-- **Live target typing into other apps** — locked in the WinUI build (the Settings
-  toggle is disabled; the engine force-normalizes to final-only). It requires a
-  TSF/IME composition layer to be safe in RTL fields.
+- **Labs live insert (append)** — an **opt-in** Labs mode (off by default) that inserts each
+  *completed segment* into the target **during** dictation instead of only after Stop. It is
+  append-only via the safe commit path (no interim backspacing) and is **not** true
+  word-by-word typing — offline inserts **per segment** (after each pause); cloud providers
+  insert each streamed final. Final-only stays the stable default. Enable it in
+  Settings → Advanced with the warning shown there.
+- **Live target typing into other apps (interim rewrite)** — locked in the WinUI build (the
+  Settings toggle is disabled; the engine force-normalizes to final-only). This is the
+  experimental backspace/retype path; it requires a TSF/IME composition layer to be safe in
+  RTL fields.
 - **TSF/IME composition transport** — gated off.
 - **Unattended auto-update install** — the updater only checks a signed manifest and
   offers a verified release URL; installation stays manual. See `docs/updater.md`.

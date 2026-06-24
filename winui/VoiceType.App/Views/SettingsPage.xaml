@@ -101,6 +101,17 @@
                         <ToggleSwitch x:Name="LabsLiveTypingToggle" Grid.Column="1" VerticalAlignment="Center"
                                       IsEnabled="False" />
                     </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="הכנסה חיה של מקטעים (Labs)" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="מכניס כל מקטע שהושלם לחלון היעד תוך כדי ההכתבה, במקום רק אחרי עצירה. כבוי כברירת מחדל; ברירת המחדל היציבה היא הכנסה סופית בלבד."
+                                       Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                            <TextBlock Text="אזהרה (ניסיוני): כותב לחלון היעד בזמן שאתם מדברים — ודאו שחלון היעד הנכון בפוקוס. זו אינה הקלדה אמיתית מילה־אחר־מילה: מקטע נכתב כשהוא מושלם. לא־מקוון תלוי בגודל המקטע (אחרי הפסקה)."
+                                       Foreground="#B45309" Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="LiveInsertToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnLiveInsertToggled" />
+                    </Grid>
                     <TextBlock Text="אפשרויות מומחה למנוע (פרמטרים מתקדמים, מצב מעבדה) יתווספו בהמשך."
                                Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
                 </StackPanel>

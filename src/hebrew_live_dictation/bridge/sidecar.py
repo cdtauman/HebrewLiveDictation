@@ -524,12 +524,16 @@ def labs_status(config) -> dict:
     live_mode = config.get("dictation.live_typing_mode", "final_only")
     input_backend = config.get("dictation.input_backend", "v1")
     tsf_enabled = bool(config.get("tsf.experimental_transport_enabled", False))
+    live_segment_insert = bool(config.get("labs.live_segment_insert_enabled", False))
     gated = not enabled
     return {
         "liveTargetTypingEnabled": enabled,
         "liveTypingMode": live_mode,
         "inputBackend": input_backend,
         "tsfExperimentalTransport": tsf_enabled,
+        # Safe append mode (independent of the interim-rewrite gate above): commits each
+        # completed provider segment during dictation instead of only after Stop.
+        "liveSegmentInsert": live_segment_insert,
         "stableInsertion": live_mode == "final_only" and input_backend == "v1" and not tsf_enabled,
         "gate": "open" if enabled else "locked",
         "message": (

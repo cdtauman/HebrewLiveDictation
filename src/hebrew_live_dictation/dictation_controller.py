@@ -283,6 +283,11 @@ class DictationController(QObject):
                         result = self.injector.inject_interim(text)
                         logger.debug("Interim live injection result: %s", result)
                         self._start_accumulation_timer()
+                    elif self._live_segment_insert_enabled():
+                        # Labs live insert commits provider finals directly, so interims stay
+                        # display-only (HUD/Remote). Starting the pause-commit timer here would
+                        # race the next final and risk a duplicate, so it is intentionally skipped.
+                        logger.debug("Live-insert mode: interim is display-only.")
                     else:
                         logger.debug("External mode interim received; target injection waits for final/stop.")
                         self._start_accumulation_timer()
@@ -313,15 +318,36 @@ class DictationController(QObject):
                     if (not command
                             and not self._live_target_typing_enabled()
                             and self.state not in ("listening", "paused")
-                            and not self.has_pasted_final
                             and not self.session_committed
-                            and text.strip()):
+                            and text.strip()
+                            and (not self.has_pasted_final or self._live_segment_insert_enabled())):
+                        # Post-stop final: a provider's last segment can land after stop (offline
+                        # flush, cloud close-flush). Inject it once. In live-insert mode prior
+                        # segments were already committed during listening (has_pasted_final True),
+                        # but this trailing segment is new -> still commit it; setting
+                        # session_committed makes the MF1 guard drop any further leftover final.
                         logger.info("Injecting post-stop final immediately (no later flush will run): text_len=%s.", len(text))
                         result = self.injector.inject_final(text)
                         self._handle_injector_result(result)
                         if result.get("status") in ("inserted", "duplicate", "command"):
                             self.has_pasted_final = True
                             self.session_committed = True
+                        return
+                    if (not command
+                            and self._live_segment_insert_enabled()
+                            and self.state == "listening"
+                            and text.strip()):
+                        # Labs live insert: commit each completed segment to the target NOW,
+                        # append-only via the safe final-commit path (no interim backspacing). The
+                        # preceding interim is superseded -> clear it so neither the stop flush nor
+                        # the pause timer can re-insert these words. Stop finds an empty accumulator
+                        # and won't duplicate; the MF1 commit guard covers any late provider final.
+                        logger.info("Labs live insert: committing segment during dictation: text_len=%s.", len(text))
+                        result = self.injector.inject_final(text)
+                        self._handle_injector_result(result)
+                        if result.get("status") in ("inserted", "duplicate", "command"):
+                            self.has_pasted_final = True
+                        self.latest_interim_text = ""
                         return
                     if command or self._live_target_typing_enabled():
                         if self.accumulated_final_text:
@@ -444,6 +470,16 @@ class DictationController(QObject):
         return (
             self.config.get("dictation.live_typing_mode") == "live"
             and bool(self.config.get("labs.live_target_typing_enabled", False))
+        )
+
+    def _live_segment_insert_enabled(self) -> bool:
+        # Labs append mode: commit each completed segment/final to the target as it arrives,
+        # via the safe final-commit path (no interim backspacing). Subordinate to the
+        # experimental interim-rewrite path: if that is active it owns insertion and this is a
+        # no-op. Default off; final-only accumulation remains the protected default.
+        return (
+            not self._live_target_typing_enabled()
+            and bool(self.config.get("labs.live_segment_insert_enabled", False))
         )
 
     def _is_stale_event(self, event) -> bool:

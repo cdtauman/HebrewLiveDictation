@@ -108,6 +108,18 @@ logs (see *Sending logs* at the bottom) and note the exact step + what you saw.
 - [ ] Cancel/interrupt a download (close mid-download) → next launch shows missing/incomplete, offers retry, and never claims ready.
 - [ ] Click download again while a model is already downloading → no duplicate download is queued; the UI stays in the active download state.
 
+## 4b. Labs live insert (append) — **I (opt-in Labs; OFF by default)**
+- [ ] Settings → Advanced: confirm **"הכנסה חיה של מקטעים (Labs)"** is **OFF by default** and that the
+      warning copy is shown (writes to target while speaking; not word-by-word).
+- [ ] Enable it → focus Notepad → dictate **Offline**: completed **segments** land in the target
+      **during** dictation (after each pause), not only after Stop. Each segment lands **once**.
+- [ ] Stop mid-sentence → the trailing segment lands **once** (no duplicate of already-inserted text).
+- [ ] History shows one matching entry for the session (segments joined), not duplicated.
+- [ ] (If a cloud provider with finals is configured) each streamed final lands once during dictation.
+- [ ] **No interim/word-level typing into the target** — interims stay in HUD/Remote; only completed
+      segments are inserted. This is **not** advertised as word-by-word.
+- [ ] Disable it → behavior returns to final-only (text lands on sentence end / pause / Stop).
+
 ## 5. Live / interim words (Gboard pillar) — **G only for a probe-proven live-capable model**
 - [ ] During a **Google** session with a live-capable model, interim words appear in the **HUD** and the **Remote** as you speak.
 - [ ] If the selected/proven model is final-only, the UI says final-only and this interim-words step is **SKIP**, not PASS.

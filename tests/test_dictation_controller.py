@@ -342,5 +342,64 @@ class DictationControllerModeTests(unittest.TestCase):
         self.assertEqual(controller.accumulated_final_text, "")
 
 
+class LiveSegmentInsertTests(unittest.TestCase):
+    """Phase A: Labs live insert (append) commits each completed segment to the target
+    during dictation. Default OFF -> final-only accumulation is unchanged. ON -> each
+    provider final inserts once; Stop does not re-insert; late finals don't duplicate."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtCore import QCoreApplication
+        cls.app = QCoreApplication.instance() or QCoreApplication([])
+
+    def _controller(self, live_insert):
+        config = DummyConfig({
+            "dictation.live_typing_mode": "final_only",
+            "labs.live_segment_insert_enabled": bool(live_insert),
+        })
+        controller = DictationController(config)
+        controller.injector = FakeInjector()
+        controller.state = "listening"
+        controller.output_mode = "external"
+        return controller
+
+    def test_default_off_accumulates_not_inserts(self):
+        c = self._controller(live_insert=False)
+        c.handle_stt_event({"type": "final", "text": "hello"})   # no punctuation
+        self.assertEqual(c.injector.calls, [])                    # accumulated, not inserted
+        self.assertEqual(c.accumulated_final_text, "hello")
+
+    def test_live_insert_commits_each_segment_immediately(self):
+        c = self._controller(live_insert=True)
+        c.handle_stt_event({"type": "final", "text": "hello"})
+        c.handle_stt_event({"type": "final", "text": "world"})
+        self.assertEqual(c.injector.calls, [("final", "hello"), ("final", "world")])
+        self.assertEqual(c.accumulated_final_text, "")            # nothing buffered
+
+    def test_live_insert_interim_is_display_only(self):
+        c = self._controller(live_insert=True)
+        c.handle_stt_event({"type": "interim", "text": "hel"})
+        # Interim never touches the target in live-insert mode (no inject, no accumulation timer).
+        self.assertEqual(c.injector.calls, [])
+        self.assertEqual(c.latest_interim_text, "hel")
+        self.assertIsNone(c.accumulated_timer)
+
+    def test_live_insert_stop_does_not_reinsert(self):
+        c = self._controller(live_insert=True)
+        c.handle_stt_event({"type": "final", "text": "hello"})
+        self.assertEqual(c.injector.calls, [("final", "hello")])
+        c.stop_listening()                                        # nothing buffered -> no re-insert
+        self.assertEqual(c.injector.calls, [("final", "hello")])
+
+    def test_live_insert_post_stop_segment_captured_once_then_late_dropped(self):
+        c = self._controller(live_insert=True)
+        c.handle_stt_event({"type": "final", "text": "first"})    # live-inserted (has_pasted_final True)
+        c.stop_listening()                                        # buffered empty -> session not committed
+        c.state = "stopping"                                      # teardown window
+        c.handle_stt_event({"type": "final", "text": "second"})   # trailing segment -> inserted once
+        c.handle_stt_event({"type": "final", "text": "third"})    # leftover late final -> dropped
+        self.assertEqual(c.injector.calls, [("final", "first"), ("final", "second")])
+
+
 if __name__ == "__main__":
     unittest.main()

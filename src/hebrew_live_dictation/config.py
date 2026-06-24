@@ -120,6 +120,11 @@ DEFAULT_SETTINGS = {
     },
     "labs": {
         "live_target_typing_enabled": False,
+        # Labs live insert (append): commit each completed provider segment/final to the
+        # target as it arrives during dictation, instead of only after Stop. Append-only via
+        # the safe final-commit path (no interim backspacing). Independent of the experimental
+        # interim-rewrite path above. Default OFF; final-only remains the protected default.
+        "live_segment_insert_enabled": False,
     },
     "tsf": {
         "handshake_timeout_ms": 100,
@@ -387,6 +392,9 @@ class Config:
 
         labs = self.settings.setdefault("labs", {})
         labs["live_target_typing_enabled"] = bool(labs.get("live_target_typing_enabled", False))
+        # Independent of the interim-rewrite gate above: the safe append mode may be enabled
+        # on its own without opening the experimental live-typing path.
+        labs["live_segment_insert_enabled"] = bool(labs.get("live_segment_insert_enabled", False))
 
         dictation = self.settings.setdefault("dictation", {})
 

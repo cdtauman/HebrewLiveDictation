@@ -8,11 +8,13 @@ from unittest import mock
 from hebrew_live_dictation.bridge import sidecar
 from hebrew_live_dictation.bridge.sidecar import (
     _clear_history,
+    _delete_history_entry,
     command_reference,
     compute_health,
     engine_label,
     friendly_app_name,
     full_history,
+    history_status,
     injection_target_label,
     list_microphones,
     make_callbacks,
@@ -913,7 +915,9 @@ class ModelDownloadTests(unittest.TestCase):
             self.assertEqual(items[0]["ts"], 2000)                      # newest first
             self.assertEqual(items[0]["text"], long_text)              # NOT truncated
             self.assertEqual(items[0]["target"], "chrome.exe")        # target preserved
-            self.assertEqual(set(items[0].keys()), {"ts", "text", "target"})
+            self.assertEqual(set(items[0].keys()), {"id", "ts", "text", "target", "chars"})
+            self.assertEqual(items[0]["chars"], len(long_text))
+            self.assertTrue(items[0]["id"])
 
     def test_full_history_count_clamped_to_store_cap(self):
         # >500 rows on disk: the default cap (history.max_entries=500) bounds the result,
@@ -933,12 +937,39 @@ class ModelDownloadTests(unittest.TestCase):
             c = _FakeConfig({"history.max_entries": 1000}, config_dir=tmp)
             self.assertEqual(len(full_history(c, 9999)), 620)   # cap above count -> all rows
 
+    def test_full_history_searches_text_and_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [
+                {"ts": 1, "target": "notepad.exe", "text": "alpha"},
+                {"ts": 2, "target": "winword.exe", "text": "beta"},
+                {"ts": 3, "target": "chrome.exe", "text": "Gamma phrase"},
+            ])
+            c = _FakeConfig({}, config_dir=tmp)
+            self.assertEqual([i["text"] for i in full_history(c, 10, "gamma")], ["Gamma phrase"])
+            self.assertEqual([i["target"] for i in full_history(c, 10, "word")], ["winword.exe"])
+
     def test_clear_history_removes_all(self):
         with tempfile.TemporaryDirectory() as tmp:
             _write_history(tmp, [{"ts": 1, "text": "a"}, {"ts": 2, "text": "b"}])
             c = _FakeConfig({}, config_dir=tmp)
             self.assertTrue(_clear_history(c))
             self.assertEqual(full_history(c, 200), [])
+
+    def test_delete_history_entry_removes_one_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [{"ts": 1, "text": "a"}, {"ts": 2, "text": "b"}])
+            c = _FakeConfig({}, config_dir=tmp)
+            item_id = full_history(c, 200)[0]["id"]
+            self.assertTrue(_delete_history_entry(c, item_id))
+            self.assertEqual([i["text"] for i in full_history(c, 200)], ["a"])
+
+    def test_history_status_reports_privacy_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_history(tmp, [{"ts": 1, "text": "a"}, {"ts": 2, "text": "b"}])
+            status = history_status(_FakeConfig({"history.enabled": False, "history.max_entries": 100}, config_dir=tmp))
+            self.assertFalse(status["enabled"])
+            self.assertEqual(status["maxEntries"], 100)
+            self.assertEqual(status["count"], 2)
 
 
     def test_command_reference_he_deduped_and_friendly(self):

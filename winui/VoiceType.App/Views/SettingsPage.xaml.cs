@@ -35,6 +35,7 @@ public sealed partial class SettingsPage : Page
     {
         string theme = await GetString("app.theme", "light");
         bool minimize = await GetBool("app.minimize_on_close", true);
+        bool historyEnabled = await GetBool("history.enabled", true);
         int historyLimit = await GetInt("history.max_entries", 500);
         bool startup = WindowsStartup.IsEnabled();   // real OS state, not just the saved value
 
@@ -45,7 +46,7 @@ public sealed partial class SettingsPage : Page
             SelectTag(ThemeCombo, theme);
             MinimizeToggle.IsOn = minimize;
             StartupToggle.IsOn = startup;
-            HistoryLimitBox.Value = historyLimit;
+            RenderHistoryPrivacy(historyEnabled, historyLimit);
             _loading = false;
         });
 
@@ -96,6 +97,22 @@ public sealed partial class SettingsPage : Page
         await Persist("history.max_entries", (int)args.NewValue);
     }
 
+    private async void OnHistoryEnabledToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        bool enabled = HistoryEnabledToggle.IsOn;
+        HistoryLimitBox.IsEnabled = enabled;
+        if (!await Persist("history.enabled", enabled))
+            return;
+    }
+
+    private void RenderHistoryPrivacy(bool enabled, int historyLimit)
+    {
+        HistoryEnabledToggle.IsOn = enabled;
+        HistoryLimitBox.Value = historyLimit;
+        HistoryLimitBox.IsEnabled = enabled;
+    }
+
     private async Task LoadLabsAsync()
     {
         bool enabled = false;
@@ -133,6 +150,13 @@ public sealed partial class SettingsPage : Page
     internal void RenderLabsForTest(bool enabled, string mode, string backend, bool tsf)
         => RenderLabs(enabled, mode, backend, tsf,
             "Final-only target insertion is protected. Live words remain display-only in HUD/Remote.");
+
+    internal void RenderHistoryPrivacyForTest(bool enabled, int historyLimit)
+        => RenderHistoryPrivacy(enabled, historyLimit);
+
+    internal bool HistoryEnabledForTest => HistoryEnabledToggle.IsOn;
+    internal bool HistoryLimitEnabledForTest => HistoryLimitBox.IsEnabled;
+    internal int HistoryLimitForTest => (int)HistoryLimitBox.Value;
 
     internal bool LabsLiveTypingEnabledForTest => LabsLiveTypingToggle.IsOn;
     internal string LabsStatusForTest => LabsStatusText.Text;

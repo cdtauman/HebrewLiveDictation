@@ -174,6 +174,14 @@ internal static class RuntimeSelfTest
                 Check("bridge.getTranscripts",
                       tr.TryGetProperty("items", out var trItems) && trItems.ValueKind == JsonValueKind.Array,
                       "items[] returned");
+                var histStatus = await client.RpcAsync("getHistoryStatus");
+                bool histStatusShape = histStatus.TryGetProperty("enabled", out var hsEnabled)
+                                       && (hsEnabled.ValueKind == JsonValueKind.True || hsEnabled.ValueKind == JsonValueKind.False)
+                                       && histStatus.TryGetProperty("maxEntries", out var hsMax) && hsMax.ValueKind == JsonValueKind.Number
+                                       && histStatus.TryGetProperty("count", out var hsCount) && hsCount.ValueKind == JsonValueKind.Number;
+                int histCount = histStatus.TryGetProperty("count", out var hsCountMsg) && hsCountMsg.TryGetInt32(out var hcv) ? hcv : -1;
+                Check("bridge.getHistoryStatus", histStatusShape,
+                      histStatusShape ? $"history status returned (count={histCount})" : histStatus.GetRawText());
 
                 // Dictation room command reference (read-only).
                 var cmds = await client.RpcAsync("getCommands");
@@ -229,6 +237,10 @@ internal static class RuntimeSelfTest
                 var clr = await client.RpcAsync("clearHistory");
                 Check("bridge.clearHistory.guard",
                       clr.TryGetProperty("cleared", out var cl) && !cl.GetBoolean(),
+                      "refused without confirm");
+                var delHist = await client.RpcAsync("deleteTranscript", new { id = "selftest-noop" });
+                Check("bridge.deleteTranscript.guard",
+                      delHist.TryGetProperty("deleted", out var dh) && !dh.GetBoolean(),
                       "refused without confirm");
 
                 await client.RpcAsync("startDictation", new { mode = "external" });
@@ -519,6 +531,24 @@ internal static class RuntimeSelfTest
                       "Settings renders live target typing as locked/final-only by default");
             }
             catch (Exception ex) { Check("settings.labs_gate.surface", false, XamlDetail(ex)); }
+
+            // 6h.5) History privacy/search surface: render only, no real history mutation.
+            try
+            {
+                var hp = new Views.HistoryPage();
+                hp.RenderHistoryForTest(enabled: false, maxEntries: 500, count: 3, visibleItems: 0, query: "missing");
+                bool historyOk = hp.PrivacyStatusForTest.Contains("3")
+                                 && hp.HistoryActionsVisibleForTest
+                                 && hp.HistoryEmptyVisibleForTest;
+                var sp = new Views.SettingsPage();
+                sp.RenderHistoryPrivacyForTest(enabled: false, historyLimit: 250);
+                bool settingsPrivacyOk = !sp.HistoryEnabledForTest
+                                         && !sp.HistoryLimitEnabledForTest
+                                         && sp.HistoryLimitForTest == 250;
+                Check("history.privacy.surface", historyOk && settingsPrivacyOk,
+                      "History search/status and Settings save-history toggle render safely");
+            }
+            catch (Exception ex) { Check("history.privacy.surface", false, XamlDetail(ex)); }
 
             // 6i) Engine-room offline model management: download offered when absent, delete
             //     offered when present, ring while downloading (render only — no RPC/download).

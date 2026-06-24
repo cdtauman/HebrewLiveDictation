@@ -34,13 +34,29 @@
                 </StackPanel>
             </Grid>
 
+            <!-- Search + privacy status -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox x:Name="SearchBox" PlaceholderText="חיפוש בהיסטוריה"
+                                 TextChanged="OnSearchChanged" VerticalAlignment="Center" />
+                        <Button x:Name="RefreshButton" Grid.Column="1" Click="OnRefresh"
+                                ToolTipService.ToolTip="רענון" Margin="8,0,0,0">
+                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        </Button>
+                    </Grid>
+                    <TextBlock x:Name="PrivacyStatusText" Style="{StaticResource CaptionMutedStyle}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
             <!-- Empty state -->
             <Border x:Name="EmptyCard" Style="{StaticResource CardStyle}" Padding="48">
                 <StackPanel Spacing="12" HorizontalAlignment="Center">
                     <FontIcon Glyph="&#xE81C;" FontSize="34" Foreground="{ThemeResource TextTertiaryBrush}" />
-                    <TextBlock Text="אין עדיין תמלולים" HorizontalAlignment="Center"
+                    <TextBlock x:Name="EmptyTitle" Text="אין עדיין תמלולים" HorizontalAlignment="Center"
                                Style="{StaticResource SectionHeaderStyle}" />
-                    <TextBlock Text="כשתתחילו להכתיב, מה שתאמרו יישמר כאן — וניתן יהיה לייצא ל־TXT."
+                    <TextBlock x:Name="EmptyBody" Text="כשתתחילו להכתיב, מה שתאמרו יישמר כאן — וניתן יהיה לייצא ל־TXT."
                                HorizontalAlignment="Center" TextAlignment="Center"
                                Style="{StaticResource CaptionMutedStyle}" MaxWidth="420" />
                 </StackPanel>
@@ -66,8 +82,16 @@
                                                 VerticalAlignment="Center">
                                         <TextBlock Text="{x:Bind When}" Style="{StaticResource CaptionMutedStyle}" />
                                         <TextBlock Text="{x:Bind Target}" Style="{StaticResource CaptionMutedStyle}" />
+                                        <TextBlock Text="{x:Bind Meta}" Style="{StaticResource CaptionMutedStyle}" />
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="העתק" Click="OnCopyItem" Tag="{x:Bind Text}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                        <Button Click="OnCopyItem" Tag="{x:Bind Text}" ToolTipService.ToolTip="העתק">
+                                            <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                        </Button>
+                                        <Button Click="OnDeleteItem" Tag="{x:Bind Id}" ToolTipService.ToolTip="מחק">
+                                            <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>

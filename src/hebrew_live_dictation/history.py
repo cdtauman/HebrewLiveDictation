@@ -5,10 +5,12 @@ opt-out via ``history.enabled`` and capped at ``history.max_entries``. Stored
 under %APPDATA%\\VoiceType, not in the repo.
 """
 
+import hashlib
 import json
 import logging
 import os
 import time
+import uuid
 
 
 logger = logging.getLogger("History")
@@ -21,12 +23,51 @@ def _path(config):
     return os.path.join(base, "history.jsonl")
 
 
+def entry_id(entry):
+    """Return a stable, non-secret identifier for a history entry.
+
+    New entries are written with a UUID. Older JSONL rows do not have one, so we
+    derive a deterministic hash from the local row contents for delete/search UI.
+    """
+    if not isinstance(entry, dict):
+        return ""
+    existing = str(entry.get("id", "") or "").strip()
+    if existing:
+        return existing
+    text = str(entry.get("text", "") or "")
+    target = str(entry.get("target", "") or "")
+    ts = entry.get("ts", "")
+    raw = f"{ts}\n{target}\n{text}".encode("utf-8", errors="replace")
+    return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def normalize_entry(entry):
+    if not isinstance(entry, dict):
+        return None
+    text = str(entry.get("text", "") or "").strip()
+    if not text:
+        return None
+    ts = entry.get("ts", 0)
+    return {
+        "id": entry_id(entry),
+        "ts": ts if isinstance(ts, (int, float)) else 0,
+        "target": str(entry.get("target", "") or ""),
+        "text": text,
+        "chars": len(text),
+    }
+
+
 def append(config, text, target=None, when=None):
     if not text or not text.strip():
         return False
     if not config.get("history.enabled", True):
         return False
-    entry = {"ts": when if when is not None else time.time(), "target": target or "", "text": text.strip()}
+    entry = {
+        "id": uuid.uuid4().hex,
+        "ts": when if when is not None else time.time(),
+        "target": target or "",
+        "text": text.strip(),
+    }
     path = _path(config)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -68,6 +109,44 @@ def clear(config):
         return True
     except Exception as e:
         logger.warning("Failed to clear history: %s", e)
+        return False
+
+
+def delete(config, delete_id):
+    delete_id = str(delete_id or "").strip()
+    if not delete_id:
+        return False
+    path = _path(config)
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        kept = []
+        deleted = False
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                kept.append(line)
+                continue
+            try:
+                entry = json.loads(stripped)
+            except ValueError:
+                kept.append(line)
+                continue
+            if not deleted and entry_id(entry) == delete_id:
+                deleted = True
+                continue
+            kept.append(line)
+        if not deleted:
+            return False
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.writelines(kept)
+        os.replace(tmp_path, path)
+        return True
+    except Exception as e:
+        logger.warning("Failed to delete history entry: %s", e)
         return False
 
 

@@ -74,6 +74,15 @@
                 <StackPanel Spacing="16" Padding="0,8,0,4">
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                            <TextBlock Text="שמירת היסטוריה" Style="{StaticResource SectionHeaderStyle}" />
+                            <TextBlock Text="תמלולים סופיים נשמרים מקומית בלבד. כיבוי עוצר שמירה עתידית."
+                                       Style="{StaticResource CaptionMutedStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="HistoryEnabledToggle" Grid.Column="1" VerticalAlignment="Center"
+                                      Toggled="OnHistoryEnabledToggled" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                             <TextBlock Text="כמות פריטים בהיסטוריה" Style="{StaticResource SectionHeaderStyle}" />
                             <TextBlock Text="כמה תמלולים אחרונים נשמרים." Style="{StaticResource CaptionMutedStyle}" />
                         </StackPanel>

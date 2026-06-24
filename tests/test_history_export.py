@@ -16,6 +16,7 @@ class HistoryTests(unittest.TestCase):
             self.assertEqual(entries[0]["text"], "שלום עולם")
             self.assertEqual(entries[0]["target"], "notepad.exe")
             self.assertEqual(entries[0]["ts"], 1000)
+            self.assertTrue(entries[0]["id"])
 
     def test_disabled_does_not_record(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -23,6 +24,23 @@ class HistoryTests(unittest.TestCase):
             config.update({"history.enabled": False})
             self.assertFalse(history.append(config, "hi"))
             self.assertEqual(history.load(config), [])
+
+    def test_delete_by_entry_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Config(tmp)
+            history.append(config, "keep", when=1)
+            history.append(config, "delete me", when=2)
+            entries = history.load(config)
+            self.assertTrue(history.delete(config, entries[1]["id"]))
+            self.assertEqual([e["text"] for e in history.load(config)], ["keep"])
+
+    def test_legacy_entry_id_is_stable(self):
+        entry = {"ts": 7, "target": "notepad.exe", "text": "legacy"}
+        self.assertEqual(history.entry_id(entry), history.entry_id(dict(entry)))
+        normalized = history.normalize_entry(entry)
+        self.assertEqual(normalized["text"], "legacy")
+        self.assertEqual(normalized["chars"], 6)
+        self.assertTrue(normalized["id"])
 
     def test_blank_text_ignored(self):
         with tempfile.TemporaryDirectory() as tmp:

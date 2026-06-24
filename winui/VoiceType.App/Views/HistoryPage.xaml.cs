@@ -14,9 +14,11 @@ namespace VoiceType.Shell.Views;
 
 public sealed class TranscriptItem
 {
+    public string Id { get; set; } = "";
     public string Text { get; set; } = "";
     public string When { get; set; } = "";
     public string Target { get; set; } = "";
+    public string Meta { get; set; } = "";
 }
 
 /// <summary>
@@ -27,6 +29,7 @@ public sealed class TranscriptItem
 public sealed partial class HistoryPage : Page
 {
     private AppHost? _host;
+    private int _loadSerial;
 
     public HistoryPage() => this.InitializeComponent();
 
@@ -41,22 +44,31 @@ public sealed partial class HistoryPage : Page
 
     /// <summary>Fetch transcripts fresh from the engine. The list is the source of truth;
     /// export re-fetches the full set rather than reusing the display page.</summary>
-    private async Task<List<TranscriptItem>> FetchAsync(int count)
+    private async Task<List<TranscriptItem>> FetchAsync(int count, string query = "")
     {
         var items = new List<TranscriptItem>();
         if (_host?.Client == null) return items;
         try
         {
-            var res = await _host.Client.RpcAsync("getTranscripts", new { count });
+            var res = await _host.Client.RpcAsync("getTranscripts", new { count, query });
             if (res.TryGetProperty("items", out var arr) && arr.ValueKind == JsonValueKind.Array)
             {
                 foreach (var it in arr.EnumerateArray())
                 {
+                    string id = it.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
                     string text = it.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
                     if (string.IsNullOrWhiteSpace(text)) continue;
                     double ts = it.TryGetProperty("ts", out var tsEl) && tsEl.TryGetDouble(out var dv) ? dv : 0;
                     string target = it.TryGetProperty("target", out var tg) ? tg.GetString() ?? "" : "";
-                    items.Add(new TranscriptItem { Text = text, When = FormatWhen(ts), Target = FriendlyTarget(target) });
+                    int chars = it.TryGetProperty("chars", out var ch) && ch.TryGetInt32(out var cv) ? cv : text.Length;
+                    items.Add(new TranscriptItem
+                    {
+                        Id = id,
+                        Text = text,
+                        When = FormatWhen(ts),
+                        Target = FriendlyTarget(target),
+                        Meta = chars > 0 ? $"{chars} תווים" : "",
+                    });
                 }
             }
         }
@@ -64,18 +76,51 @@ public sealed partial class HistoryPage : Page
         return items;
     }
 
+    private async Task<(bool enabled, int maxEntries, int count)> FetchStatusAsync()
+    {
+        if (_host?.Client == null) return (true, 500, 0);
+        try
+        {
+            var res = await _host.Client.RpcAsync("getHistoryStatus");
+            bool enabled = !res.TryGetProperty("enabled", out var en) || en.ValueKind == JsonValueKind.True;
+            int maxEntries = res.TryGetProperty("maxEntries", out var mx) && mx.TryGetInt32(out var mv) ? mv : 500;
+            int count = res.TryGetProperty("count", out var ct) && ct.TryGetInt32(out var cv) ? cv : 0;
+            return (enabled, maxEntries, count);
+        }
+        catch { return (true, 500, 0); }
+    }
+
     private async Task LoadAsync()
     {
-        var items = await FetchAsync(DisplayCount);
+        int serial = ++_loadSerial;
+        string query = SearchBox.Text?.Trim() ?? "";
+        var status = await FetchStatusAsync();
+        var items = await FetchAsync(DisplayCount, query);
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (serial != _loadSerial) return;
             List.ItemsSource = items;
             bool any = items.Count > 0;
             List.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
             EmptyCard.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
-            Actions.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+            Actions.Visibility = status.count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            PrivacyStatusText.Text = HistoryStatusText(status.enabled, status.maxEntries, status.count);
+            if (!any && !string.IsNullOrWhiteSpace(query))
+            {
+                EmptyTitle.Text = "לא נמצאו תמלולים";
+                EmptyBody.Text = "נסו חיפוש אחר או נקו את שורת החיפוש.";
+            }
+            else
+            {
+                EmptyTitle.Text = "אין עדיין תמלולים";
+                EmptyBody.Text = "כשתתחילו להכתיב, מה שתאמרו יישמר כאן — וניתן יהיה לייצא ל־TXT.";
+            }
         });
     }
+
+    private void OnSearchChanged(object sender, TextChangedEventArgs e) => _ = LoadAsync();
+
+    private void OnRefresh(object sender, RoutedEventArgs e) => _ = LoadAsync();
 
     private void OnCopyItem(object sender, RoutedEventArgs e)
     {
@@ -85,6 +130,37 @@ public sealed partial class HistoryPage : Page
             dp.SetText(text);
             Clipboard.SetContent(dp);
         }
+    }
+
+    private async void OnDeleteItem(object sender, RoutedEventArgs e)
+    {
+        if (_host?.Client == null) return;
+        if (sender is not FrameworkElement fe || fe.Tag is not string id || string.IsNullOrWhiteSpace(id)) return;
+        var dialog = new ContentDialog
+        {
+            Title = "למחוק את התמלול?",
+            Content = "התמלול יימחק מהיסטוריית המכשיר. אי אפשר לבטל פעולה זו.",
+            PrimaryButtonText = "מחק",
+            CloseButtonText = "ביטול",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = this.XamlRoot,
+            FlowDirection = FlowDirection.RightToLeft,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+        bool deleted = false;
+        try
+        {
+            var res = await _host.Client.RpcAsync("deleteTranscript", new { id, confirm = true });
+            deleted = res.TryGetProperty("deleted", out var d) && d.ValueKind == JsonValueKind.True;
+        }
+        catch { }
+        if (!deleted)
+        {
+            await ShowMessageAsync("לא ניתן למחוק את התמלול כרגע.", "נסו שוב בעוד רגע.");
+            return;
+        }
+        await LoadAsync();
     }
 
     private async void OnExport(object sender, RoutedEventArgs e)
@@ -158,6 +234,34 @@ public sealed partial class HistoryPage : Page
         };
         try { await dialog.ShowAsync(); } catch { }
     }
+
+    private static string HistoryStatusText(bool enabled, int maxEntries, int count)
+        => enabled
+            ? $"שמירת היסטוריה פעילה. נשמרו {count} מתוך {maxEntries} תמלולים אחרונים."
+            : $"שמירת היסטוריה כבויה. {count} תמלולים קיימים נשארים במכשיר עד מחיקה.";
+
+    internal void RenderHistoryForTest(bool enabled, int maxEntries, int count, int visibleItems, string query = "")
+    {
+        PrivacyStatusText.Text = HistoryStatusText(enabled, maxEntries, count);
+        Actions.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        List.Visibility = visibleItems > 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyCard.Visibility = visibleItems > 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (visibleItems == 0 && !string.IsNullOrWhiteSpace(query))
+        {
+            EmptyTitle.Text = "לא נמצאו תמלולים";
+            EmptyBody.Text = "נסו חיפוש אחר או נקו את שורת החיפוש.";
+        }
+        else
+        {
+            EmptyTitle.Text = "אין עדיין תמלולים";
+            EmptyBody.Text = "כשתתחילו להכתיב, מה שתאמרו יישמר כאן — וניתן יהיה לייצא ל־TXT.";
+        }
+    }
+
+    internal string PrivacyStatusForTest => PrivacyStatusText.Text;
+    internal bool HistoryActionsVisibleForTest => Actions.Visibility == Visibility.Visible;
+    internal bool HistoryEmptyVisibleForTest => EmptyCard.Visibility == Visibility.Visible;
+    internal string EmptyTitleForTest => EmptyTitle.Text;
 
     private static string FormatWhen(double unixSeconds)
     {

@@ -1151,7 +1151,7 @@ def recent_history(config, count) -> list:
 HISTORY_FULL_MAX = 5000  # absolute safety ceiling regardless of config
 
 
-def full_history(config, count) -> list:
+def full_history(config, count, query=None) -> list:
     """Full transcripts for the History room: newest-first, untruncated, with the
     target app. Unlike the sanitized Home preview, this is the user's own complete
     record on their machine. The ceiling is the configured store cap
@@ -1168,25 +1168,37 @@ def full_history(config, count) -> list:
     except (TypeError, ValueError):
         n = min(200, ceiling)
     n = max(1, min(n, ceiling))
+    q = str(query or "").strip().casefold()
+    read_count = ceiling if q else n
     try:
-        from ..history import _path
-        items = _tail_entries(_path(config), n)
+        from ..history import _path, normalize_entry
+        items = _tail_entries(_path(config), read_count)
     except Exception:
         return []
     out = []
     for it in reversed(items):
-        if not isinstance(it, dict):
+        item = normalize_entry(it)
+        if item is None:
             continue
-        text = str(it.get("text", "")).strip()
-        if not text:
+        if q and q not in item["text"].casefold() and q not in item["target"].casefold():
             continue
-        ts = it.get("ts", 0)
-        out.append({
-            "ts": ts if isinstance(ts, (int, float)) else 0,
-            "text": text,
-            "target": str(it.get("target", "")),
-        })
+        out.append(item)
+        if len(out) >= n:
+            break
     return out
+
+
+def history_status(config) -> dict:
+    try:
+        max_entries = int(config.get("history.max_entries", 500) or 500)
+    except (TypeError, ValueError):
+        max_entries = 500
+    max_entries = max(1, min(max_entries, HISTORY_FULL_MAX))
+    return {
+        "enabled": bool(config.get("history.enabled", True)),
+        "maxEntries": max_entries,
+        "count": len(full_history(config, max_entries)),
+    }
 
 
 def _append_history(config, transcript):
@@ -1201,6 +1213,14 @@ def _clear_history(config) -> bool:
     try:
         from ..history import clear
         return bool(clear(config))
+    except Exception:
+        return False
+
+
+def _delete_history_entry(config, entry_id) -> bool:
+    try:
+        from ..history import delete
+        return bool(delete(config, entry_id))
     except Exception:
         return False
 
@@ -1820,7 +1840,17 @@ def run(pipe_name: str | None = None) -> int:
         if method == "getHistory":
             return {"items": recent_history(config, params.get("count", 5))}
         if method == "getTranscripts":
-            return {"items": full_history(config, params.get("count", 200))}
+            return {"items": full_history(config, params.get("count", 200), params.get("query"))}
+        if method == "getHistoryStatus":
+            return history_status(config)
+        if method == "deleteTranscript":
+            # Destructive: require an explicit confirmation flag and a stable entry id.
+            if not params.get("confirm"):
+                return {"deleted": False, "error": "confirmation required"}
+            entry_id = params.get("id")
+            if not entry_id:
+                return {"deleted": False, "error": "missing id"}
+            return {"deleted": _delete_history_entry(config, entry_id), "id": str(entry_id)}
         if method == "exportHistory":
             # Write the full history to a user-chosen path. 'docx' restores the legacy RTL-correct Word
             # export (python-docx, w:bidi/w:rtl); 'txt' is plain UTF-8. The shell picks the path/format.

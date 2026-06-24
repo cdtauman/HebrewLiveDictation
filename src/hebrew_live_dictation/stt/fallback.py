@@ -51,6 +51,10 @@ class FallbackSpeechClient(SpeechClientBase):
         self._pump_thread = None
         self._switched = False
         self._fallback_requested = False
+        # Whether the PRIMARY produced any committed final text before a terminal error.
+        # If it did, replaying the buffered (already-transcribed) audio into local would
+        # re-emit duplicate content, so the switch must NOT replay the buffer.
+        self._primary_emitted_final = False
         self._lock = threading.Lock()
 
     # Overridable seam for tests.
@@ -61,12 +65,20 @@ class FallbackSpeechClient(SpeechClientBase):
 
     def _on_provider_event(self, event):
         # Swallow the primary's terminal error and request a switch instead of
-        # surfacing it to the controller. After switching, all events pass through.
+        # surfacing it to the controller. After switching, all events pass through
+        # (so a local-provider failure still surfaces — no false success).
         if event.get("type") == "error" and not self._switched and self._local_name:
             logger.warning("Primary provider error; requesting fallback to local: %s", event.get("message"))
             with self._lock:
                 self._fallback_requested = True
             return
+        # Remember if the primary committed any final text before failing. Used to
+        # decide whether the fallback may replay the buffered audio (see _do_switch).
+        if (not self._switched
+                and event.get("type") == "final"
+                and str(event.get("text", "")).strip()):
+            with self._lock:
+                self._primary_emitted_final = True
         self._emit_event(event)
 
     def start(self, source_queue):
@@ -74,6 +86,7 @@ class FallbackSpeechClient(SpeechClientBase):
         self.active = True
         self._switched = False
         self._fallback_requested = False
+        self._primary_emitted_final = False
         self._active_queue = queue.Queue()
         self._active = self._create(self._primary_name)
         self._active.start(self._active_queue)
@@ -115,8 +128,22 @@ class FallbackSpeechClient(SpeechClientBase):
             except Exception as e:  # pragma: no cover
                 logger.warning("Error stopping primary during fallback: %s", e)
         new_queue = queue.Queue()
-        for chunk in list(self._buffer):
-            new_queue.put(chunk)
+        with self._lock:
+            replay = not self._primary_emitted_final
+        if replay:
+            # Rescue path: the primary produced no committed final, so the buffered
+            # utterance is unsaved -> replay it to local so nothing spoken is lost.
+            for chunk in list(self._buffer):
+                new_queue.put(chunk)
+        else:
+            # The primary already committed final text for the buffered audio. Replaying
+            # it would re-transcribe and emit duplicate content (even with slightly
+            # different punctuation/spacing that exact dedupe can't catch). Switch local
+            # onto only subsequent audio. Safety over completeness (MF2).
+            logger.info(
+                "Primary already emitted a committed final; not replaying buffer to local "
+                "to avoid duplicate content."
+            )
         local = self._create(self._local_name)
         with self._lock:
             self._active_queue = new_queue

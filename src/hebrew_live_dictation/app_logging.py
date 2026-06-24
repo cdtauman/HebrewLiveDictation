@@ -11,11 +11,39 @@ SENSITIVE_PATTERNS = (
     re.compile(r"(?:^|\s)(?:[\w.-]+[\\/]){1,}[^\\/ \t\r\n'\"]+\.json", re.IGNORECASE),
 )
 
+# Provider/API secret shapes. Order matters: redact the Authorization header first
+# (keeping the label so the line still reads sensibly), then scheme-prefixed tokens,
+# then known key prefixes (OpenAI sk-, Groq gsk_, Deepgram dg-), then long opaque
+# hex/base64 blobs. These catch raw keys embedded in exception/error strings and in
+# any third-party library log line that echoes a request. Over-redaction in logs is
+# acceptable; a leaked credential is not.
+_AUTH_HEADER_RE = re.compile(r"(?i)(authorization\s*[:=]\s*)(?:bearer|token)\s+[^\s'\"]+")
+_SECRET_TOKEN_PATTERNS = (
+    re.compile(r"(?i)\b(?:bearer|token)\s+[A-Za-z0-9._~+/\-]{8,}=*"),
+    re.compile(r"(?i)\b(?:sk|gsk|dg|pk|rk)[-_][A-Za-z0-9_\-]{12,}"),
+    re.compile(r"\b[0-9a-fA-F]{32,}\b"),       # long hex (e.g. 40-hex Deepgram key, sha-*)
+    re.compile(r"\b[A-Za-z0-9_\-]{40,}\b"),    # long opaque base64/url-safe token
+)
+
+
+def redact_secrets(value: str) -> str:
+    """Redact provider/API-token-shaped secrets from arbitrary text (logs, error
+    strings, diagnostics). Safe to call on non-secret text — it only touches
+    token-shaped substrings."""
+    text = str(value or "")
+    text = _AUTH_HEADER_RE.sub(r"\1<redacted-secret>", text)
+    for pattern in _SECRET_TOKEN_PATTERNS:
+        text = pattern.sub("<redacted-secret>", text)
+    return text
+
 
 def redact_sensitive(value: str) -> str:
     text = str(value or "")
     for pattern in SENSITIVE_PATTERNS:
         text = pattern.sub("<redacted-path>", text)
+    # Also strip provider/API tokens so credential-bearing paths AND secrets are
+    # scrubbed from the same UI/log strings.
+    text = redact_secrets(text)
     return text
 
 

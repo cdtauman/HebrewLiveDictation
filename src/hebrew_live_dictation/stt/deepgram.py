@@ -17,6 +17,7 @@ import threading
 from urllib.parse import urlencode
 
 from .base import ProviderCapabilities, SpeechClientBase
+from ..app_logging import redact_secrets
 
 
 logger = logging.getLogger("DeepgramStream")
@@ -112,8 +113,9 @@ class DeepgramStream(SpeechClientBase):
         try:
             self._conn = self._connect(self._build_url(), key)
         except Exception as e:
-            logger.error("Deepgram connection failed: %s", e)
-            self._emit_event({"type": "error", "message": f"Deepgram connection failed: {e}", "code": "terminal"})
+            detail = redact_secrets(str(e))
+            logger.error("Deepgram connection failed: %s", detail)
+            self._emit_event({"type": "error", "message": f"Deepgram connection failed: {detail}", "code": "terminal"})
             self.active = False
             return
 
@@ -133,8 +135,9 @@ class DeepgramStream(SpeechClientBase):
                 self._handle_message(message)
         except Exception as e:
             if self.active:
-                logger.error("Deepgram stream error: %s", e)
-                self._emit_event({"type": "error", "message": f"Deepgram stream error: {e}", "code": "terminal"})
+                detail = redact_secrets(str(e))
+                logger.error("Deepgram stream error: %s", detail)
+                self._emit_event({"type": "error", "message": f"Deepgram stream error: {detail}", "code": "terminal"})
         finally:
             self.active = False
             self._close_conn()

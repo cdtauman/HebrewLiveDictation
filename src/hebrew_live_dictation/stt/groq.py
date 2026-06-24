@@ -17,6 +17,7 @@ import wave
 
 from .base import ProviderCapabilities, SpeechClientBase
 from .segmenter import SilenceSegmenter
+from ..app_logging import redact_secrets
 
 
 logger = logging.getLogger("GroqStream")
@@ -126,8 +127,9 @@ class GroqStream(SpeechClientBase):
             if segment is not None:
                 self._emit_segment(segment, key)
         except Exception as e:
-            logger.error("Groq transcription error: %s", e)
-            self._emit_event({"type": "error", "message": f"Groq transcription error: {e}", "code": "terminal"})
+            detail = redact_secrets(str(e))
+            logger.error("Groq transcription error: %s", detail)
+            self._emit_event({"type": "error", "message": f"Groq transcription error: {detail}", "code": "terminal"})
         finally:
             self.active = False
 
